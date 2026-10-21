@@ -1,6 +1,7 @@
 #include "ui/main_window.h"
 #include "ui/tcp_dialog.h"
 #include "ui/stream_pane.h"
+#include "ui/language.h"
 #include "fixtures.h"
 #include "core/pcap_file.h"
 #include "version.h"
@@ -79,7 +80,7 @@ int main(int argc,char** argv) {
     for(auto& raw:raws) {raw.bytes.resize(std::max<std::size_t>(64,raw.bytes.size()),0);raw.originalLength=static_cast<std::uint32_t>(raw.bytes.size());}
     const auto target=std::uint64_t(seconds)*pps;
     auto rawAt=[&](std::uint64_t index){auto raw=raws[index%raws.size()];raw.timestampNs=timestampBase+static_cast<std::int64_t>(index)*1000000;if(streamLoad){const auto sequence=static_cast<std::uint32_t>(index*1024+100);for(unsigned i=0;i<4;++i)raw.bytes[38+i]=static_cast<std::uint8_t>(sequence>>(24-8*i));}return raw;};
-    MainWindowOptions options;QTemporaryDir temporary;options.settingsFile=temporary.filePath("settings.ini");
+    MainWindowOptions options;QTemporaryDir temporary;options.settingsFile=temporary.filePath("settings.ini");const bool languageCycle=args.contains("--language-cycle");options.language=languageCycle?"en":"zh_CN";
     options.capture.interfaces=[](QString& error){error.clear();return std::vector<CaptureInterface>{{"benchmark","性能测试","192.0.2.1"}};};
     options.capture.run=[&](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions&){
         opened("捕获中");const auto start=std::chrono::steady_clock::now();
@@ -108,7 +109,7 @@ int main(int argc,char** argv) {
     std::vector<qint64> delays,appendTimes,filterTimes;QJsonArray memorySamples;QJsonArray exports;QJsonArray stalls;
     QTimer poll;poll.setTimerType(Qt::PreciseTimer);qint64 lastBeat=0,lastMemory=-1000,nextProgress=60000;
     bool stopping=false,selected=false,theme=false,filtered=false,cleared=false,intentionalReset=false;
-    int resets=0,saveRequests=0;bool saveValid=true;
+    int resets=0,saveRequests=0,languageChanges=0;qint64 nextLanguage=10000;bool saveValid=true;
     qint64 themeUs=0;std::vector<std::future<QJsonObject>> validations;
     QObject::connect(window.packetModel(),&QAbstractItemModel::modelReset,&app,[&]{if(!intentionalReset && window.captureState()!=MainWindow::CaptureState::Starting)++resets;});
     QObject::connect(&window,&MainWindow::batchProcessed,&app,[&](qint64 us){appendTimes.push_back(us);});
@@ -132,7 +133,7 @@ int main(int argc,char** argv) {
     });
     auto applyProtocol=[&](const QString& value){
         intentionalReset=true;QElapsedTimer timer;timer.start();
-        window.findChild<QComboBox*>("protocolFilter")->setCurrentText(value);
+        auto* protocol=window.findChild<QComboBox*>("protocolFilter");if(value=="全部协议")protocol->setCurrentIndex(0);else protocol->setCurrentText(value);
         filterTimes.push_back(timer.nsecsElapsed()/1000);intentionalReset=false;
     };
     QObject::connect(&poll,&QTimer::timeout,&app,[&]{
@@ -148,6 +149,7 @@ int main(int argc,char** argv) {
             } else ++it;
         }
         const auto c=window.captureCounters();
+        if(languageCycle && now>=nextLanguage && now<seconds*1000){const std::array<QString,3> languages={"zh_CN","zh_TW","en"};i18n::language().set(languages[static_cast<std::size_t>(languageChanges)%languages.size()]);++languageChanges;nextLanguage=now+10000;}
         if(streamLoad && now>=nextStream && now<seconds*1000 && c.enqueued>0 && !window.tcpConversations().items().empty()) {
             auto* dialog=window.findChild<TcpDialog*>();dialog->selectConversation(window.tcpConversations().items().back().id);dialog->findChild<QPushButton*>("tcpStreamButton")->click();++streamRequests;nextStream=now+2000;
         }
@@ -190,10 +192,11 @@ int main(int argc,char** argv) {
             const bool counts=final.received==target && window.sessionStats().received+final.queueDropped==final.received && final.queuedPackets==0;
             const bool passed=counts && final.queueDropped==0 && (seconds>=7200 || (p99<=10 && maximum<=250 && appendP99<=8000 && filterMax<=100000))
                 && stopMs<=1000 && peak<=256*1024*1024 && (seconds>=7200?(!warmMemory.empty() && !tailMemory.empty() && medianGrowth<=8*1024*1024):growth<=16*1024*1024) && window.packetModel()->rowCount()==static_cast<int>(expectedRetained)
-                && window.retainedRawBytes()==expectedRaw && window.retainedEstimatedBytes()<=64*1024*1024 && resets==0 && saveRequests==2 && exports.size()==2 && saveValid && streamValid && (!streamLoad || streamCompleted==streamRequests);
+                && window.retainedRawBytes()==expectedRaw && window.retainedEstimatedBytes()<=64*1024*1024 && resets==0 && saveRequests==2 && exports.size()==2 && saveValid && streamValid && (!streamLoad || streamCompleted==streamRequests) && (!languageCycle || languageChanges>=(seconds-1)/10);
             QJsonObject report{{"kind","synthetic_source_capture_decode_queue_store_ui"},{"version",ETHERSCOPE_VERSION},
                 {"tcp_fixture",args.contains("--tcp")},{"tcp_panel",args.contains("--tcp-panel")},
                 {"stream_load",streamLoad},{"stream_requests",streamRequests},{"stream_completed",streamCompleted},
+                {"language_cycle",languageCycle},{"language_switches",languageChanges},
                 {"tcp_connections",double(window.tcpConversations().items().size())},{"tcp_estimated_bytes",double(window.tcpConversations().estimatedBytes())},
                 {"tcp_overwritten",double(window.tcpConversations().overwritten())},{"tcp_skipped",double(window.tcpConversations().skipped())},
                 {"utc",QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},{"requested_seconds",seconds},{"target_pps",pps},

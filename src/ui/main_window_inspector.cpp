@@ -49,6 +49,7 @@ void MainWindow::fillDetails() {
         const auto entry=fieldItems_.back();fieldItems_.pop_back();const auto& field=*entry.field;
         auto* item=entry.parent?new QTreeWidgetItem(entry.parent):new QTreeWidgetItem(fields_);
         item->setText(0,i18n::text(q(field.name)));item->setText(1,fieldText(field.value));
+        item->setToolTip(0,item->text(0));item->setToolTip(1,item->text(1));
         item->setData(0,Qt::UserRole+3,q(field.name));item->setData(0,Qt::UserRole+4,q(field.value));
         const auto name=q(field.name);if(name.contains("地址") || name.contains("MAC") || q(field.value).startsWith("0x"))item->setFont(1,QFontDatabase::systemFont(QFontDatabase::FixedFont));
         item->setData(0,Qt::UserRole,QVariant::fromValue<qulonglong>(field.offset));item->setData(0,Qt::UserRole+1,QVariant::fromValue<qulonglong>(field.length));
@@ -74,7 +75,7 @@ void MainWindow::renderHexPage(std::size_t start) {
 void MainWindow::retranslate() {
     for(auto* action:findChildren<QAction*>())if(action->objectName().startsWith("language_")){QSignalBlocker block(action);action->setChecked(action->data().toString()==i18n::language().current());}
     settings_->setValue("ui/language",i18n::language().current());settings_->sync();updateFilterStatus();updateStatus();chart_->update();
-    for(QTreeWidgetItemIterator item(fields_);*item;++item){(*item)->setText(0,i18n::text((*item)->data(0,Qt::UserRole+3).toString()));(*item)->setText(1,fieldText((*item)->data(0,Qt::UserRole+4).toString().toStdString()));}
+    for(QTreeWidgetItemIterator item(fields_);*item;++item){(*item)->setText(0,i18n::text((*item)->data(0,Qt::UserRole+3).toString()));(*item)->setText(1,fieldText((*item)->data(0,Qt::UserRole+4).toString().toStdString()));(*item)->setToolTip(0,(*item)->text(0));(*item)->setToolTip(1,(*item)->text(1));}
     if(selected_){QStringList issues;if(!selected_->error.empty())issues<<i18n::text(q(selected_->error));for(const auto& warning:selected_->warnings)issues<<i18n::text(warningText(warning));detailIssues_->setToolTip(issues.join("\n"));}
 }
 void MainWindow::highlightBytes(QTreeWidgetItem* item,bool locate) {

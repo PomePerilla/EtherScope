@@ -10,6 +10,61 @@
     "%1 已存在。\n是否取代?"
   ],
   [
+    "ICMP 类型无效",
+    "Invalid ICMP type",
+    "ICMP 類型無效"
+  ],
+  [
+    "IPv4 地址无效",
+    "Invalid IPv4 address",
+    "IPv4 位址無效"
+  ],
+  [
+    "IPv6 地址无效",
+    "Invalid IPv6 address",
+    "IPv6 位址無效"
+  ],
+  [
+    "MAC 地址无效",
+    "Invalid MAC address",
+    "MAC 位址無效"
+  ],
+  [
+    "Npcap 不可用",
+    "Npcap unavailable",
+    "Npcap 無法使用"
+  ],
+  [
+    "Npcap 未安装",
+    "Npcap not installed",
+    "未安裝 Npcap"
+  ],
+  [
+    "Npcap 运行库不完整",
+    "Incomplete Npcap runtime",
+    "Npcap 執行階段不完整"
+  ],
+  [
+    "PCAP 快照长度异常",
+    "Invalid PCAP snapshot length",
+    "PCAP 快照長度異常"
+  ],
+  [
+    "PCAP 数据包内容被截断",
+    "PCAP packet data truncated",
+    "PCAP 封包資料遭截斷"
+  ],
+  [
+    "PCAP 数据包记录头被截断",
+    "PCAP packet record header truncated",
+    "PCAP 封包記錄標頭遭截斷"
+  ],
+  [
+    "PCAP 数据包长度或时间戳异常",
+    "Invalid PCAP packet length or timestamp",
+    "PCAP 封包長度或時間戳記異常"
+  ],
+  [
     "PCAP 文件 (*.pcap *.cap)",
     "PCAP files (*.pcap *.cap)",
     "PCAP 檔案 (*.pcap *.cap)"
@@ -18,6 +73,16 @@
     "PCAP 文件 (*.pcap)",
     "PCAP files (*.pcap)",
     "PCAP 檔案 (*.pcap)"
+  ],
+  [
+    "PCAP 文件写入失败",
+    "Cannot write PCAP file",
+    "無法寫入 PCAP 檔案"
+  ],
+  [
+    "PCAP 文件头被截断",
+    "PCAP file header truncated",
+    "PCAP 檔案標頭遭截斷"
   ],
   [
     "TCP 会话",
@@ -88,6 +153,11 @@
     "不支持的",
     "Unsupported",
     "不支持的"
+  ],
+  [
+    "不支持的 PCAP 版本",
+    "Unsupported PCAP version",
+    "不支援的 PCAP 版本"
   ],
   [
     "不支持的链路类型",
@@ -655,6 +725,11 @@
     "即時抓包當前僅支持"
   ],
   [
+    "实时抓包当前仅支持 Windows Npcap",
+    "Live capture requires Windows and Npcap",
+    "即時擷取需要 Windows 與 Npcap"
+  ],
+  [
     "导出引用",
     "Export references",
     "匯出引用"
@@ -783,6 +858,11 @@
     "待保存数据包的链路",
     "Export packet link",
     "待儲存封包的鏈路"
+  ],
+  [
+    "待保存数据包的链路、长度或时间戳无效",
+    "Invalid export packet link, length or timestamp",
+    "匯出封包的鏈結、長度或時間戳記無效"
   ],
   [
     "待重组",
@@ -1075,6 +1155,11 @@
     "無法打開"
   ],
   [
+    "无法打开 PCAP 文件",
+    "Cannot open PCAP file",
+    "無法開啟 PCAP 檔案"
+  ],
+  [
     "无法打开接口",
     "Cannot open interface",
     "無法打開接口"
@@ -1133,6 +1218,11 @@
     "暂不支持声明了",
     "Unsupported declared",
     "暫不支持聲明了"
+  ],
+  [
+    "暂不支持声明了 FCS 元信息的 PCAP，请先转换",
+    "Unsupported PCAP FCS metadata",
+    "不支援的 PCAP FCS 中繼資料"
   ],
   [
     "更多",

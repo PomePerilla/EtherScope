@@ -84,8 +84,10 @@ class ShellProcess:
         self.kernel.CloseHandle(self.handle)
 
 
-def launch(application, settings, env, sample=None):
+def launch(application, settings, env, sample=None, language=None):
     args = [str(application), '--settings-file', str(settings)]
+    if language:
+        args += ['--language', language]
     if sample:
         args += ['--open', str(sample)]
     start = time.perf_counter()
@@ -127,6 +129,8 @@ def launch(application, settings, env, sample=None):
 def main():
     arguments = argparse.ArgumentParser()
     arguments.add_argument('--previous-installer', type=Path)
+    arguments.add_argument('--installer-language', choices=['en', 'zh_CN', 'zh_TW'], default='en')
+    arguments.add_argument('--application-language', choices=['en', 'zh_CN', 'zh_TW'])
     args = arguments.parse_args()
     project = Path(__file__).resolve().parent.parent
     manifest = json.loads((project / 'output/program-package.json').read_text(encoding='utf-8-sig'))
@@ -157,7 +161,7 @@ def main():
         shortcut = Path(os.environ['APPDATA']) / 'Microsoft/Windows/Start Menu/Programs' / group / 'EtherScope.lnk'
         settings = root / '验收设置.ini'
         settings.write_text('[filter]\nip=2001:db8::1\nprotocol=ICMPv6\nmacDirection=0\nipDirection=0\n', encoding='utf-8')
-        parameters = [str(installer), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CURRENTUSER',
+        parameters = [str(installer), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CURRENTUSER', '/LANG=' + args.installer_language,
                       '/TASKS=', '/DIR=' + str(application_root), '/GROUP=' + group]
         env = {key: value for key, value in os.environ.items()
                if not key.upper().startswith('QT_') and key.upper() not in ('QTDIR', 'QT6_DIR', 'CMAKE_PREFIX_PATH')}
@@ -183,13 +187,16 @@ def main():
             unicode_offset = struct.unpack_from('<I', link, offset + 28)[0]
             target = link[offset + unicode_offset:].decode('utf-16-le', errors='ignore').split('\0')[0]
             assert os.path.samefile(target, application)
-            startups = [launch(shortcut, settings, env, project / 'samples/synthetic-ipv6.pcap')]
+            startups = [launch(shortcut, settings, env, project / 'samples/synthetic-ipv6.pcap', args.application_language)]
             restored = settings.read_text(encoding='utf-8-sig')
             assert '2001:db8::1' in restored and 'ICMPv6' in restored and 'openDirectory=' in restored
+            if args.application_language:
+                assert 'language=' + args.application_language in restored
             previous_checked = None
             if args.previous_installer:
                 previous_installer = args.previous_installer.resolve(strict=True)
-                subprocess.run([str(previous_installer)] + parameters[1:] + ['/LOG=' + str(root / 'previous.log')], check=True, timeout=60, startupinfo=startup)
+                previous_parameters = [value for value in parameters[1:] if not value.startswith('/LANG=')]
+                subprocess.run([str(previous_installer)] + previous_parameters + ['/LOG=' + str(root / 'previous.log')], check=True, timeout=60, startupinfo=startup)
                 assert application.read_bytes() != (project / 'build/msvc-release/EtherScope.exe').read_bytes()
                 launch(shortcut, settings, env)
                 previous_checked = previous_installer.name
@@ -214,7 +221,8 @@ def main():
             report.update({'archive_integrity': True, 'program_installer_only': True, 'driver_external_download': True,
                            'current_binary': True, 'install_upgrade': True, 'preserved_settings': True,
                            'shortcut_target': True, 'bundled_dependencies': True, 'ipv6_file_open': True, 'mit_notice': True, 'previous_installer': previous_checked,
-                           'startup_ms': startups, 'live_capture': capture, 'installer_bytes': installer.stat().st_size})
+                           'startup_ms': startups, 'live_capture': capture, 'installer_bytes': installer.stat().st_size,
+                           'installer_language': args.installer_language, 'application_language': args.application_language})
         finally:
             uninstaller = application_root / 'unins000.exe'
             if installed and uninstaller.is_file():

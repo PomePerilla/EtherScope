@@ -137,6 +137,12 @@ private slots:
     void languageCatalogAndFileDialog() {
         QFile file(":/i18n/messages.json");QVERIFY(file.open(QIODevice::ReadOnly));const auto rows=QJsonDocument::fromJson(file.readAll()).array();QVERIFY(rows.size()>360);
         for(const auto& code:{"en","zh_TW"}){QVERIFY(i18n::language().set(code));for(const auto& value:rows){const auto row=value.toArray();QCOMPARE(i18n::text(row[0].toString()),row[code==QString("en")?1:2].toString());}}
+        i18n::language().set("en");const QRegularExpression han("[\\x{4e00}-\\x{9fff}]");
+        auto translated=[&](const std::string& source){const auto original=QString::fromStdString(source);QVERIFY2(!i18n::text(original).contains(han),original.toUtf8().constData());};
+        for(const auto& samples:{fixtures::samples(),fixtures::ipv6Samples(),fixtures::analysisSamples(),fixtures::tcpConversationSamples(),fixtures::tcpStreamSamples()})for(const auto& raw:samples){
+            const auto packet=decodePacket(raw);translated(packet.protocol);translated(packet.summary);translated(packet.error);for(const auto& warning:packet.warnings)translated(warning);
+            std::vector<const Field*> pending;for(const auto& field:packet.fields)pending.push_back(&field);while(!pending.empty()){const auto* field=pending.back();pending.pop_back();translated(field->name);translated(field->value);for(const auto& child:field->children)pending.push_back(&child);}
+        }
         for(const auto& code:{"en","zh_CN","zh_TW"}){i18n::language().set(code);QFileDialog dialog;dialog.setOption(QFileDialog::DontUseNativeDialog);dialog.setAcceptMode(QFileDialog::AcceptOpen);dialog.show();QTest::qWait(5);QStringList labels;for(auto* label:dialog.findChildren<QLabel*>())labels<<label->text();QVERIFY(labels.contains(code==QString("en")?QString("File &name:"):(code==QString("zh_CN")?QString("文件名:"):QString("檔案名稱:"))));}
     }
     void languageLayoutsAndExport() {
@@ -655,6 +661,7 @@ private slots:
         MainWindow window(nullptr,options);QVERIFY(waitForInterfaces(window));ReleaseGate releaseSource{source},releaseWriter{writer};window.show();
         window.findChild<QPushButton*>("startButton")->click();
         QTRY_VERIFY_WITH_TIMEOUT(source->entered.load(),5000);QCOMPARE(window.captureCounters().enqueued,std::uint64_t(3000));
+        QTRY_COMPARE(window.captureState(),MainWindow::CaptureState::Running);
         window.findChild<QComboBox*>("protocolFilter")->setCurrentText("UDP");window.findChild<QPushButton*>("applyFilterButton")->click();
         const auto path=directory.filePath("snapshot.pcap");QSignalSpy saved(&window,&MainWindow::saveFinished);
         QVERIFY(window.saveFile(path));QVERIFY(!window.saveFile(path));source->release();

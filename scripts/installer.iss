@@ -21,6 +21,7 @@ ArchitecturesInstallIn64BitMode=x64os
 MinVersion=10.0.17763
 DisableProgramGroupPage=yes
 DisableWelcomePage=yes
+ShowLanguageDialog=no
 DisableDirPage=auto
 WizardStyle=modern
 OutputDir={#ReleaseDirectory}
