@@ -16,6 +16,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSettings>
+#include <QScopedValueRollback>
 #include <QSpinBox>
 #include <QTableView>
 #include <QVBoxLayout>
@@ -84,8 +85,11 @@ void MainWindow::submitApplications(int session) {
     applicationSubmitted_[session] = delta.through;
     applications_[session]->submit(std::move(packets), std::move(conversations),
                                    store.packets().empty() ? 0 : store.packets().front()->id);
-    if (session == view_)
+    if (session == view_) {
+        QScopedValueRollback<bool> changing(updatingSelection_, true);
         model_->refreshApplications(indexDelta);
+        showDetails();
+    }
 }
 void MainWindow::collectApplications() {
     bool changed = false;
@@ -100,6 +104,15 @@ void MainWindow::collectApplications() {
                 std::erase_if(update.facts, [&](const auto &pair) {
                     return !first || pair.first < first || pair.first > last;
                 });
+                if (update.limitedOnly) {
+                    for (const auto &[id, fact] : update.facts) {
+                        (void)fact;
+                        applicationIndex_[session].limit(std::span(&id, 1),
+                                                         session == view_ ? &delta : nullptr);
+                    }
+                    changed |= session == view_;
+                    continue;
+                }
                 if (applicationIndex_[session].apply(
                         update.conversation, std::move(update.result), std::move(update.facts),
                         session == view_ ? &delta : nullptr, {update.keyRevision, update.revision}))
@@ -109,8 +122,11 @@ void MainWindow::collectApplications() {
             }
     }
     if (changed) {
+        QScopedValueRollback<bool> changing(updatingSelection_, true);
         const auto id = selected_ ? selected_->id : 0;
         model_->refreshApplications(delta);
+        if (view_ == 0 && follow_->isChecked())
+            table_->scrollToBottom();
         if (id) {
             const auto row = model_->rowForId(id);
             if (row >= 0)

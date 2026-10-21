@@ -15,8 +15,17 @@ std::size_t ApplicationIndex::estimateFactBytes(const ApplicationFacts &facts) {
 void ApplicationIndex::limit(std::span<const std::uint64_t> packets, IndexDelta *changes) {
     for (const auto id : packets) {
         const auto tracked = tracked_.find(id);
-        if (tracked == tracked_.end() || facts_.contains(id) ||
-            tracked->second == AnalysisStatus::Limited)
+        const auto direct = facts_.find(id);
+        if (direct != facts_.end()) {
+            if (direct->second.value.status != AnalysisStatus::Limited) {
+                direct->second.value.status = AnalysisStatus::Limited;
+                changes_ = changes;
+                changed(id);
+                changes_ = nullptr;
+            }
+            continue;
+        }
+        if (tracked == tracked_.end() || tracked->second == AnalysisStatus::Limited)
             continue;
         --diagnostics_.states[static_cast<std::size_t>(tracked->second)];
         tracked->second = AnalysisStatus::Limited;

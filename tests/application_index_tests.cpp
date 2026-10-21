@@ -144,6 +144,18 @@ void crossingConnections() {
           "Partial prune keeps the remaining membership of each connection");
     index.clear();
     check(index.estimatedBytes() == 0, "Crossing updates leave no residual accounting");
+    index.apply(1, result(), {{1, complete()}});
+    const std::array<std::uint64_t, 1> affected{1};
+    index.limit(affected);
+    Packet packet;
+    auto present = compileDisplayFilter("http.host == \"example.com\"").value;
+    auto absent = compileDisplayFilter("not http.response.code == 200").value;
+    check(present && absent, "Limit regression expressions compile");
+    check(index.facts(1)->status == AnalysisStatus::Limited &&
+              present->evaluate(packet, index.facts(1)) == FilterTruth::True,
+          "Limit notifications retain known positive facts");
+    check(absent->evaluate(packet, index.facts(1)) == FilterTruth::Unknown,
+          "Unknown negative facts remain unknown after a limit");
 }
 void incrementalDiagnostics() {
     BoundedSamples samples;
@@ -217,6 +229,8 @@ void factsPreferMessagesUnderPressure() {
         message.protocol = "HTTP";
         message.sources = {{id, 0, 1, 0}};
         message.fields.push_back({"Host", "http.host", std::string("recent.example"), 0, 1});
+        message.fields.push_back({"Method", "http.request.method", std::string("GET"), 0, 1});
+        message.fields.push_back({"Target", "http.request.uri", std::string(512, 'x'), 0, 1});
         value->messages.push_back(std::move(message));
     }
     value->estimatedBytes = estimateApplicationBytes(*value);
@@ -239,6 +253,10 @@ void factsPreferMessagesUnderPressure() {
           "Omitted status records are limited rather than indefinitely pending");
     check(index.facts(omitted.front())->status == AnalysisStatus::Limited,
           "Compact limit facts preserve three-valued filtering");
+    for (std::uint64_t id = 9001; id <= 10000; ++id)
+        if (!index.facts(id)->values.contains("http.host"))
+            check(index.facts(id)->status == AnalysisStatus::Limited,
+                  "A discarded message never becomes a known missing field");
     auto filter = compileDisplayFilter("http.host == \"recent.example\"").value;
     check(filter->evaluate(*store.find(10000), index.facts(10000)) == FilterTruth::True,
           "Recent host fields remain filterable at full retention");

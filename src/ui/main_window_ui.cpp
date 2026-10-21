@@ -442,7 +442,7 @@ void MainWindow::buildUi() {
     analysisIncomplete_->setObjectName("analysisIncomplete");
     diagnosticLayout->addWidget(incompleteCaption, 4, 2);
     diagnosticLayout->addWidget(analysisIncomplete_, 4, 3);
-    const QStringList analysisCaptions = {"分析完成", "数据缺失", "资源受限",
+    const QStringList analysisCaptions = {"分析完成", "未完整",   "资源受限",
                                           "缺少密钥", "不支持的", "认证失败"};
     for (int i = 0; i < 6; ++i) {
         auto *caption = new QLabel(analysisCaptions[i], diagnosticPanel_);

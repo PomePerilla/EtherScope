@@ -7,6 +7,47 @@
 #include <utility>
 
 namespace etherscope {
+namespace {
+std::size_t updateBytes(const ApplicationUpdate &update) {
+    return sizeof(ApplicationUpdate) + update.limitedPackets.capacity() * sizeof(std::uint64_t) +
+           estimateApplicationFacts(update.facts) +
+           (update.result ? update.result->estimatedBytes : 0);
+}
+std::size_t markerBytes(std::size_t count) {
+    return count ? count * (sizeof(std::pair<const std::uint64_t, ApplicationFacts>) + 64) + 4096
+                 : 0;
+}
+bool sameEntry(const ApplicationUpdate &a, const ApplicationUpdate &b) {
+    if (a.conversation || b.conversation)
+        return a.conversation && a.conversation == b.conversation;
+    return !a.facts.empty() && !b.facts.empty() && a.facts.begin()->first == b.facts.begin()->first;
+}
+} // namespace
+std::size_t ApplicationAnalysisService::stagedBytes() const {
+    return resultBytes_ + markerBytes(limited_.size()) +
+           (completed_.capacity() - completed_.size()) * sizeof(ApplicationUpdate);
+}
+void ApplicationAnalysisService::markLimited(const ApplicationUpdate &update) {
+    stats_.stagingLimitedRecords += update.facts.size() + update.limitedPackets.size();
+    for (const auto &[id, fact] : update.facts) {
+        (void)fact;
+        limited_[id].status = AnalysisStatus::Limited;
+    }
+    for (const auto id : update.limitedPackets)
+        limited_[id].status = AnalysisStatus::Limited;
+    while (limited_.size() > 10000)
+        limited_.erase(limited_.begin());
+}
+void ApplicationAnalysisService::trimStaging() {
+    while (!completed_.empty() &&
+           (stagedBytes() > applicationStagingBudget || completed_.size() > 2048)) {
+        auto previous = std::move(completed_.front());
+        resultBytes_ -= updateBytes(previous);
+        completed_.erase(completed_.begin());
+        markLimited(previous);
+    }
+    stats_.peakStagedBytes = std::max(stats_.peakStagedBytes, stagedBytes());
+}
 ApplicationAnalysisService::ApplicationAnalysisService(QObject *parent, ApplicationHooks hooks)
     : QObject(parent), hooks_(std::move(hooks)),
       thread_([this](std::stop_token stop) { run(stop); }) {}
@@ -32,6 +73,7 @@ ApplicationServiceStats ApplicationAnalysisService::stats() const {
     std::lock_guard lock(mutex_);
     auto result = stats_;
     result.queuedBytes = queuedBytes_;
+    result.stagedBytes = stagedBytes();
     result.pendingUpdates = completed_.size() + (limited_.empty() ? 0 : 1);
     return result;
 }
@@ -73,6 +115,7 @@ void ApplicationAnalysisService::submit(std::vector<std::shared_ptr<const Packet
             limited_[p->id].status = AnalysisStatus::Limited;
         while (limited_.size() > 10000)
             limited_.erase(limited_.begin());
+        trimStaging();
         lock.unlock();
         wake_.notify_one();
         emit changed();
@@ -107,6 +150,7 @@ std::vector<ApplicationUpdate> ApplicationAnalysisService::takeResults() {
         limited->status = AnalysisStatus::Limited;
         ApplicationUpdate update;
         update.generation = generation_;
+        update.limitedOnly = true;
         update.keyCommand = keyCommand_;
         update.result = std::move(limited);
         update.facts = std::move(limited_);
@@ -457,27 +501,24 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                          std::any_of(
                              result.result->messages.begin(), result.result->messages.end(),
                              [](const auto &message) { return message.protocol == "TLS"; }));
-                    const auto size = sizeof(ApplicationUpdate) +
-                                      result.limitedPackets.capacity() * sizeof(std::uint64_t) +
-                                      estimateApplicationFacts(result.facts) +
-                                      (result.result ? result.result->estimatedBytes : 0);
-                    constexpr auto statusReserve =
-                        10000 * (sizeof(std::pair<const std::uint64_t, ApplicationFacts>) + 64) +
-                        4096;
-                    if (completed_.size() >= 2048 ||
-                        size > applicationStagingBudget - statusReserve ||
-                        resultBytes_ > applicationStagingBudget - statusReserve - size) {
-                        for (const auto &[id, fact] : result.facts) {
-                            (void)fact;
-                            limited_[id].status = AnalysisStatus::Limited;
-                        }
-                        for (const auto id : result.limitedPackets)
-                            limited_[id].status = AnalysisStatus::Limited;
-                        while (limited_.size() > 10000)
-                            limited_.erase(limited_.begin());
+                    const auto size = updateBytes(result);
+                    if (size > applicationStagingBudget) {
+                        markLimited(result);
+                        trimStaging();
                         continue;
                     }
-                    // A completed replay supersedes earlier queue or staging limit markers.
+                    // A connection snapshot supersedes its unpublished predecessor.
+                    const auto previous =
+                        std::find_if(completed_.begin(), completed_.end(),
+                                     [&](const auto &update) { return sameEntry(update, result); });
+                    if (previous != completed_.end()) {
+                        if (std::pair(previous->keyRevision, previous->revision) >
+                            std::pair(result.keyRevision, result.revision))
+                            continue;
+                        resultBytes_ -= updateBytes(*previous);
+                        completed_.erase(previous);
+                        ++stats_.coalescedUpdates;
+                    }
                     for (const auto &[id, fact] : result.facts) {
                         (void)fact;
                         limited_.erase(id);
@@ -487,6 +528,7 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                     resultBytes_ += size;
                     ++stats_.completedUpdates;
                     completed_.push_back(std::move(result));
+                    trimStaging();
                 }
         }
         emit changed();

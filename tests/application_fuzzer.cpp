@@ -34,6 +34,11 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *bytes, std::size_t siz
         ApplicationIndex index;
         for (std::size_t cursor = 1; cursor + 2 < size && cursor < 1024; cursor += 3) {
             const auto id = std::uint64_t(bytes[cursor]) + 1;
+            auto packet = std::make_shared<Packet>();
+            packet->id = id;
+            packet->tcp = TcpInfo{};
+            packet->tcp->payloadLength = 1;
+            index.observe({1, 256, 256, {packet}});
             ApplicationFacts facts;
             facts.status = static_cast<AnalysisStatus>(bytes[cursor + 1] % 7);
             facts.values["http.host"] = {std::string(1, static_cast<char>(bytes[cursor + 2]))};
@@ -43,9 +48,17 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *bytes, std::size_t siz
                 index.prune(id, 256);
             else
                 index.apply(bytes[cursor + 2] % 16, std::move(value), {{id, std::move(facts)}});
+            if (bytes[cursor + 2] & 4)
+                index.limit(std::span(&id, 1));
             if (index.estimatedBytes() > applicationIndexBudget)
                 std::abort();
         }
+        std::array<std::size_t, 7> expected{};
+        for (std::uint64_t id = 1; id <= 256; ++id)
+            if (const auto *facts = index.facts(id))
+                ++expected[static_cast<std::size_t>(facts->status)];
+        if (expected != index.diagnostics().states)
+            std::abort();
         index.clear();
         if (index.estimatedBytes())
             std::abort();

@@ -10,6 +10,7 @@ namespace etherscope {
 struct ApplicationUpdate {
     std::uint64_t generation{}, revision{}, keyRevision{}, conversation{}, keyCommand{};
     bool keySensitive{};
+    bool limitedOnly{};
     std::shared_ptr<const ApplicationResult> result;
     std::map<std::uint64_t, ApplicationFacts> facts;
     std::vector<std::uint64_t> limitedPackets;
@@ -21,6 +22,8 @@ struct ApplicationHooks {
 struct ApplicationServiceStats {
     std::uint64_t submittedPackets{}, rejectedPackets{}, completedUpdates{}, deliveredBytes{},
         keyReplays{}, stateEvictions{};
+    std::uint64_t coalescedUpdates{}, stagingLimitedRecords{};
+    std::size_t stagedBytes{}, peakStagedBytes{};
     std::size_t stateBytes{}, retainedBytes{}, queuedBytes{}, pendingUpdates{};
 };
 class ApplicationAnalysisService final : public QObject {
@@ -64,5 +67,9 @@ class ApplicationAnalysisService final : public QObject {
     std::stop_source activeStop_;
     std::jthread thread_;
     void run(std::stop_token stop);
+    // These helpers run with mutex_ held.
+    void markLimited(const ApplicationUpdate &update);
+    void trimStaging();
+    std::size_t stagedBytes() const;
 };
 } // namespace etherscope

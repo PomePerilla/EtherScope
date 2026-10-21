@@ -182,6 +182,56 @@ TcpDialog *startStream(MainWindow &window) {
 class DesktopTests : public QObject {
     Q_OBJECT
   private slots:
+    void applicationUpdatesKeepLiveFollowing() {
+        auto advance = std::make_shared<std::atomic<bool>>(false);
+        auto options = testOptions();
+        options.capture = fakeCapture();
+        options.capture.run =
+            [advance](const QString &, bool, std::stop_token stop, const CaptureHooks::Sink &sink,
+                      const CaptureHooks::Opened &opened, const LiveCaptureOptions &) {
+                opened("捕获中");
+                for (auto raw : {fixtures::tcp(2, 99), fixtures::tcp(18, 499, 100, true),
+                                 fixtures::tcp(16, 100, 500)})
+                    sink(std::move(raw));
+                const std::string request = "GET / HTTP/1.1\r\nHost: following.example\r\n\r\n";
+                const std::string response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+                std::uint32_t client = 100, server = 500;
+                auto round = [&] {
+                    sink(fixtures::tcp(24, client, server, false, 50000, false,
+                                       {request.begin(), request.end()}));
+                    client += static_cast<std::uint32_t>(request.size());
+                    sink(fixtures::tcp(24, server, client, true, 50000, false,
+                                       {response.begin(), response.end()}));
+                    server += static_cast<std::uint32_t>(response.size());
+                };
+                for (unsigned i = 0; i < 128 && !stop.stop_requested(); ++i)
+                    round();
+                while (!advance->load() && !stop.stop_requested())
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                for (unsigned i = 0; i < 1200 && !stop.stop_requested(); ++i)
+                    round();
+                while (!stop.stop_requested())
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            };
+        MainWindow window(nullptr, options);
+        window.show();
+        QVERIFY(waitForInterfaces(window));
+        QVERIFY(window.applyExpression("http.host"));
+        auto *follow = window.findChild<QCheckBox *>("followLatest");
+        follow->setChecked(true);
+        window.findChild<QPushButton *>("startButton")->click();
+        QTRY_VERIFY_WITH_TIMEOUT(window.packetModel()->rowCount() > 0, 10000);
+        window.selectPacket(0);
+        follow->setChecked(true);
+        advance->store(true);
+        QTRY_VERIFY_WITH_TIMEOUT(window.captureCounters().received >= 2659, 10000);
+        window.stopCapture();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.busy() && !window.applicationBusy(), 10000);
+        QVERIFY(follow->isChecked());
+        auto *table = window.findChild<QTableView *>("packetTable");
+        QVERIFY(table);
+        QTRY_COMPARE(table->verticalScrollBar()->value(), table->verticalScrollBar()->maximum());
+    }
     void applicationDeltaEvaluatesOnlyChangedPackets() {
         SessionStore store;
         ApplicationIndex applications;

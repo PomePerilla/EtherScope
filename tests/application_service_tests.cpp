@@ -20,10 +20,55 @@ void traffic(SessionStore &store) {
 std::vector<TcpConversation> connections(const SessionStore &store) {
     return {store.tcp().items().begin(), store.tcp().items().end()};
 }
+void applyUpdate(ApplicationIndex &index, ApplicationUpdate update) {
+    if (update.limitedOnly) {
+        for (const auto &[id, fact] : update.facts) {
+            (void)fact;
+            index.limit(std::span(&id, 1));
+        }
+    } else {
+        index.apply(update.conversation, std::move(update.result), std::move(update.facts));
+        index.limit(update.limitedPackets);
+    }
+}
 } // namespace
 class ApplicationServiceTests : public QObject {
     Q_OBJECT
   private slots:
+    void largeSnapshotsCoalesceWithinStagingBudget() {
+        SessionStore store;
+        for (unsigned i = 0; i < 2000; ++i)
+            store.append(decodeSummary(fixtures::tcp(24, 100 + i, 0, false, 50000, false, {'x'})));
+        ApplicationHooks hooks;
+        hooks.conversation = [](const TcpStreamRequest &request, const TlsKeyLog &,
+                                std::stop_token) {
+            ApplicationResult result;
+            result.estimatedBytes = applicationResultLimit;
+            ApplicationMessage message;
+            message.protocol = "HTTP";
+            message.sources = {{request.packets.back()->id, 0, 1, 0}};
+            message.fields.push_back({"Host", "http.host", std::string("latest.example"), 0, 1});
+            result.messages.push_back(std::move(message));
+            return result;
+        };
+        ApplicationAnalysisService service(nullptr, hooks);
+        service.submit({store.packets().begin(), store.packets().end()}, connections(store));
+        QTRY_VERIFY_WITH_TIMEOUT(!service.busy(), 5000);
+        QCOMPARE(service.stats().pendingUpdates, 1u);
+        store.append(decodeSummary(fixtures::tcp(24, 2100, 0, false, 50000, false, {'x'})));
+        service.submit({store.packets().back()}, connections(store));
+        QTRY_VERIFY_WITH_TIMEOUT(!service.busy(), 5000);
+        const auto stats = service.stats();
+        QCOMPARE(stats.pendingUpdates, 1u);
+        QVERIFY(stats.coalescedUpdates >= 1);
+        QCOMPARE(stats.stagingLimitedRecords, 0ULL);
+        QVERIFY(stats.peakStagedBytes <= applicationStagingBudget);
+        auto updates = service.takeResults();
+        QCOMPARE(updates.size(), 1u);
+        QVERIFY(!updates[0].limitedOnly);
+        QVERIFY(updates[0].facts.at(store.packets().back()->id).values.contains("http.host"));
+        QCOMPARE(service.stats().stagedBytes, 0u);
+    }
     void keyCommandsAndGenerationsRejectOldResults() {
         ApplicationAnalysisService service;
         ApplicationUpdate old;
@@ -93,14 +138,14 @@ class ApplicationServiceTests : public QObject {
         QTRY_VERIFY_WITH_TIMEOUT(!service.busy(), 5000);
         ApplicationIndex index;
         for (auto &update : service.takeResults())
-            index.apply(update.conversation, std::move(update.result), std::move(update.facts));
+            applyUpdate(index, std::move(update));
         QVERIFY(index.facts(4));
         QCOMPARE(index.facts(4)->status, AnalysisStatus::Complete);
         const auto expression = compileDisplayFilter("http.host == \"example.com\"").value;
         QCOMPARE(expression->evaluate(*store.packets().back(), index.facts(4)), FilterTruth::True);
         QCOMPARE(index.results(4).size(), 1u);
     }
-    void limitedNotificationThenSuccessSurvivesEviction() {
+    void limitedNotificationKeepsFieldsAndSuccess() {
         SessionStore store;
         traffic(store);
         ApplicationAnalysisService service;
@@ -108,7 +153,7 @@ class ApplicationServiceTests : public QObject {
         auto collect = [&] {
             for (auto &update : service.takeResults()) {
                 QCOMPARE(update.generation, service.generation());
-                index.apply(update.conversation, std::move(update.result), std::move(update.facts));
+                applyUpdate(index, std::move(update));
             }
         };
         auto submit = [&] {
@@ -130,18 +175,12 @@ class ApplicationServiceTests : public QObject {
         service.submit(std::move(rejected), {});
         collect();
         QCOMPARE(index.facts(4)->status, AnalysisStatus::Limited);
-        QCOMPARE(expression->evaluate(*store.packets().back(), index.facts(4)),
-                 FilterTruth::Unknown);
+        QCOMPARE(expression->evaluate(*store.packets().back(), index.facts(4)), FilterTruth::True);
 
         submit();
         QTRY_VERIFY_WITH_TIMEOUT(!service.busy(), 5000);
         collect();
         QCOMPARE(index.results(4).size(), 1u);
-        auto pressure = std::make_shared<ApplicationResult>();
-        pressure->estimatedBytes = applicationIndexBudget - index.estimatedBytes();
-        ApplicationFacts complete;
-        complete.status = AnalysisStatus::Complete;
-        index.apply(77, std::move(pressure), {{1001, std::move(complete)}});
         QCOMPARE(index.facts(4)->status, AnalysisStatus::Complete);
         QCOMPARE(expression->evaluate(*store.packets().back(), index.facts(4)), FilterTruth::True);
         QCOMPARE(index.results(4).size(), 1u);

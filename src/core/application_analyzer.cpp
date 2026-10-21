@@ -209,6 +209,7 @@ indexApplication(const ApplicationResult &result,
     constexpr std::size_t budget = 1024 * 1024;
     std::map<std::uint64_t, ApplicationFacts> index;
     std::set<std::uint64_t> retained;
+    std::set<std::uint64_t> limited;
     for (const auto &packet : packets)
         retained.insert(packet->id);
     std::size_t bytes = 0;
@@ -225,7 +226,7 @@ indexApplication(const ApplicationResult &result,
             const auto old = index.find(id);
             const auto previous = old == index.end() ? 0 : estimateApplicationFact(old->second);
             ApplicationFacts candidate = old == index.end() ? ApplicationFacts{} : old->second;
-            candidate.status = result.status;
+            candidate.status = limited.contains(id) ? AnalysisStatus::Limited : result.status;
             candidate.values[protocol] = {true};
             if (protocol == "tls") {
                 static constexpr std::array<const char *, 7> names = {
@@ -244,16 +245,22 @@ indexApplication(const ApplicationResult &result,
             if (cost <= budget && bytes - previous <= budget - cost) {
                 bytes = bytes - previous + cost;
                 index[id] = std::move(candidate);
-            } else if (old != index.end())
-                old->second.status = AnalysisStatus::Limited;
+            } else {
+                limited.insert(id);
+                if (old != index.end())
+                    old->second.status = AnalysisStatus::Limited;
+            }
         }
     }
     for (auto packet = packets.rbegin(); packet != packets.rend(); ++packet) {
         if (index.contains((*packet)->id))
             continue;
         ApplicationFacts fact;
-        fact.status = ((*packet)->tcp && !(*packet)->tcp->payloadLength) ? AnalysisStatus::Complete
-                                                                         : result.status;
+        fact.status =
+            limited.contains((*packet)->id)
+                ? AnalysisStatus::Limited
+                : (((*packet)->tcp && !(*packet)->tcp->payloadLength) ? AnalysisStatus::Complete
+                                                                      : result.status);
         const auto cost = estimateApplicationFact(fact);
         if (cost > budget - bytes)
             break;

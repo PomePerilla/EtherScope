@@ -504,6 +504,8 @@ int main(int argc, char **argv) {
                 (!longHttp ||
                  (analysis.deliveredBytes == expectedDelivered && analysis.stateEvictions == 0)) &&
                 analysis.queuedBytes == 0 && analysis.pendingUpdates == 0 &&
+                analysis.peakStagedBytes <= applicationStagingBudget &&
+                (pps > 1000 || analysis.stagingLimitedRecords == 0) &&
                 window.applicationIndex().estimatedBytes() <= applicationIndexBudget &&
                 window.retainedRawBytes() == expectedRaw &&
                 window.retainedEstimatedBytes() <= 64 * 1024 * 1024 && resets == 0 &&
@@ -590,6 +592,9 @@ int main(int argc, char **argv) {
                 {"analysis_delivered_bytes", double(analysis.deliveredBytes)},
                 {"analysis_key_replays", double(analysis.keyReplays)},
                 {"analysis_state_evictions", double(analysis.stateEvictions)},
+                {"analysis_coalesced_updates", double(analysis.coalescedUpdates)},
+                {"analysis_staging_limited_records", double(analysis.stagingLimitedRecords)},
+                {"analysis_staging_peak_bytes", double(analysis.peakStagedBytes)},
                 {"analysis_state_bytes", double(analysis.stateBytes)},
                 {"analysis_retained_bytes", double(analysis.retainedBytes)},
                 {"analysis_unresolved_pending",

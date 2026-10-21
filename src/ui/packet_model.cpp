@@ -16,8 +16,9 @@ PacketModel::Row::Row(std::shared_ptr<const Packet> value)
                ? QDateTime::fromMSecsSinceEpoch(packet->raw.timestampNs / 1000000)
                      .toString("HH:mm:ss.zzz")
                : QString("-")),
-      source(QString::fromStdString(packet->source)),
-      destination(QString::fromStdString(packet->destination)),
+      source(packet->source.empty() ? QString("-") : QString::fromStdString(packet->source)),
+      destination(packet->destination.empty() ? QString("-")
+                                              : QString::fromStdString(packet->destination)),
       protocol(i18n::text(QString::fromStdString(packet->protocol))),
       summary(i18n::text(QString::fromStdString(packet->summary).replace("  保留原始数据", ""))) {}
 PacketModel::PacketModel(SessionStore *s, QObject *p) : QAbstractTableModel(p), store_(s) {
