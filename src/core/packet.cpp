@@ -164,7 +164,7 @@ struct Decoder {
         if(!has(o,20,end)) {if(partialFragment)partial();else fail("TCP 首部被截断");return;}
         auto n=std::size_t(b[o+12]>>4)*4;
         if(!has(o,n,end)) {if(partialFragment)partial();else fail("TCP 选项被截断");return;}
-        p.tcp=TcpInfo{u16(o),u16(o+2),u32(o+4),u32(o+8),static_cast<std::uint32_t>(end-o-n),b[o+13],completeSegment};
+        p.tcp=TcpInfo{u16(o),u16(o+2),u32(o+4),u32(o+8),static_cast<std::uint32_t>(end-o-n),b[o+13],completeSegment,static_cast<std::uint32_t>(o+n)};
         auto g=node([&]{return Field{"TCP","传输控制协议",o,n,{}};});
         emitField(g,[&]{return Field{"源端口",std::to_string(u16(o)),o,2,{}};}); emitField(g,[&]{return Field{"目的端口",std::to_string(u16(o+2)),o+2,2,{}};});
         emitField(g,[&]{return Field{"序列号",std::to_string(u32(o+4)),o+4,4,{}};}); emitField(g,[&]{return Field{"确认号",std::to_string(u32(o+8)),o+8,4,{}};});

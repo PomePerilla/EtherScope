@@ -11,4 +11,5 @@ std::vector<RawPacket> analysisSamples();
 RawPacket tcp(std::uint8_t flags,std::uint32_t sequence,std::uint32_t acknowledgment=0,bool reverse=false,
     std::uint16_t clientPort=50000,bool v6=false,std::vector<std::uint8_t> payload={});
 std::vector<RawPacket> tcpConversationSamples();
+std::vector<RawPacket> tcpStreamSamples();
 }

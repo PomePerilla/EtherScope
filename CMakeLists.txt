@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(EtherScope VERSION 1.7.0 LANGUAGES CXX)
+project(EtherScope VERSION 1.8.0 LANGUAGES CXX)
 configure_file(src/version.h.in generated/version.h @ONLY)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,18 +10,26 @@ else()
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 include(CTest)
-add_library(etherscope_core src/core/packet.cpp src/core/filter.cpp src/core/pcap_file.cpp src/core/session.cpp src/core/tcp_conversations.cpp)
+add_library(etherscope_core src/core/packet.cpp src/core/filter.cpp src/core/pcap_file.cpp src/core/session.cpp src/core/tcp_conversations.cpp src/core/tcp_stream.cpp)
 target_include_directories(etherscope_core PUBLIC src)
 option(ETHERSCOPE_BUILD_GUI "Build the Qt desktop application" ON)
-option(ETHERSCOPE_BUILD_FUZZERS "Build Clang parser fuzz target" OFF)
+option(ETHERSCOPE_BUILD_FUZZERS "Build parser and TCP stream fuzz targets" OFF)
 if(ETHERSCOPE_BUILD_FUZZERS)
-  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR WIN32)
-    message(FATAL_ERROR "Fuzz targets require Linux Clang")
+  if(NOT MSVC AND (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR WIN32))
+    message(FATAL_ERROR "Fuzz targets require MSVC 2022 or Linux Clang")
   endif()
   add_executable(packet_fuzzer tests/packet_fuzzer.cpp src/core/packet.cpp)
-  target_include_directories(packet_fuzzer PRIVATE src)
-  target_compile_options(packet_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
-  target_link_options(packet_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined)
+  add_executable(stream_fuzzer tests/stream_fuzzer.cpp src/core/tcp_stream.cpp src/core/tcp_conversations.cpp src/core/session.cpp src/core/packet.cpp)
+  foreach(fuzzer packet_fuzzer stream_fuzzer)
+    target_include_directories(${fuzzer} PRIVATE src)
+    if(MSVC)
+      target_compile_options(${fuzzer} PRIVATE /fsanitize=address /fsanitize=fuzzer /Z7)
+      target_link_options(${fuzzer} PRIVATE /INCREMENTAL:NO /DEBUG)
+    else()
+      target_compile_options(${fuzzer} PRIVATE -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
+      target_link_options(${fuzzer} PRIVATE -fsanitize=fuzzer,address,undefined)
+    endif()
+  endforeach()
 endif()
 if(ETHERSCOPE_BUILD_GUI)
   find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Widgets)
@@ -33,6 +41,7 @@ if(ETHERSCOPE_BUILD_GUI)
     src/capture/preparation.cpp
     src/capture/export.cpp
     src/capture/details.cpp
+    src/capture/stream.cpp
     src/ui/main_window.cpp
     src/ui/main_window_ui.cpp
     src/ui/main_window_theme.cpp
@@ -42,6 +51,7 @@ if(ETHERSCOPE_BUILD_GUI)
     src/ui/main_window_inspector.cpp
     src/ui/main_window_tcp.cpp
     src/ui/tcp_dialog.cpp
+    src/ui/stream_pane.cpp
     src/ui/packet_model.cpp
     src/ui/traffic_chart.cpp)
   set_target_properties(etherscope_desktop PROPERTIES AUTOMOC ON)
@@ -84,6 +94,9 @@ if(BUILD_TESTING)
   add_executable(tcp_tests tests/tcp_tests.cpp tests/fixtures.cpp)
   target_link_libraries(tcp_tests PRIVATE etherscope_core)
   add_test(NAME tcp_conversations COMMAND tcp_tests)
+  add_executable(stream_tests tests/stream_tests.cpp tests/fixtures.cpp)
+  target_link_libraries(stream_tests PRIVATE etherscope_core)
+  add_test(NAME tcp_stream_reassembly COMMAND stream_tests)
   add_executable(etherscope_benchmark tests/benchmark.cpp tests/fixtures.cpp)
   target_link_libraries(etherscope_benchmark PRIVATE etherscope_core)
   add_executable(make_samples tests/make_samples.cpp tests/fixtures.cpp)

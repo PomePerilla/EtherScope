@@ -32,6 +32,7 @@ struct TcpInfo {
     std::uint32_t sequence{},acknowledgment{},payloadLength{};
     std::uint8_t flags{};
     bool completeSegment{};
+    std::uint32_t payloadOffset{};
 };
 struct Packet {
     std::uint64_t id{};

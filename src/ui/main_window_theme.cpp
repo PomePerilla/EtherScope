@@ -46,6 +46,8 @@ void MainWindow::setDarkTheme(bool dark) {
         QTableView::item:selected, QTreeWidget::item:selected { background: %10; color: %7; }
         QTableView:focus, QTreeWidget:focus, QPlainTextEdit:focus { border: 1px solid %6; }
         QHeaderView::section { background: %2; color: %4; padding: 3px 7px; border: none; border-bottom: 1px solid %3; }
+        QTabWidget::pane { border: none; background: %1; }
+        QWidget#streamPane { background: %1; }
         QTabBar::tab { min-width: 36px; padding: 5px 8px; background: transparent; color: %4; border-bottom: 2px solid transparent; }
         QTabBar::tab:selected { color: %7; border-bottom-color: %6; }
         QTabBar::tab:hover { background: %8; }

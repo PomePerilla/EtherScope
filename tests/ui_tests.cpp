@@ -1,5 +1,6 @@
 #include "ui/main_window.h"
 #include "ui/tcp_dialog.h"
+#include "ui/stream_pane.h"
 #include <QCheckBox>
 #include <QAction>
 #include <QDialog>
@@ -13,6 +14,7 @@
 #include <QPushButton>
 #include <QTableView>
 #include <QTabBar>
+#include <QTabWidget>
 #include <QTreeWidget>
 #include "fixtures.h"
 #include "core/pcap_file.h"
@@ -88,10 +90,62 @@ QString sampleFile(QTemporaryDir& directory) {
     std::vector<const Packet*> refs;for(const auto& packet:packets)refs.push_back(&packet);
     std::ofstream out(std::filesystem::path(path.toStdWString()),std::ios::binary);writePcap(out,refs);return path;
 }
+void ingestStream(MainWindow& window) {std::vector<Packet> packets;for(auto raw:fixtures::tcpStreamSamples())packets.push_back(decodeSummary(std::move(raw)));window.ingestBenchmark(std::move(packets));}
+TcpDialog* startStream(MainWindow& window) {window.findChild<QAction*>("tcpConversationsAction")->trigger();auto* dialog=window.findChild<TcpDialog*>();dialog->selectConversation(1);dialog->findChild<QPushButton*>("tcpStreamButton")->click();return dialog;}
 }
 class DesktopTests:public QObject {
     Q_OBJECT
 private slots:
+    void streamBytesAndMarks() {
+        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();ingestStream(window);auto* dialog=startStream(window);
+        auto* pane=dialog->findChild<StreamPane*>();QTRY_VERIFY(pane->ready());QCOMPARE(pane->findChild<QLabel*>("streamMetric1")->text(),QString("13"));
+        QCOMPARE(pane->findChild<QLabel*>("streamMetric2")->text(),QString("0"));QCOMPARE(pane->findChild<QLabel*>("streamMetric3")->text(),QString("2"));QCOMPARE(pane->findChild<QLabel*>("streamMetric4")->text(),QString("1"));QCOMPARE(pane->findChild<QLabel*>("streamMetric5")->text(),QString("2"));
+        QVERIFY(pane->findChild<QPlainTextEdit*>("streamBytes")->toPlainText().contains("HELLO WORLD !"));
+        auto* ranges=pane->findChild<QTableView*>("streamRanges");auto* events=pane->findChild<QTableView*>("streamEvents");QAbstractItemModelTester tester(ranges->model(),QAbstractItemModelTester::FailureReportingMode::QtTest);QAbstractItemModelTester eventTester(events->model(),QAbstractItemModelTester::FailureReportingMode::QtTest);
+        pane->findChild<QComboBox*>("streamDirection")->setCurrentIndex(1);QVERIFY(pane->findChild<QPlainTextEdit*>("streamBytes")->toPlainText().contains("OK"));QCOMPARE(pane->findChild<QLabel*>("streamMetric1")->text(),QString("2"));
+        QModelIndex conflict;for(int row=0;row<events->model()->rowCount();++row)if(events->model()->index(row,2).data().toString()=="数据冲突")conflict=events->model()->index(row,5);
+        QVERIFY(conflict.isValid());QCOMPARE(conflict.data().toULongLong(),qulonglong(6));emit events->doubleClicked(conflict);QTRY_VERIFY(!window.findChild<TcpDialog*>());QVERIFY(waitForDetails(window));QCOMPARE(window.findChild<QLabel*>("detailPacketId")->text(),QString("#6"));
+    }
+    void streamGapsAndPaging() {
+        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();std::vector<Packet> packets;
+        for(auto raw:{fixtures::tcp(2,99),fixtures::tcp(24,100,0,false,50000,false,std::vector<std::uint8_t>(2300,'a')),fixtures::tcp(24,2400,0,false,50000,false,std::vector<std::uint8_t>(2300,'b')),fixtures::tcp(24,4800,0,false,50000,false,{'z'})})packets.push_back(decodeSummary(std::move(raw)));
+        window.ingestBenchmark(std::move(packets));auto* dialog=startStream(window);auto* pane=dialog->findChild<StreamPane*>();QTRY_VERIFY(pane->ready());
+        auto* ranges=pane->findChild<QTableView*>("streamRanges");QCOMPARE(ranges->model()->rowCount(),4);ranges->setCurrentIndex(ranges->model()->index(1,0));
+        QCOMPARE(pane->findChild<QLabel*>("streamPage")->text(),QString("3 / 5"));QVERIFY(pane->findChild<QPlainTextEdit*>("streamBytes")->toPlainText().contains("62 62"));
+        ranges->setCurrentIndex(ranges->model()->index(2,0));QVERIFY(pane->findChild<QPlainTextEdit*>("streamBytes")->toPlainText().isEmpty());QVERIFY(!pane->findChild<QPushButton*>("streamLocate")->isEnabled());
+        ranges->setCurrentIndex(ranges->model()->index(3,0));QVERIFY(pane->findChild<QPlainTextEdit*>("streamBytes")->toPlainText().contains("7a"));QCOMPARE(pane->findChild<QLabel*>("streamPage")->text(),QString("1 / 1"));
+    }
+    void streamLatestSnapshotAndEviction() {
+        auto gate=std::make_shared<Gate>();auto calls=std::make_shared<std::atomic<int>>(0);auto options=testOptions();options.streamDecoder=[gate,calls](const TcpStreamRequest& request,std::stop_token stop){if(++*calls==1)gate->wait();return reassembleTcp(request,stop);};
+        MainWindow window(nullptr,options);ReleaseGate release{gate};QVERIFY(waitForInterfaces(window));window.show();ingestStream(window);auto first=std::weak_ptr<const Packet>(window.packetModel()->packetAt(0));
+        std::vector<Packet> second={decodeSummary(fixtures::tcp(24,1,1,false,51000,false,{'x'}))};window.ingestBenchmark(std::move(second));auto* dialog=startStream(window);auto* pane=dialog->findChild<StreamPane*>();QTRY_VERIFY(gate->entered.load());
+        dialog->selectConversation(2);pane->start();dialog->selectConversation(1);pane->start();
+        std::vector<Packet> more;for(int i=0;i<10001;++i)more.push_back(decodeSummary(fixtures::icmp()));window.ingestBenchmark(std::move(more));QVERIFY(!first.expired());
+        gate->release();QTRY_VERIFY(pane->ready());QCOMPARE(calls->load(),2);QTRY_VERIFY(first.expired());QVERIFY(pane->findChild<QPlainTextEdit*>("streamBytes")->toPlainText().contains("HELLO WORLD !"));
+    }
+    void streamExitWaitsAndEscapeCancels() {
+        for(bool mainExit:{false,true}) {
+            auto gate=std::make_shared<Gate>();auto cancelled=std::make_shared<std::atomic<bool>>(false);auto options=testOptions();options.streamDecoder=[gate,cancelled](const TcpStreamRequest& request,std::stop_token stop){std::stop_callback notify(stop,[cancelled]{*cancelled=true;});gate->wait();return reassembleTcp(request,stop);};
+            MainWindow window(nullptr,options);ReleaseGate release{gate};QVERIFY(waitForInterfaces(window));window.show();ingestStream(window);QPointer<TcpDialog> dialog=startStream(window);QTRY_VERIFY(gate->entered.load());
+            int beats=0;QTimer timer;timer.setTimerType(Qt::PreciseTimer);connect(&timer,&QTimer::timeout,this,[&]{++beats;});timer.start(5);QTRY_VERIFY_WITH_TIMEOUT(beats>=5,250);
+            if(mainExit)QVERIFY(!window.close());else QTest::keyClick(dialog,Qt::Key_Escape);QVERIFY(window.isVisible());QVERIFY(dialog);QVERIFY(cancelled->load());
+            gate->release();QTRY_VERIFY(!dialog);if(mainExit)QTRY_VERIFY(!window.isVisible());else QVERIFY(window.isVisible());
+        }
+    }
+    void streamFailureAndRetry() {
+        auto calls=std::make_shared<std::atomic<int>>(0);auto options=testOptions();options.streamDecoder=[calls](const TcpStreamRequest& request,std::stop_token stop){if(++*calls==1)throw std::runtime_error("test failure");return reassembleTcp(request,stop);};
+        MainWindow window(nullptr,options);QVERIFY(waitForInterfaces(window));window.show();ingestStream(window);auto* dialog=startStream(window);auto* pane=dialog->findChild<StreamPane*>();
+        QTRY_COMPARE(pane->findChild<QLabel*>("streamPhase")->text(),QString("test failure"));QVERIFY(window.isVisible());pane->start();QTRY_VERIFY(pane->ready());pane->cancel();QVERIFY(!pane->ready());QCOMPARE(pane->findChild<QLabel*>("streamPhase")->text(),QString("已取消"));
+    }
+    void streamSelectionEvictionAndLayouts() {
+        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();ingestStream(window);auto* dialog=startStream(window);auto* pane=dialog->findChild<StreamPane*>();QTRY_VERIFY(pane->ready());
+        for(bool dark:{false,true})for(const auto size:{QSize(1024,640),QSize(1440,800)}) {
+            window.setDarkTheme(dark);dialog->resize(size);QTest::qWait(10);QVERIFY(dialog->findChild<QPushButton*>("streamNext")->isVisible());
+            const auto screenshots=qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");if(!screenshots.isEmpty()){QDir().mkpath(screenshots);QVERIFY(dialog->grab().save(screenshots+QString("/stream-%1-%2.png").arg(dark?"dark":"light").arg(size.width())));}
+        }
+        std::vector<Packet> more;for(unsigned i=0;i<1025;++i)more.push_back(decodeSummary(fixtures::tcp(2,100,0,false,static_cast<std::uint16_t>(1000+i))));window.ingestBenchmark(std::move(more));
+        auto* table=dialog->findChild<QTableView*>("tcpTable");QTRY_VERIFY_WITH_TIMEOUT(!table->currentIndex().isValid(),2500);QTest::qWait(1100);QVERIFY(!table->currentIndex().isValid());QVERIFY(!pane->ready());
+    }
     void tcpSummariesAndFilter() {
         MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();
         std::vector<Packet> packets;for(auto raw:fixtures::tcpConversationSamples())packets.push_back(decodeSummary(std::move(raw)));window.ingestBenchmark(std::move(packets));

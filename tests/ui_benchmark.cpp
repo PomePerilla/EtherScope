@@ -1,4 +1,6 @@
 #include "ui/main_window.h"
+#include "ui/tcp_dialog.h"
+#include "ui/stream_pane.h"
 #include "fixtures.h"
 #include "core/pcap_file.h"
 #include "version.h"
@@ -72,8 +74,11 @@ int main(int argc,char** argv) {
     auto raws=fixtures::samples();const auto ipv6=fixtures::ipv6Samples();raws.insert(raws.end(),ipv6.begin(),ipv6.end());
     const auto analysis=fixtures::analysisSamples();raws.insert(raws.end(),analysis.begin(),analysis.end());
     if(args.contains("--tcp"))raws=fixtures::tcpConversationSamples();
+    const bool streamLoad=args.contains("--stream-load");
+    if(streamLoad)raws={fixtures::tcp(24,100,0,false,50000,false,std::vector<std::uint8_t>(1024,'x'))};
     for(auto& raw:raws) {raw.bytes.resize(std::max<std::size_t>(64,raw.bytes.size()),0);raw.originalLength=static_cast<std::uint32_t>(raw.bytes.size());}
     const auto target=std::uint64_t(seconds)*pps;
+    auto rawAt=[&](std::uint64_t index){auto raw=raws[index%raws.size()];raw.timestampNs=timestampBase+static_cast<std::int64_t>(index)*1000000;if(streamLoad){const auto sequence=static_cast<std::uint32_t>(index*1024+100);for(unsigned i=0;i<4;++i)raw.bytes[38+i]=static_cast<std::uint8_t>(sequence>>(24-8*i));}return raw;};
     MainWindowOptions options;QTemporaryDir temporary;options.settingsFile=temporary.filePath("settings.ini");
     options.capture.interfaces=[](QString& error){error.clear();return std::vector<CaptureInterface>{{"benchmark","性能测试","192.0.2.1"}};};
     options.capture.run=[&](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions&){
@@ -83,7 +88,7 @@ int main(int argc,char** argv) {
             const auto elapsed=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-start).count();
             const auto due=std::min(target,std::uint64_t(elapsed)*pps/1000000);
             while(sent<due && !stop.stop_requested()) {
-                auto raw=raws[sent%raws.size()];raw.timestampNs=timestampBase+static_cast<std::int64_t>(sent)*1000000;
+                auto raw=rawAt(sent);
                 sink(std::move(raw));++sent;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -96,7 +101,9 @@ int main(int argc,char** argv) {
     for(auto id=target;id>0 && expectedRetained<10000;--id){const auto index=static_cast<std::size_t>((id-1)%raws.size()),rawBytes=raws[index].bytes.size(),cost=footprints[index];
         if(expectedRaw+rawBytes>64*1024*1024 || expectedBytes+cost>64*1024*1024)break;++expectedRetained;expectedRaw+=rawBytes;expectedBytes+=cost;}
     MainWindow window(nullptr,options);window.resize(1280,820);window.show();
-    if(args.contains("--tcp-panel"))window.findChild<QAction*>("tcpConversationsAction")->trigger();
+    if(args.contains("--tcp-panel") || streamLoad)window.findChild<QAction*>("tcpConversationsAction")->trigger();
+    StreamPane* streamPane=nullptr;int streamRequests=0,streamCompleted=0;bool streamValid=true;qint64 nextStream=2000;
+    if(streamLoad){streamPane=window.findChild<StreamPane*>();QObject::connect(streamPane,&StreamPane::analysisFinished,&app,[&](quint64,bool success){streamValid=streamValid && success;++streamCompleted;});}
     QElapsedTimer clock,stopClock;clock.start();const auto cpuStart=cpuSeconds();
     std::vector<qint64> delays,appendTimes,filterTimes;QJsonArray memorySamples;QJsonArray exports;QJsonArray stalls;
     QTimer poll;poll.setTimerType(Qt::PreciseTimer);qint64 lastBeat=0,lastMemory=-1000,nextProgress=60000;
@@ -115,7 +122,7 @@ int main(int argc,char** argv) {
             while(auto raw=reader.next()) {
                 const auto sequence=(raw->timestampNs-timestampBase)/1000000;
                 exact=exact && sequence>=0 && (previous<0 || sequence==previous+1) && raw->timestampNs==timestampBase+sequence*1000000
-                    && raw->bytes==raws[static_cast<std::size_t>(sequence)%raws.size()].bytes;
+                    && raw->bytes==rawAt(static_cast<std::uint64_t>(sequence)).bytes;
                 if(records==0)exact=exact && raw->timestampNs==expected.first;previous=sequence;++records;
             }
         } catch(const std::exception&) {exact=false;}
@@ -141,6 +148,9 @@ int main(int argc,char** argv) {
             } else ++it;
         }
         const auto c=window.captureCounters();
+        if(streamLoad && now>=nextStream && now<seconds*1000 && c.enqueued>0 && !window.tcpConversations().items().empty()) {
+            auto* dialog=window.findChild<TcpDialog*>();dialog->selectConversation(window.tcpConversations().items().back().id);dialog->findChild<QPushButton*>("tcpStreamButton")->click();++streamRequests;nextStream=now+2000;
+        }
         if(now>=nextProgress) {
             std::cout<<"elapsed_s="<<now/1000<<" received="<<c.received<<" queue_dropped="<<c.queueDropped
                      <<" heartbeat_max_ms="<<(delays.empty()?0:*std::max_element(delays.begin(),delays.end()))<<std::endl;
@@ -157,7 +167,7 @@ int main(int argc,char** argv) {
             else saveValid=false;
         }
         if(!stopping && now>=seconds*1000 && c.enqueued>=target) {stopping=true;stopClock.start();window.stopCapture();}
-        if(stopping && !window.busy() && !window.saving() && validations.empty()) {
+        if(stopping && !window.busy() && !window.saving() && validations.empty() && (!streamPane || !streamPane->busy())) {
             poll.stop();const auto stopMs=stopClock.elapsed();const auto final=window.captureCounters();
             double warm=0,tail=0;int wn=0,tn=0;std::uint64_t peak=0;
             const auto warmBegin=std::min(60000,seconds*250),warmEnd=std::min(120000,seconds*500);
@@ -180,9 +190,10 @@ int main(int argc,char** argv) {
             const bool counts=final.received==target && window.sessionStats().received+final.queueDropped==final.received && final.queuedPackets==0;
             const bool passed=counts && final.queueDropped==0 && (seconds>=7200 || (p99<=10 && maximum<=250 && appendP99<=8000 && filterMax<=100000))
                 && stopMs<=1000 && peak<=256*1024*1024 && (seconds>=7200?(!warmMemory.empty() && !tailMemory.empty() && medianGrowth<=8*1024*1024):growth<=16*1024*1024) && window.packetModel()->rowCount()==static_cast<int>(expectedRetained)
-                && window.retainedRawBytes()==expectedRaw && window.retainedEstimatedBytes()<=64*1024*1024 && resets==0 && saveRequests==2 && exports.size()==2 && saveValid;
+                && window.retainedRawBytes()==expectedRaw && window.retainedEstimatedBytes()<=64*1024*1024 && resets==0 && saveRequests==2 && exports.size()==2 && saveValid && streamValid && (!streamLoad || streamCompleted==streamRequests);
             QJsonObject report{{"kind","synthetic_source_capture_decode_queue_store_ui"},{"version",ETHERSCOPE_VERSION},
                 {"tcp_fixture",args.contains("--tcp")},{"tcp_panel",args.contains("--tcp-panel")},
+                {"stream_load",streamLoad},{"stream_requests",streamRequests},{"stream_completed",streamCompleted},
                 {"tcp_connections",double(window.tcpConversations().items().size())},{"tcp_estimated_bytes",double(window.tcpConversations().estimatedBytes())},
                 {"tcp_overwritten",double(window.tcpConversations().overwritten())},{"tcp_skipped",double(window.tcpConversations().skipped())},
                 {"utc",QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},{"requested_seconds",seconds},{"target_pps",pps},

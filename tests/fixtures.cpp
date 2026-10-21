@@ -23,6 +23,14 @@ std::vector<RawPacket> tcpConversationSamples() {
     for(std::size_t i=0;i<result.size();++i)result[i].timestampNs=1700000000000000000LL+static_cast<std::int64_t>(i)*10000000;
     return result;
 }
+std::vector<RawPacket> tcpStreamSamples() {
+    auto segment=[](std::uint32_t sequence,const std::string& text,bool reverse=false){return tcp(24,sequence,reverse?100u:500u,reverse,50000,false,{text.begin(),text.end()});};
+    std::vector<RawPacket> result={tcp(2,99),tcp(18,499,100,true),tcp(16,100,500),
+        segment(100,"HELLO "),segment(112,"!"),segment(106,"WORLD "),segment(106,"WORLD "),segment(110,"D !"),segment(108,"XX"),segment(500,"OK",true),
+        tcp(17,113,502),tcp(16,502,114,true),tcp(17,502,114,true),tcp(16,114,503)};
+    for(std::size_t i=0;i<result.size();++i)result[i].timestampNs=1700000000000000000LL+static_cast<std::int64_t>(i)*1000000;
+    return result;
+}
 namespace {
 void put16(std::vector<std::uint8_t>& b,std::size_t o,std::uint16_t n) {b[o]=std::uint8_t(n>>8);b[o+1]=std::uint8_t(n);}
 std::uint16_t checksum(const std::vector<std::uint8_t>& b,std::size_t start,std::size_t length) {

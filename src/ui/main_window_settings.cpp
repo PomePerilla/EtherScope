@@ -23,7 +23,7 @@ void MainWindow::restoreSettings() {
         resize(std::min(width(),bounds.width()),std::min(height(),bounds.height()-32));
         move(std::clamp(x(),bounds.left(),std::max(bounds.left(),bounds.right()-width()+1)),std::clamp(y(),bounds.top(),std::max(bounds.top(),bounds.bottom()-height()+1)));
     }
-    for(auto* splitter:findChildren<QSplitter*>()) splitter->restoreState(settings_->value("ui/"+splitter->objectName()).toByteArray());
+    for(auto* splitter:centralWidget()->findChildren<QSplitter*>()) splitter->restoreState(settings_->value("ui/"+splitter->objectName()).toByteArray());
     table_->horizontalHeader()->restoreState(settings_->value("ui/columns/v2").toByteArray());
     statistics_->setChecked(settings_->value("ui/statistics",false).toBool());chartPanel_->setVisible(statistics_->isChecked());
     addressToggle_->setChecked(settings_->value("ui/addressExpanded",false).toBool());
@@ -46,7 +46,7 @@ void MainWindow::saveSettings() {
     settings_->setValue("ui/dark",dark_);settings_->setValue("ui/geometry",saveGeometry());settings_->setValue("ui/columns/v2",table_->horizontalHeader()->saveState());
     settings_->setValue("ui/statistics",statistics_->isChecked());
     settings_->setValue("ui/addressExpanded",addressToggle_->isChecked());
-    for(auto* splitter:findChildren<QSplitter*>()) settings_->setValue("ui/"+splitter->objectName(),splitter->saveState());
+    for(auto* splitter:centralWidget()->findChildren<QSplitter*>()) settings_->setValue("ui/"+splitter->objectName(),splitter->saveState());
     const auto device=devices_->currentData().toString();settings_->setValue("capture/device",device.isEmpty()?preferredDevice_:device);
     settings_->setValue("capture/bpf",successfulBpf_);
     const auto& f=model_->filter();settings_->setValue("filter/mac",f.mac?q(formatMac(*f.mac)):QString{});settings_->setValue("filter/ip",f.ip?q(formatIp(*f.ip)):(f.ipv6?q(formatIpv6(*f.ipv6)):QString{}));

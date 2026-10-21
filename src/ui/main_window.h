@@ -3,6 +3,7 @@
 #include "capture/export.h"
 #include "capture/preparation.h"
 #include "capture/details.h"
+#include "capture/stream.h"
 #include "ui/packet_model.h"
 #include "ui/traffic_chart.h"
 #include <QMainWindow>
@@ -39,6 +40,7 @@ struct MainWindowOptions {
     FilePreparer prepareFile;
     std::function<void(const PacketSnapshot&)> snapshotObserver;
     DetailDecoder detailDecoder;
+    StreamDecoder streamDecoder;
 };
 class MainWindow final:public QMainWindow {
     Q_OBJECT
@@ -91,6 +93,7 @@ private:
     QLabel* bpfMarker_{};
     QPointer<QDialog> bpfDialog_;
     QPointer<TcpDialog> tcpDialog_;
+    StreamDecoder streamDecoder_;
     QPointer<QLineEdit> bpfInput_;
     QPointer<QPushButton> bpfApply_;
     QString bpfDraft_,successfulBpf_,sessionBpf_,bpfError_;

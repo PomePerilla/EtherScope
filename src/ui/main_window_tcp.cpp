@@ -11,7 +11,8 @@ void MainWindow::refreshTcpConversations() {if(tcpDialog_)tcpDialog_->refresh(cu
 void MainWindow::showTcpConversations() {
     if(closing_)return;
     if(!tcpDialog_) {
-        tcpDialog_=new TcpDialog(this);
+        tcpDialog_=new TcpDialog(this,streamDecoder_);
+        connect(tcpDialog_,&TcpDialog::workChanged,this,&MainWindow::tryClose);
         connect(tcpDialog_,&TcpDialog::filterRequested,this,[this](quint64 id,quint64 generation,const SessionStore* store){
             if(closing_ || store!=&currentStore() || generation!=store->tcp().generation() || !store->tcp().find(id))return;
             auto filter=model_->filter();filter.protocol="TCP";filter.icmpType.reset();filter.tcpConversationId=id;

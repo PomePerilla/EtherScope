@@ -49,6 +49,7 @@ static void initDesktopResources() {Q_INIT_RESOURCE(desktop_icons);}
 namespace etherscope {
 MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(parent),preparation_(this,options.capture.interfaces,std::move(options.prepareFile)),engine_(this,std::move(options.capture)),exporter_(this,std::move(options.exportWriter)),details_(this,std::move(options.detailDecoder)),snapshotObserver_(std::move(options.snapshotObserver)) {
     initDesktopResources();
+    streamDecoder_=std::move(options.streamDecoder);
     const auto config=options.settingsFile.isEmpty()?QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)+"/settings.ini":options.settingsFile;
     QDir().mkpath(QFileInfo(config).absolutePath());settings_=std::make_unique<QSettings>(config,QSettings::IniFormat);
     buildUi();
@@ -335,12 +336,12 @@ void MainWindow::updateButtons() {
 void MainWindow::resetRates() {chart_->reset();chart_->setProtocols(currentStore().stats().protocols);lastCount_=counters_[view_].received;lastBytes_=counters_[view_].bytes;rateClock_.restart();}
 void MainWindow::reportError(const QString& message) {actionError_=message;updateStatus();}
 void MainWindow::closeEvent(QCloseEvent* event) {
-    if(!busy() && !preparation_.busy() && !details_.busy() && !saving_){if(tcpDialog_)tcpDialog_->close();saveSettings();event->accept();return;}
-    event->ignore();closing_=true;detailTimer_.stop();fieldItems_.clear();detailsPending_=false;details_.cancel();pendingAction_={};preparation_.requestStop();stopCapture();updateStatus();updateButtons();tryClose();
+    if(!busy() && !preparation_.busy() && !details_.busy() && !saving_ && (!tcpDialog_ || !tcpDialog_->streamBusy())){if(tcpDialog_)tcpDialog_->close();saveSettings();event->accept();return;}
+    event->ignore();closing_=true;if(tcpDialog_)tcpDialog_->close();detailTimer_.stop();fieldItems_.clear();detailsPending_=false;details_.cancel();pendingAction_={};preparation_.requestStop();stopCapture();updateStatus();updateButtons();tryClose();
 }
 void MainWindow::tryClose() {
-    if(!closing_ || busy() || preparation_.busy() || details_.busy() || saving_ || closeScheduled_)return;
-    closeScheduled_=true;QTimer::singleShot(0,this,[this]{closeScheduled_=false;if(closing_ && !busy() && !preparation_.busy() && !details_.busy() && !saving_)close();});
+    if(!closing_ || busy() || preparation_.busy() || details_.busy() || saving_ || (tcpDialog_ && tcpDialog_->streamBusy()) || closeScheduled_)return;
+    closeScheduled_=true;QTimer::singleShot(0,this,[this]{closeScheduled_=false;if(closing_ && !busy() && !preparation_.busy() && !details_.busy() && !saving_ && (!tcpDialog_ || !tcpDialog_->streamBusy()))close();});
 }
 bool MainWindow::eventFilter(QObject* watched,QEvent* event) {
     if(event->type()==QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key()==Qt::Key_Escape && addressPanel_->isVisible()) {

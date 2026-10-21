@@ -1,8 +1,10 @@
 #include "ui/tcp_dialog.h"
 #include "ui/helpers.h"
 #include "ui/style.h"
+#include "ui/stream_pane.h"
 #include <QAbstractTableModel>
 #include <QDateTime>
+#include <QCloseEvent>
 #include <QFontDatabase>
 #include <QGridLayout>
 #include <QHeaderView>
@@ -12,6 +14,8 @@
 #include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QTableView>
+#include <QTabWidget>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -80,7 +84,7 @@ public:
 private:
     std::vector<Row> rows_;
 };
-TcpDialog::TcpDialog(QWidget* parent):QDialog(parent) {
+TcpDialog::TcpDialog(QWidget* parent,StreamDecoder decoder):QDialog(parent) {
     setObjectName("tcpDialog");setWindowTitle("TCP 会话");setAttribute(Qt::WA_DeleteOnClose);resize(1200,640);setMinimumSize(720,420);
     auto* layout=new QVBoxLayout(this);layout->setContentsMargins(style::margin,style::margin,style::margin,style::margin);layout->setSpacing(style::gap);
     auto* summary=new QHBoxLayout;summary->setSpacing(12);mode_=new QLabel(this);mode_->setObjectName("tcpMode");summary->addWidget(mode_);
@@ -96,24 +100,30 @@ TcpDialog::TcpDialog(QWidget* parent):QDialog(parent) {
     auto* metrics=new QGridLayout;metrics->setHorizontalSpacing(12);
     const QStringList titles={"SYN 应答 ms","握手 ms","SYN 重复","RST","VLAN","A 载荷字节","B 载荷字节","事件覆盖"};
     for(int i=0;i<8;++i){metrics->addWidget(new QLabel(titles[i],lower),i/4,(i%4)*2);metrics_[i]=new QLabel("-",lower);metrics_[i]->setObjectName("tcpMetric"+QString::number(i));metrics->addWidget(metrics_[i],i/4,(i%4)*2+1);}
-    details->addLayout(metrics);events_=new QTreeWidget(lower);events_->setObjectName("tcpEvents");events_->setHeaderLabels({"包号","时间","方向","事件","SEQ","ACK"});events_->setRootIsDecorated(false);events_->setAlternatingRowColors(true);events_->setSelectionMode(QAbstractItemView::SingleSelection);
-    events_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));events_->setColumnWidth(0,70);events_->setColumnWidth(1,130);events_->setColumnWidth(2,88);events_->setColumnWidth(3,120);details->addWidget(events_,1);splitter->setSizes({340,200});
+    details->addLayout(metrics);tabs_=new QTabWidget(lower);tabs_->setObjectName("tcpAnalysisTabs");details->addWidget(tabs_,1);events_=new QTreeWidget(tabs_);events_->setObjectName("tcpEvents");events_->setHeaderLabels({"包号","时间","方向","事件","SEQ","ACK"});events_->setRootIsDecorated(false);events_->setAlternatingRowColors(true);events_->setSelectionMode(QAbstractItemView::SingleSelection);
+    events_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));events_->setColumnWidth(0,70);events_->setColumnWidth(1,130);events_->setColumnWidth(2,88);events_->setColumnWidth(3,120);tabs_->addTab(events_,"事件");stream_=new StreamPane(tabs_,std::move(decoder));tabs_->addTab(stream_,"流数据");splitter->setSizes({300,260});
     auto* actions=new QHBoxLayout;filter_=new QPushButton("查看报文",this);filter_->setObjectName("tcpFilterButton");locate_=new QPushButton("定位",this);locate_->setObjectName("tcpLocateButton");auto* close=new QPushButton("关闭",this);
     error_=new QLabel(this);error_->setObjectName("tcpError");error_->setProperty("error",true);
-    actions->addWidget(filter_);actions->addWidget(locate_);actions->addWidget(error_,1);actions->addWidget(close);layout->addLayout(actions);
+    streamButton_=new QPushButton("流数据",this);streamButton_->setObjectName("tcpStreamButton");streamButton_->setEnabled(false);
+    actions->addWidget(filter_);actions->addWidget(locate_);actions->addWidget(streamButton_);actions->addWidget(error_,1);actions->addWidget(close);layout->addLayout(actions);
     connect(table_->selectionModel(),&QItemSelectionModel::currentRowChanged,this,[this]{if(!refreshing_)renderSelection();});
     connect(filter_,&QPushButton::clicked,this,[this]{if(store_ && selectedId())emit filterRequested(selectedId(),generation_,store_);});
     connect(locate_,&QPushButton::clicked,this,&TcpDialog::locate);connect(events_,&QTreeWidget::itemDoubleClicked,this,[this]{locate();});
-    connect(events_,&QTreeWidget::currentItemChanged,this,[this]{locate_->setEnabled(events_->currentItem()!=nullptr);});
+    connect(events_,&QTreeWidget::currentItemChanged,this,[this]{locate_->setEnabled(tabs_->currentIndex()==0 && events_->currentItem()!=nullptr);});
+    connect(tabs_,&QTabWidget::currentChanged,this,[this](int index){locate_->setVisible(index==0);locate_->setEnabled(index==0 && events_->currentItem()!=nullptr);});
     connect(close,&QPushButton::clicked,this,&QDialog::close);filter_->setEnabled(false);locate_->setEnabled(false);
+    connect(streamButton_,&QPushButton::clicked,this,[this,splitter]{if(!streamExpanded_){splitter->setSizes({180,380});streamExpanded_=true;}tabs_->setCurrentIndex(1);stream_->start();});
+    connect(stream_,&StreamPane::locateRequested,this,[this](quint64 id){if(store_ && !closing_)emit locateRequested(id,generation_,store_);});
+    connect(stream_,&StreamPane::workChanged,this,[this]{emit workChanged();if(closing_ && !stream_->busy())QTimer::singleShot(0,this,&QWidget::close);});
 }
 std::uint64_t TcpDialog::selectedId() const {return table_->currentIndex().data(Qt::UserRole).toULongLong();}
 void TcpDialog::refresh(const SessionStore& store,const QString& mode) {
     if(store_==&store && generation_==store.tcp().generation() && revision_==store.tcp().revision())return;
     const bool same=store_==&store && generation_==store.tcp().generation();const auto selected=same?selectedId():0;
+    if(!same){selectFirst_=true;stream_->setSelection(nullptr,0);}
     store_=&store;generation_=store.tcp().generation();revision_=store.tcp().revision();mode_->setText(mode);refreshing_=true;
     model_->refresh(store.tcp());table_->clearSelection();table_->setCurrentIndex({});selectConversation(selected);refreshing_=false;
-    if(!selected && table_->model()->rowCount())table_->setCurrentIndex(table_->model()->index(0,0));
+    if(!selected && selectFirst_ && table_->model()->rowCount())table_->setCurrentIndex(table_->model()->index(0,0));
     count_->setText(QString::number(store.tcp().items().size()));overwritten_->setText(QString::number(store.tcp().overwritten()));skipped_->setText(QString::number(store.tcp().skipped()));
     memory_->setText(QString::number(double(store.tcp().estimatedBytes())/1024,'f',1)+" KiB");renderSelection();
 }
@@ -124,6 +134,7 @@ void TcpDialog::selectConversation(std::uint64_t id) {
 void TcpDialog::renderSelection() {
     error_->clear();
     const auto* item=store_?store_->tcp().find(selectedId()):nullptr;const auto selectedEvent=events_->currentItem()?events_->currentItem()->data(0,Qt::UserRole).toULongLong():0;
+    if(item)selectFirst_=false;stream_->setSelection(store_,item?item->id:0);streamButton_->setEnabled(item!=nullptr);
     events_->clear();filter_->setEnabled(item!=nullptr);locate_->setEnabled(false);
     for(auto* metric:metrics_)metric->setText("-");if(!item)return;
     const std::array<QString,8> values={milliseconds(item->synAckNs),milliseconds(item->handshakeNs),QString::number(item->synRepeats),QString::number(item->resets),
@@ -138,4 +149,10 @@ void TcpDialog::renderSelection() {
 }
 void TcpDialog::locate() {if(store_ && events_->currentItem())emit locateRequested(events_->currentItem()->data(0,Qt::UserRole).toULongLong(),generation_,store_);}
 void TcpDialog::showError(const QString& error) {error_->setText(error);}
+bool TcpDialog::streamBusy() const {return stream_->busy();}
+void TcpDialog::reject(){close();}
+void TcpDialog::closeEvent(QCloseEvent* event) {
+    if(stream_->busy()){event->ignore();closing_=true;setEnabled(false);stream_->cancel();return;}
+    event->accept();
+}
 }

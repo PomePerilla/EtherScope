@@ -62,8 +62,17 @@ jobs:
           case "$FUZZ_SECONDS" in *[!0-9]*|'') exit 2;; esac
           test "$FUZZ_SECONDS" -ge 1 && test "$FUZZ_SECONDS" -le 1800
           build/core/make_fuzz_corpus build/corpus
+          build/core/make_fuzz_corpus build/stream-corpus --stream
           mkdir -p build/fuzz-failures
-          build/core/packet_fuzzer build/corpus -max_len=65540 -timeout=5 -rss_limit_mb=512 -max_total_time="$FUZZ_SECONDS" -artifact_prefix=build/fuzz-failures/
+          build/core/packet_fuzzer build/corpus -max_len=65540 -timeout=5 -rss_limit_mb=512 -max_total_time="$FUZZ_SECONDS" -artifact_prefix=build/fuzz-failures/packet- > build/packet-fuzz.log 2>&1 &
+          packet_pid=$!
+          build/core/stream_fuzzer build/stream-corpus -max_len=65540 -timeout=5 -rss_limit_mb=512 -max_total_time="$FUZZ_SECONDS" -artifact_prefix=build/fuzz-failures/stream- > build/stream-fuzz.log 2>&1 &
+          stream_pid=$!
+          failure=0
+          wait "$packet_pid" || failure=1
+          wait "$stream_pid" || failure=1
+          tail -n 15 build/packet-fuzz.log build/stream-fuzz.log
+          exit "$failure"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -71,4 +80,5 @@ jobs:
           path: |
             build/core/tests.xml
             build/fuzz-failures/
+            build/*-fuzz.log
           retention-days: 7
