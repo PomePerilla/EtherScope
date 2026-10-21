@@ -96,6 +96,14 @@ void run(){
                   "Incremental TLS never duplicates handshake or application messages");
             for (const auto &message : incremental.analysis.messages) {
                 check(message.bytes && message.streamOffset.has_value(), "Incremental TLS messages own stable ranges");
+                for (const auto &source : message.sources) {
+                    const auto record = records.at(source.packetId).second;
+                    check(source.rawOffset >= record.rawOffset && source.rawOffset + source.length <= 54 + record.length,
+                          "TLS source ranges stay inside their carrier packet");
+                    const auto logical = source.bufferLength ? source.bufferLength : source.length;
+                    check(source.bufferOffset <= message.bytes->size() && logical <= message.bytes->size() - source.bufferOffset,
+                          "TLS source ranges stay inside their published data source");
+                }
                 for (const auto &field : message.fields)
                     check(field.offset <= message.bytes->size() && field.length <= message.bytes->size() - field.offset,
                           "Incremental TLS field ranges stay inside immutable data");

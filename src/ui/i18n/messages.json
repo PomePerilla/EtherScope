@@ -3183,5 +3183,30 @@
     "关联请求",
     "Request",
     "關聯請求"
+  ],
+  [
+    "应用输入达到上限",
+    "Application input limit reached",
+    "應用輸入達到上限"
+  ],
+  [
+    "应用来源达到上限",
+    "Application source limit reached",
+    "應用來源達到上限"
+  ],
+  [
+    "应用消息范围无效",
+    "Invalid application message range",
+    "應用訊息範圍無效"
+  ],
+  [
+    "应用字段范围无效",
+    "Invalid application field range",
+    "應用欄位範圍無效"
+  ],
+  [
+    "DNS 消息长度无效",
+    "Invalid DNS message length",
+    "DNS 訊息長度無效"
   ]
 ]

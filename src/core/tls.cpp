@@ -245,9 +245,10 @@ struct Decoder {
         if (!old)
             d.handshakeDecrypted = decrypted;
         d.handshakes.insert(d.handshakes.end(), payload.begin(), payload.end());
+        const auto logicalStart = sources.empty() ? 0 : sources.front().bufferOffset;
         for (auto source : sources) {
-            source.bufferOffset = old;
-            source.bufferLength = payload.size();
+            source.bufferOffset = decrypted ? old : old + source.bufferOffset - logicalStart;
+            source.bufferLength = decrypted ? payload.size() : source.length;
             d.handshakeSources.push_back(source);
         }
         while (d.handshakes.size() - d.handshakeCursor >= 4) {
@@ -264,7 +265,7 @@ struct Decoder {
             ApplicationInput source;
             source.bytes = std::make_shared<const Bytes>(d.handshakes);
             source.sources = d.handshakeSources;
-            source.source = DataSource::Decrypted;
+            source.source = decrypted ? DataSource::Decrypted : DataSource::Reassembled;
             ApplicationMessage m;
             m.protocol = "TLS";
             m.summary = "Handshake " + std::to_string(type);
