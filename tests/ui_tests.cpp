@@ -249,7 +249,20 @@ class DesktopTests : public QObject {
             connect(&timer, &QTimer::timeout, [&] { ++beats; });
             timer.start(5);
             QTRY_VERIFY_WITH_TIMEOUT(beats >= 3, 1000);
+            QTRY_VERIFY_WITH_TIMEOUT(!window.busy() && !window.applicationBusy(), 5000);
             gate->release();
+            if (fail) {
+                auto *recording = window.findChild<RecordingService *>();
+                QVERIFY(recording);
+                QElapsedTimer finished;
+                finished.start();
+                while (recording->running() && finished.elapsed() < 5000)
+                    QTest::qSleep(1);
+                QVERIFY(!recording->running());
+                // The failure notification is queued but has not reached the window yet.
+                QVERIFY(!window.close());
+                QVERIFY(window.isVisible());
+            }
             QTRY_VERIFY_WITH_TIMEOUT(!window.recordingBusy() && !window.busy(), 5000);
             if (fail) {
                 QVERIFY(window.recordingStats().failed);

@@ -472,7 +472,8 @@ void MainWindow::configureCaptureFilter() {
     dialog->show();
 }
 void MainWindow::startCapture() {
-    if (discovering() || openingFile_ || devices_->currentData().toString().isEmpty())
+    if (discovering() || openingFile_ || recordingBusy() ||
+        devices_->currentData().toString().isEmpty())
         return;
     const auto device = devices_->currentData().toString();
     const LiveCaptureOptions options{bpfDraft_};
@@ -495,6 +496,8 @@ void MainWindow::beginLive(const QString &device, LiveCaptureOptions options) {
         reportError("Recording could not start");
         return;
     }
+    // Completion remains pending until the GUI has handled success or failure.
+    recordingPending_ = recordingSession_;
     actionError_.clear();
     showMode(0);
     liveStarting_ = true;
@@ -748,7 +751,7 @@ void MainWindow::startSnapshotExport() {
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
-    if (!busy() && !preparation_.busy() && !details_.busy() && !saving_ && !recording_.running() &&
+    if (!busy() && !preparation_.busy() && !details_.busy() && !saving_ && !recordingBusy() &&
         !applications_[0]->busy() && !applications_[1]->busy() &&
         (!tcpDialog_ || !tcpDialog_->streamBusy())) {
         if (tcpDialog_)
@@ -780,7 +783,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 }
 void MainWindow::tryClose() {
     if (!closing_ || busy() || preparation_.busy() || details_.busy() || saving_ ||
-        recording_.running() || applications_[0]->busy() || applications_[1]->busy() ||
+        recordingBusy() || applications_[0]->busy() || applications_[1]->busy() ||
         (tcpDialog_ && tcpDialog_->streamBusy()) || closeScheduled_)
         return;
     closeScheduled_ = true;

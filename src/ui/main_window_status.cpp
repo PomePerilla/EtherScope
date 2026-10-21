@@ -75,13 +75,13 @@ void MainWindow::updateStatus() {
     modes_->setTabToolTip(1, filePath_);
 }
 void MainWindow::updateButtons() {
-    recordingAction_->setEnabled(!busy() && !recording_.running() && !closing_);
+    recordingAction_->setEnabled(!busy() && !recordingBusy() && !closing_);
     recordingSettingsAction_->setEnabled(recordingAction_->isEnabled());
     if (bpfInput_)
         bpfInput_->setReadOnly(busy() || closing_);
     if (bpfApply_)
         bpfApply_->setEnabled(!busy() && !closing_);
-    start_->setEnabled(!busy() && !recording_.running() && !discovering() && !closing_ &&
+    start_->setEnabled(!busy() && !recordingBusy() && !discovering() && !closing_ &&
                        devices_->currentIndex() >= 0);
     stop_->setEnabled(!closing_ && (preparingFile_ || state_ == CaptureState::Starting ||
                                     state_ == CaptureState::Running));

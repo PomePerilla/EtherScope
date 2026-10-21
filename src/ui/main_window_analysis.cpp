@@ -50,6 +50,7 @@ void MainWindow::initializeAnalysis(const MainWindowOptions &options) {
         [this](quint64 request, bool success, const QString &error) {
             if (request != recording_.generation())
                 return;
+            recordingPending_ = false;
             if (!success) {
                 closing_ = false;
                 reportError(error);
@@ -238,7 +239,7 @@ void MainWindow::appendDnsFields() {
     selectedDetails_ = std::move(details);
 }
 void MainWindow::configureRecording() {
-    if (recording_.running() || busy())
+    if (recordingBusy() || busy())
         return;
     auto *dialog = new QDialog(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);

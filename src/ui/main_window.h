@@ -109,7 +109,7 @@ class MainWindow final : public QMainWindow {
         return recording_.stats();
     }
     bool recordingBusy() const {
-        return recording_.running();
+        return recordingPending_ || recording_.running();
     }
   signals:
     void saveFinished(bool success, const QString &path, quint64 count, const QString &error);
@@ -145,6 +145,7 @@ class MainWindow final : public QMainWindow {
     FilterChip *expressionChip_{};
     QString keyDirectory_;
     std::atomic<bool> recordingSession_{};
+    bool recordingPending_{};
     std::unique_ptr<QSettings> settings_;
     PacketModel *model_{};
     QComboBox *devices_{}, *macDirection_{}, *ipDirection_{}, *protocol_{}, *icmpType_{};
