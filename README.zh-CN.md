@@ -7,11 +7,11 @@ Windows x64 网络协议分析器。
 - Ethernet、VLAN、IPv4、IPv6、ICMP、ICMPv6、ARP、TCP、UDP。
 - BPF 捕获过滤、地址与协议显示过滤、PCAP 和 PCAPNG 文件。
 - 数据包列表、字段与原始字节联动，后台导出。
-- TCP 会话、握手、流重组与关联报文定位。
+- TCP 会话、握手、流重组与应用层增量分析。
 - DNS、HTTP/1.x、HTTP/2、TLS 元数据与密钥日志解密。
 - PCAPNG 滚动录制与显示表达式。
 - English、简体中文、繁體中文。
-- TCP 应用层增量分析。
+- 网卡与回环抓包。
 
 ## 下载
 

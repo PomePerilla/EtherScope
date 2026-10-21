@@ -7,11 +7,11 @@ Windows x64 network protocol analyzer.
 - Ethernet, VLAN, IPv4, IPv6, ICMP, ICMPv6, ARP, TCP and UDP.
 - BPF capture filters, address and protocol display filters, PCAP and PCAPNG files.
 - Linked packet list, fields and raw bytes, asynchronous export.
-- TCP conversations, handshakes, stream reassembly and packet-linked markers.
+- TCP conversations, handshakes, reassembly and incremental application analysis.
 - DNS, HTTP/1.x, HTTP/2, TLS metadata and key-log decryption.
 - Rolling PCAPNG recording and typed display expressions.
 - English, Simplified Chinese and Traditional Chinese.
-- Incremental TCP application analysis.
+- Network and loopback capture.
 
 ## Download
 

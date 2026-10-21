@@ -7,11 +7,11 @@ Windows x64 網路協定分析器。
 - Ethernet、VLAN、IPv4、IPv6、ICMP、ICMPv6、ARP、TCP、UDP。
 - BPF 擷取篩選、位址與協定顯示篩選、PCAP 和 PCAPNG 檔案。
 - 封包清單、欄位與原始位元組連動，背景匯出。
-- TCP 會話、交握、串流重組與關聯封包定位。
+- TCP 會話、交握、串流重組與應用層增量分析。
 - DNS、HTTP/1.x、HTTP/2、TLS 中繼資料與金鑰記錄解密。
 - PCAPNG 輪替錄製與顯示運算式。
 - English、简体中文、繁體中文。
-- TCP 應用層增量分析。
+- 網卡與回環擷取。
 
 ## 下載
 
