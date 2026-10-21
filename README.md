@@ -1,23 +1,25 @@
-# EtherScope v1.9.0
+# EtherScope v1.10.0
 
 English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
 Windows x64 network protocol analyzer.
 
 - Ethernet, VLAN, IPv4, IPv6, ICMP, ICMPv6, ARP, TCP and UDP.
-- BPF capture filters, address and protocol display filters, PCAP files.
+- BPF capture filters, address and protocol display filters, PCAP and PCAPNG files.
 - Linked packet list, fields and raw bytes, asynchronous export.
 - TCP conversations, handshakes, stream reassembly and packet-linked markers.
+- DNS, HTTP/1.x, HTTP/2, TLS metadata and key-log decryption.
+- Rolling PCAPNG recording and typed display expressions.
 - English, Simplified Chinese and Traditional Chinese.
 
 ## Download
 
-[EtherScope v1.9.0](https://github.com/PomePerilla/EtherScope/releases/tag/v1.9.0)
+[EtherScope v1.10.0](https://github.com/PomePerilla/EtherScope/releases/tag/v1.10.0)
 
 | File | Use |
 |---|---|
-| `EtherScope-1.9.0-windows-x64.zip` | Install and run |
-| `EtherScope-1.9.0-sourcecode.zip` | Build from source |
+| `EtherScope-1.10.0-windows-x64.zip` | Install and run |
+| `EtherScope-1.10.0-sourcecode.zip` | Build from source |
 
 1. Install [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe).
 2. Extract the program package and run the installer.
@@ -30,12 +32,16 @@ Windows x64 network protocol analyzer.
 | Language | More > Language |
 | Capture filter | More > Capture filter |
 | TCP analysis | More > TCP conversations > Stream data |
+| Application messages | More > Application analysis |
+| TLS keys | More > TLS key log |
+| Recording | More > Recording settings, Record to disk |
+| Display expression | More > Display expression |
 | Open / Save | Ctrl+O / Ctrl+S |
 | Apply addresses | Ctrl+Enter |
 
 ## Build
 
-C++20, MSVC 2022 x64, Qt 6.8.3, CMake 3.24+, Npcap SDK 1.16.
+C++20, MSVC 2022 x64, Qt 6.8.3, CMake 3.24+, Npcap SDK 1.16. OpenSSL 3.5.9 and nghttp2 1.70.0 are built by the script.
 
 ```powershell
 .\scripts\build.ps1 -Clean -Test -QtRoot 'C:\Qt\6.8.3\msvc2022_64' -NpcapSdkRoot 'C:\SDK\npcap-sdk-1.16'

@@ -338,7 +338,7 @@ void MainWindow::updateStatus() {
     for(qsizetype i=0;i<values.size();++i)if(diagnosticValues_[i]->text()!=values[i])diagnosticValues_[i]->setText(values[i]);
     capturedLabel_->setText(QString::number(c.received));displayedLabel_->setText(QString::number(model_->rowCount()));
     const auto discarded=c.queueDropped+c.driverDropped.value_or(0);droppedLabel_->setText(QString::number(discarded));style::setFlag(droppedLabel_,"warning",discarded>0);
-    const auto recording=recording_.stats();recordingLabel_->setVisible(recordingSession_);recordingLabel_->setText(recording.failed?i18n::text("Recording failed"):(recording_.running()?i18n::text("Recording"):i18n::text("Recorded")));recordingLabel_->setToolTip(QString("%1 %2\n%3 %4\n%5 %6\n%7").arg(i18n::text("Written")).arg(recording.written).arg(i18n::text("Queued")).arg(recording.queued).arg(i18n::text("Unwritten")).arg(recording.unwritten).arg(recording.error));
+    const auto recording=recording_.stats();recordingLabel_->setVisible(recordingSession_);recordingLabel_->setText(recording.failed?i18n::text("Recording failed"):(recording_.running()?i18n::text("Recording"):i18n::text("Recorded")));recordingLabel_->setToolTip(QString("%1 %2\n%3 %4\n%5 %6\n%7").arg(i18n::text("Written")).arg(recording.written).arg(i18n::text("Queued")).arg(recording.queued).arg(i18n::text("Unwritten")).arg(recording.unwritten).arg(i18n::errorText(recording.error)));
     style::setFlag(diagnostics_,"warning",discarded>0);setWindowTitle("EtherScope");modes_->setTabToolTip(1,filePath_);
 
 }

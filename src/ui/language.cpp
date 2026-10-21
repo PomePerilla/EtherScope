@@ -37,7 +37,7 @@ const QHash<QString,Message>& messages() {
     }();return catalog;
 }
 bool han(QChar ch){return ch.unicode()>=0x4e00 && ch.unicode()<=0x9fff;}
-bool translatable(const QString& source){for(const auto ch:source)if(han(ch))return true;return false;}
+bool translatable(const QString& source){if(messages().contains(source))return true;for(const auto ch:source)if(han(ch))return true;return false;}
 class DialogTranslator final:public QTranslator {
 public:
     using QTranslator::QTranslator;

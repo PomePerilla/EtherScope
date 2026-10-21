@@ -16,6 +16,17 @@ std::vector<TcpConversation> connections(const SessionStore& store){return {stor
 class ApplicationServiceTests:public QObject {
     Q_OBJECT
 private slots:
+    void rejectedBatchStillReleasesEvictedPackets(){
+        ApplicationAnalysisService service;SessionStore store;traffic(store);std::weak_ptr<const Packet> first=store.packets().front();
+        service.submit({store.packets().begin(),store.packets().end()},connections(store),1);QTRY_VERIFY_WITH_TIMEOUT(!service.busy(),5000);store.clear();QVERIFY(!first.expired());
+        auto large=std::make_shared<Packet>(decodeSummary(fixtures::icmp()));large->id=5;large->estimatedBytes=applicationQueueBudget+1;
+        service.submit({large},{},5);QTRY_VERIFY_WITH_TIMEOUT(first.expired(),5000);
+    }
+    void queuePressurePublishesLimitedResult(){
+        ApplicationAnalysisService service;auto packet=std::make_shared<Packet>(decodeSummary(fixtures::icmp()));packet->id=1;packet->estimatedBytes=applicationQueueBudget+1;
+        QSignalSpy changed(&service,&ApplicationAnalysisService::changed);service.submit({packet},{});QVERIFY(!changed.empty());
+        const auto results=service.takeResults();QCOMPARE(results.size(),1u);QCOMPARE(results.front().facts.at(1).status,AnalysisStatus::Limited);QVERIFY(!service.busy());
+    }
     void indexesOnlyCarrierPackets(){
         SessionStore store;traffic(store);ApplicationAnalysisService service;QSignalSpy changed(&service,&ApplicationAnalysisService::changed);service.submit({store.packets().begin(),store.packets().end()},connections(store));QTRY_VERIFY_WITH_TIMEOUT(changed.size()>0 && !service.busy(),5000);
         auto results=service.takeResults();QCOMPARE(results.size(),1u);QCOMPARE(results[0].generation,service.generation());ApplicationIndex index;index.apply(results[0].conversation,results[0].result,std::move(results[0].facts));

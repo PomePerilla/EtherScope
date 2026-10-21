@@ -1,23 +1,25 @@
-# EtherScope v1.9.0
+# EtherScope v1.10.0
 
 [English](README.md) | 简体中文 | [繁體中文](README.zh-TW.md)
 
 Windows x64 网络协议分析器。
 
 - Ethernet、VLAN、IPv4、IPv6、ICMP、ICMPv6、ARP、TCP、UDP。
-- BPF 捕获过滤、地址与协议显示过滤、PCAP 文件。
+- BPF 捕获过滤、地址与协议显示过滤、PCAP 和 PCAPNG 文件。
 - 数据包列表、字段与原始字节联动，后台导出。
 - TCP 会话、握手、流重组与关联报文定位。
+- DNS、HTTP/1.x、HTTP/2、TLS 元数据与密钥日志解密。
+- PCAPNG 滚动录制与显示表达式。
 - English、简体中文、繁體中文。
 
 ## 下载
 
-[EtherScope v1.9.0](https://github.com/PomePerilla/EtherScope/releases/tag/v1.9.0)
+[EtherScope v1.10.0](https://github.com/PomePerilla/EtherScope/releases/tag/v1.10.0)
 
 | 文件 | 用途 |
 |---|---|
-| `EtherScope-1.9.0-windows-x64.zip` | 安装后使用 |
-| `EtherScope-1.9.0-sourcecode.zip` | 编译后使用 |
+| `EtherScope-1.10.0-windows-x64.zip` | 安装后使用 |
+| `EtherScope-1.10.0-sourcecode.zip` | 编译后使用 |
 
 1. 安装 [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe)。
 2. 解压程序包，运行安装器。
@@ -30,12 +32,16 @@ Windows x64 网络协议分析器。
 | 语言 | 更多 > 语言 |
 | 捕获过滤 | 更多 > 捕获过滤 |
 | TCP 分析 | 更多 > TCP 会话 > 流数据 |
+| 应用层消息 | 更多 > 应用分析 |
+| TLS 密钥 | 更多 > TLS 密钥日志 |
+| 录制 | 更多 > 录制设置，录制到磁盘 |
+| 显示表达式 | 更多 > 显示表达式 |
 | 打开 / 保存 | Ctrl+O / Ctrl+S |
 | 应用地址条件 | Ctrl+Enter |
 
 ## 编译
 
-C++20, MSVC 2022 x64, Qt 6.8.3, CMake 3.24+, Npcap SDK 1.16.
+C++20, MSVC 2022 x64, Qt 6.8.3, CMake 3.24+, Npcap SDK 1.16。脚本构建 OpenSSL 3.5.9 和 nghttp2 1.70.0。
 
 ```powershell
 .\scripts\build.ps1 -Clean -Test -QtRoot 'C:\Qt\6.8.3\msvc2022_64' -NpcapSdkRoot 'C:\SDK\npcap-sdk-1.16'

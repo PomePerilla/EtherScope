@@ -2603,5 +2603,575 @@
     "报文已覆盖或被筛选",
     "Packet is no longer visible",
     "封包已被覆蓋或篩選"
+  ],
+  [
+    "完成",
+    "Complete",
+    "完成"
+  ],
+  [
+    "缺少密钥",
+    "Missing keys",
+    "缺少金鑰"
+  ],
+  [
+    "认证失败",
+    "Authentication failed",
+    "驗證失敗"
+  ],
+  [
+    "HTTP 消息体定界冲突",
+    "Conflicting HTTP body framing",
+    "HTTP 訊息本文定界衝突"
+  ],
+  [
+    "HTTP 内容长度冲突",
+    "Conflicting HTTP content lengths",
+    "HTTP 內容長度衝突"
+  ],
+  [
+    "TLS 秘密值冲突",
+    "Conflicting TLS secrets",
+    "TLS 秘密值衝突"
+  ],
+  [
+    "DNS 压缩指针循环",
+    "DNS compression loop",
+    "DNS 壓縮指標循環"
+  ],
+  [
+    "缺少 DNS 数据",
+    "DNS data is missing",
+    "缺少 DNS 資料"
+  ],
+  [
+    "DNS 尾部数据",
+    "DNS trailing data",
+    "DNS 尾部資料"
+  ],
+  [
+    "HTTP/2 前言重复",
+    "Duplicate HTTP/2 preface",
+    "HTTP/2 前言重複"
+  ],
+  [
+    "TLS 扩展重复",
+    "Duplicate TLS extension",
+    "TLS 擴充重複"
+  ],
+  [
+    "HPACK 初始化失败",
+    "HPACK initialization failed",
+    "HPACK 初始化失敗"
+  ],
+  [
+    "HPACK 尾部数据",
+    "HPACK trailing data",
+    "HPACK 尾部資料"
+  ],
+  [
+    "HTTP 消息体等待连接关闭",
+    "HTTP body awaits connection close",
+    "HTTP 訊息本文等待連線關閉"
+  ],
+  [
+    "缺少 HTTP/2 CONTINUATION",
+    "HTTP/2 CONTINUATION expected",
+    "缺少 HTTP/2 CONTINUATION"
+  ],
+  [
+    "缺少 HTTP/2 SETTINGS",
+    "HTTP/2 SETTINGS expected",
+    "缺少 HTTP/2 SETTINGS"
+  ],
+  [
+    "HTTP/2 帧超过协商长度",
+    "HTTP/2 frame exceeds negotiated size",
+    "HTTP/2 框架超過協商長度"
+  ],
+  [
+    "HTTP/2 流 ID 为零",
+    "HTTP/2 stream ID is zero",
+    "HTTP/2 串流 ID 為零"
+  ],
+  [
+    "HTTP/2 伪首部混用",
+    "Mixed HTTP/2 pseudo-headers",
+    "HTTP/2 虛擬標頭混用"
+  ],
+  [
+    "会话上限必须大于零",
+    "Session limits must be positive",
+    "工作階段上限必須大於零"
+  ],
+  [
+    "TCP 连接上限为 1-1024",
+    "TCP conversation limit must be 1-1024",
+    "TCP 連線上限為 1-1024"
+  ],
+  [
+    "TLS 密码初始化失败",
+    "TLS cipher initialization failed",
+    "TLS 密碼初始化失敗"
+  ],
+  [
+    "TLS 密钥派生失败",
+    "TLS key derivation failed",
+    "TLS 金鑰衍生失敗"
+  ],
+  [
+    "TLS 秘密值哈希长度不符",
+    "TLS secret hash length differs",
+    "TLS 秘密值雜湊長度不符"
+  ],
+  [
+    "HTTP/2 CONTINUATION 顺序错误",
+    "Unexpected HTTP/2 CONTINUATION",
+    "HTTP/2 CONTINUATION 順序錯誤"
+  ],
+  [
+    "HTTP/2 伪首部未知",
+    "Unknown HTTP/2 pseudo-header",
+    "HTTP/2 虛擬標頭未知"
+  ],
+  [
+    "HTTP 传输定界不支持",
+    "Unsupported HTTP transfer framing",
+    "HTTP 傳輸定界不支援"
+  ],
+  [
+    "TLS 压缩不支持",
+    "Unsupported TLS compression",
+    "TLS 壓縮不支援"
+  ],
+  [
+    "应用字段达到上限",
+    "Application field limit reached",
+    "應用欄位達到上限"
+  ],
+  [
+    "应用结果达到上限",
+    "Application result limit reached",
+    "應用結果達到上限"
+  ],
+  [
+    "DNS 压缩达到上限",
+    "DNS compression limit reached",
+    "DNS 壓縮達到上限"
+  ],
+  [
+    "DNS 名称超过上限",
+    "DNS name exceeds limit",
+    "DNS 名稱超過上限"
+  ],
+  [
+    "HPACK 表达到上限",
+    "HPACK table limit reached",
+    "HPACK 表達到上限"
+  ],
+  [
+    "HTTP 分块行超过上限",
+    "HTTP chunk line exceeds limit",
+    "HTTP 分塊行超過上限"
+  ],
+  [
+    "HTTP 首部达到上限",
+    "HTTP header limit reached",
+    "HTTP 標頭達到上限"
+  ],
+  [
+    "HTTP 消息达到上限",
+    "HTTP message limit reached",
+    "HTTP 訊息達到上限"
+  ],
+  [
+    "HTTP 尾部达到上限",
+    "HTTP trailer limit reached",
+    "HTTP 尾部達到上限"
+  ],
+  [
+    "HTTP/2 帧达到上限",
+    "HTTP/2 frame limit reached",
+    "HTTP/2 框架達到上限"
+  ],
+  [
+    "HTTP/2 首部达到上限",
+    "HTTP/2 header limit reached",
+    "HTTP/2 標頭達到上限"
+  ],
+  [
+    "HTTP/2 消息达到上限",
+    "HTTP/2 message limit reached",
+    "HTTP/2 訊息達到上限"
+  ],
+  [
+    "HTTP/2 流达到上限",
+    "HTTP/2 stream limit reached",
+    "HTTP/2 串流達到上限"
+  ],
+  [
+    "HPACK 数据块不完整",
+    "Incomplete HPACK block",
+    "HPACK 資料區塊不完整"
+  ],
+  [
+    "HTTP 消息体不完整",
+    "Incomplete HTTP body",
+    "HTTP 訊息本文不完整"
+  ],
+  [
+    "HTTP 分块不完整",
+    "Incomplete HTTP chunk",
+    "HTTP 分塊不完整"
+  ],
+  [
+    "HTTP 首部不完整",
+    "Incomplete HTTP headers",
+    "HTTP 標頭不完整"
+  ],
+  [
+    "HTTP 尾部不完整",
+    "Incomplete HTTP trailers",
+    "HTTP 尾部不完整"
+  ],
+  [
+    "DNS TXT 长度无效",
+    "Invalid DNS TXT length",
+    "DNS TXT 長度無效"
+  ],
+  [
+    "DNS 地址长度无效",
+    "Invalid DNS address length",
+    "DNS 位址長度無效"
+  ],
+  [
+    "DNS 压缩指针无效",
+    "Invalid DNS compression pointer",
+    "DNS 壓縮指標無效"
+  ],
+  [
+    "DNS 标签无效",
+    "Invalid DNS label",
+    "DNS 標籤無效"
+  ],
+  [
+    "DNS 选项长度无效",
+    "Invalid DNS option length",
+    "DNS 選項長度無效"
+  ],
+  [
+    "DNS 记录长度无效",
+    "Invalid DNS record length",
+    "DNS 記錄長度無效"
+  ],
+  [
+    "HPACK 数据块无效",
+    "Invalid HPACK block",
+    "HPACK 資料區塊無效"
+  ],
+  [
+    "HPACK 表大小无效",
+    "Invalid HPACK table size",
+    "HPACK 表大小無效"
+  ],
+  [
+    "HTTP 分块定界无效",
+    "Invalid HTTP chunk delimiter",
+    "HTTP 分塊定界無效"
+  ],
+  [
+    "HTTP 首部无效",
+    "Invalid HTTP header",
+    "HTTP 標頭無效"
+  ],
+  [
+    "HTTP 首部值无效",
+    "Invalid HTTP header value",
+    "HTTP 標頭值無效"
+  ],
+  [
+    "HTTP 长度无效",
+    "Invalid HTTP length",
+    "HTTP 長度無效"
+  ],
+  [
+    "HTTP 请求行无效",
+    "Invalid HTTP request line",
+    "HTTP 請求行無效"
+  ],
+  [
+    "HTTP 响应行无效",
+    "Invalid HTTP response line",
+    "HTTP 回應行無效"
+  ],
+  [
+    "HTTP 状态码无效",
+    "Invalid HTTP status",
+    "HTTP 狀態碼無效"
+  ],
+  [
+    "HTTP 尾部无效",
+    "Invalid HTTP trailer",
+    "HTTP 尾部無效"
+  ],
+  [
+    "HTTP/2 ENABLE_PUSH无效",
+    "Invalid HTTP/2 ENABLE_PUSH",
+    "HTTP/2 ENABLE_PUSH無效"
+  ],
+  [
+    "HTTP/2 GOAWAY无效",
+    "Invalid HTTP/2 GOAWAY",
+    "HTTP/2 GOAWAY無效"
+  ],
+  [
+    "HTTP/2 PING无效",
+    "Invalid HTTP/2 PING",
+    "HTTP/2 PING無效"
+  ],
+  [
+    "HTTP/2 PRIORITY无效",
+    "Invalid HTTP/2 PRIORITY",
+    "HTTP/2 PRIORITY無效"
+  ],
+  [
+    "HTTP/2 RST_STREAM无效",
+    "Invalid HTTP/2 RST_STREAM",
+    "HTTP/2 RST_STREAM無效"
+  ],
+  [
+    "HTTP/2 SETTINGS无效",
+    "Invalid HTTP/2 SETTINGS",
+    "HTTP/2 SETTINGS無效"
+  ],
+  [
+    "HTTP/2 WINDOW_UPDATE无效",
+    "Invalid HTTP/2 WINDOW_UPDATE",
+    "HTTP/2 WINDOW_UPDATE無效"
+  ],
+  [
+    "HTTP/2 连接首部无效",
+    "Invalid HTTP/2 connection header",
+    "HTTP/2 連線標頭無效"
+  ],
+  [
+    "HTTP/2 首部无效",
+    "Invalid HTTP/2 header",
+    "HTTP/2 標頭無效"
+  ],
+  [
+    "HTTP/2 最大帧长无效",
+    "Invalid HTTP/2 maximum frame size",
+    "HTTP/2 最大框架長度無效"
+  ],
+  [
+    "HTTP/2 填充无效",
+    "Invalid HTTP/2 padding",
+    "HTTP/2 填補無效"
+  ],
+  [
+    "HTTP/2 优先级无效",
+    "Invalid HTTP/2 priority",
+    "HTTP/2 優先權無效"
+  ],
+  [
+    "HTTP/2 推送流无效",
+    "Invalid HTTP/2 promised stream",
+    "HTTP/2 推送串流無效"
+  ],
+  [
+    "HTTP/2 伪首部顺序无效",
+    "Invalid HTTP/2 pseudo-header order",
+    "HTTP/2 虛擬標頭順序無效"
+  ],
+  [
+    "HTTP/2 状态码无效",
+    "Invalid HTTP/2 status",
+    "HTTP/2 狀態碼無效"
+  ],
+  [
+    "HTTP/2 窗口大小无效",
+    "Invalid HTTP/2 window size",
+    "HTTP/2 視窗大小無效"
+  ],
+  [
+    "TLS ALPN 列表无效",
+    "Invalid TLS ALPN list",
+    "TLS ALPN 清單無效"
+  ],
+  [
+    "TLS ALPN 协议无效",
+    "Invalid TLS ALPN protocol",
+    "TLS ALPN 協定無效"
+  ],
+  [
+    "TLS ChangeCipherSpec无效",
+    "Invalid TLS ChangeCipherSpec",
+    "TLS ChangeCipherSpec無效"
+  ],
+  [
+    "TLS KeyUpdate无效",
+    "Invalid TLS KeyUpdate",
+    "TLS KeyUpdate無效"
+  ],
+  [
+    "TLS 密码套件列表无效",
+    "Invalid TLS cipher list",
+    "TLS 密碼套件清單無效"
+  ],
+  [
+    "TLS 压缩列表无效",
+    "Invalid TLS compression list",
+    "TLS 壓縮清單無效"
+  ],
+  [
+    "TLS 扩展长度无效",
+    "Invalid TLS extensions length",
+    "TLS 擴充長度無效"
+  ],
+  [
+    "TLS Hello 长度无效",
+    "Invalid TLS hello length",
+    "TLS Hello 長度無效"
+  ],
+  [
+    "TLS 内层内容类型无效",
+    "Invalid TLS inner content type",
+    "TLS 內層內容類型無效"
+  ],
+  [
+    "TLS 内层明文无效",
+    "Invalid TLS inner plaintext",
+    "TLS 內層明文無效"
+  ],
+  [
+    "TLS 密钥派生长度无效",
+    "Invalid TLS key derivation length",
+    "TLS 金鑰衍生長度無效"
+  ],
+  [
+    "TLS 密钥日志行无效",
+    "Invalid TLS key log line",
+    "TLS 金鑰記錄行無效"
+  ],
+  [
+    "TLS 密钥日志值无效",
+    "Invalid TLS key log value",
+    "TLS 金鑰記錄值無效"
+  ],
+  [
+    "TLS 记录首部无效",
+    "Invalid TLS record header",
+    "TLS 記錄標頭無效"
+  ],
+  [
+    "TLS 记录长度无效",
+    "Invalid TLS record length",
+    "TLS 記錄長度無效"
+  ],
+  [
+    "TLS 秘密值长度无效",
+    "Invalid TLS secret length",
+    "TLS 秘密值長度無效"
+  ],
+  [
+    "TLS 协商版本无效",
+    "Invalid TLS selected version",
+    "TLS 協商版本無效"
+  ],
+  [
+    "TLS 服务器名称无效",
+    "Invalid TLS server name",
+    "TLS 伺服器名稱無效"
+  ],
+  [
+    "TLS 服务器名称列表无效",
+    "Invalid TLS server name list",
+    "TLS 伺服器名稱清單無效"
+  ],
+  [
+    "TLS 会话 ID无效",
+    "Invalid TLS session ID",
+    "TLS 工作階段 ID無效"
+  ],
+  [
+    "TLS 握手达到上限",
+    "TLS handshake limit reached",
+    "TLS 交握達到上限"
+  ],
+  [
+    "TLS 密钥日志超过上限",
+    "TLS key log exceeds limit",
+    "TLS 金鑰記錄超過上限"
+  ],
+  [
+    "TLS 密钥日志行超过上限",
+    "TLS key log line exceeds limit",
+    "TLS 金鑰記錄行超過上限"
+  ],
+  [
+    "TLS 消息达到上限",
+    "TLS message limit reached",
+    "TLS 訊息達到上限"
+  ],
+  [
+    "TLS 明文达到上限",
+    "TLS plaintext limit reached",
+    "TLS 明文達到上限"
+  ],
+  [
+    "TLS 记录达到上限",
+    "TLS record limit reached",
+    "TLS 記錄達到上限"
+  ],
+  [
+    "TLS 秘密值达到上限",
+    "TLS secret limit reached",
+    "TLS 秘密值達到上限"
+  ],
+  [
+    "TLS 序号达到上限",
+    "TLS sequence limit reached",
+    "TLS 序號達到上限"
+  ],
+  [
+    "缺少 TLS 密钥",
+    "TLS keys are missing",
+    "缺少 TLS 金鑰"
+  ],
+  [
+    "TLS 版本不支持",
+    "Unsupported TLS version",
+    "TLS 版本不支援"
+  ],
+  [
+    "TLS 密码套件不支持",
+    "Unsupported TLS cipher suite",
+    "TLS 密碼套件不支援"
+  ],
+  [
+    "TLS 重新协商不支持",
+    "TLS renegotiation is unsupported",
+    "TLS 重新協商不支援"
+  ],
+  [
+    "缺少 TLS 连接起点",
+    "TLS connection prefix is missing",
+    "缺少 TLS 連線起點"
+  ],
+  [
+    "TLS 流不完整",
+    "TLS stream is incomplete",
+    "TLS 串流不完整"
+  ],
+  [
+    "TLS 认证失败",
+    "TLS authentication failed",
+    "TLS 驗證失敗"
+  ],
+  [
+    "TLS 早期数据不支持",
+    "TLS early data is unsupported",
+    "TLS 早期資料不支援"
   ]
 ]

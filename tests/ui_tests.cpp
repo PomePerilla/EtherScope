@@ -1,6 +1,7 @@
 #include "ui/main_window.h"
 #include "ui/tcp_dialog.h"
 #include "ui/stream_pane.h"
+#include "ui/application_view.h"
 #include "ui/language.h"
 #include <QCheckBox>
 #include <QAction>
@@ -100,6 +101,33 @@ TcpDialog* startStream(MainWindow& window) {window.findChild<QAction*>("tcpConve
 class DesktopTests:public QObject {
     Q_OBJECT
 private slots:
+    void recordingCloseWaitsAndFailureKeepsWindow(){
+        for(bool fail:{false,true}){
+            QTemporaryDir directory;auto options=testOptions();options.capture=fakeCapture();
+            {QSettings settings(options.settingsFile,QSettings::IniFormat);settings.setValue("recording/directory",directory.path());}
+            auto gate=std::make_shared<Gate>();options.recording.write=gatedWriter(gate,fail);
+            MainWindow window(nullptr,options);ReleaseGate release{gate};window.show();QVERIFY(waitForInterfaces(window));
+            window.findChild<QAction*>("recordingAction")->setChecked(true);window.findChild<QPushButton*>("startButton")->click();
+            QTRY_VERIFY_WITH_TIMEOUT(gate->entered.load(),5000);QVERIFY(window.recordingBusy());QVERIFY(!window.close());QVERIFY(window.isVisible());
+            int beats=0;QTimer timer;connect(&timer,&QTimer::timeout,[&]{++beats;});timer.start(5);QTRY_VERIFY_WITH_TIMEOUT(beats>=3,1000);
+            gate->release();QTRY_VERIFY_WITH_TIMEOUT(!window.recordingBusy() && !window.busy(),5000);
+            if(fail){QVERIFY(window.recordingStats().failed);QVERIFY(window.isVisible());QVERIFY(window.packetModel()->rowCount()>0);}
+            else{QTRY_VERIFY_WITH_TIMEOUT(!window.isVisible(),5000);QVERIFY(!window.recordingStats().failed);QVERIFY(window.recordingStats().written>0);}
+        }
+    }
+    void applicationViewKeepsSelectionAndLocatesBytes(){
+        ApplicationView view;auto result=std::make_shared<ApplicationResult>();
+        ApplicationMessage message;message.protocol="HTTP";message.bytes=std::make_shared<const std::vector<std::uint8_t>>(64,'x');message.length=64;
+        message.sources={{7,54,32,0},{8,54,32,32}};message.fields={{"Host","http.host",std::string("example.com"),33,5}};
+        result->messages={message,message};result->messages[1].offset=1;view.setResults({result});view.show();
+        auto* list=view.findChild<QTreeWidget*>("applicationMessages");auto* fields=view.findChild<QTreeWidget*>("applicationFields");auto* bytes=view.findChild<QPlainTextEdit*>("applicationBytes");
+        QTRY_COMPARE(list->topLevelItemCount(),2);list->setCurrentItem(list->topLevelItem(1));QTRY_COMPARE(fields->topLevelItemCount(),1);
+        fields->setCurrentItem(fields->topLevelItem(0));QVERIFY(!bytes->extraSelections().empty());QCOMPARE(bytes->extraSelections().front().cursor.selectedText(),QString("78 78 78 78 78"));
+        auto* packets=view.findChild<QComboBox*>("applicationPackets");QCOMPARE(packets->count(),1);QCOMPARE(packets->currentData().toULongLong(),8ULL);
+        auto* chosen=list->currentItem();view.setResults({result});QCOMPARE(list->currentItem(),chosen);QVERIFY(!bytes->extraSelections().empty());
+        i18n::language().set("zh_TW");QTRY_COMPARE(list->topLevelItemCount(),2);QCOMPARE(list->currentItem(),list->topLevelItem(1));
+        QCOMPARE(view.findChild<QComboBox*>("applicationDataSource")->itemText(0),QString("全部來源"));
+    }
     void expressionUsesApplicationIndexAndKeepsDraft() {
         MainWindow window(nullptr,testOptions());window.show();const std::string request="GET /index HTTP/1.1\r\nHost: example.com\r\n\r\n";std::vector<Packet> packets;
         for(auto raw:{fixtures::tcp(2,99),fixtures::tcp(18,499,100,true),fixtures::tcp(16,100,500),fixtures::tcp(24,100,500,false,50000,false,{request.begin(),request.end()})})packets.push_back(decodeSummary(std::move(raw)));

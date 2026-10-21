@@ -30,7 +30,9 @@ void http(){
     check(r.status==AnalysisStatus::Complete && r.messages.size()==4 && has(r,"http.host",std::string("example.com")),"HTTP pipelining and HEAD");
     r=decodeHttp1({input("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3;x=y\r\nabc\r\n0\r\nX-Test: yes\r\n\r\n"),{}});check(r.status==AnalysisStatus::Complete && r.messages.size()==1,"Chunked HTTP and trailers");
     r=decodeHttp1({input("GET / HTTP/1.1\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"),{}});check(r.status==AnalysisStatus::Incomplete,"Conflicting HTTP framing");
-    r=decodeHttp1({input("GET / HTTP/1.1\r\nContent-Length: 5\r\n\r\nx"),{}});check(r.status==AnalysisStatus::Incomplete,"HTTP incomplete body");
+    r=decodeHttp1({input("GET / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nx"),{}});check(r.status==AnalysisStatus::Incomplete && has(r,"http.host",std::string("example.com")),"Incomplete HTTP body retains headers");
+    std::string repeated;for(unsigned n=0;n<1024;++n)repeated+="GET / HTTP/1.1\r\nHost: example.com\r\nX-A: a\r\nX-B: b\r\n\r\n";
+    r=decodeHttp1({input(repeated),{}});std::size_t nodes=0;for(const auto& message:r.messages)nodes+=message.fields.size();check(r.status==AnalysisStatus::Limited && nodes<=maxPacketFields,"Application node budget spans messages");
 }
 Bytes frame(unsigned type,unsigned flags,unsigned stream,const Bytes& data){Bytes b;put(b,data.size(),3);put(b,type,1);put(b,flags,1);put(b,stream,4);append(b,data);return b;}
 void http2(){
