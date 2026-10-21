@@ -120,7 +120,10 @@ void ApplicationView::setResults(std::vector<std::shared_ptr<const ApplicationRe
         for (std::size_t i = 0; i < messages_.size(); ++i) {
             const auto &message = *messages_[i];
             if (message.protocol == previous->protocol &&
-                message.direction == previous->direction && message.offset == previous->offset &&
+                message.direction == previous->direction &&
+                message.streamOffset.value_or(message.offset) ==
+                    previous->streamOffset.value_or(previous->offset) &&
+                message.summary == previous->summary && message.source == previous->source &&
                 message.streamId == previous->streamId) {
                 preferredMessage_ = i;
                 break;

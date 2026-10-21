@@ -1,4 +1,5 @@
 #include "core/tcp_stream.h"
+#include "core/tcp_stream_internal.h"
 #include "core/session.h"
 #include <algorithm>
 #include <map>
@@ -13,22 +14,9 @@ struct Direction {
     std::optional<std::int64_t> beginning;
     std::int64_t low{},high{},frontier{};
 };
-std::optional<std::int64_t> relative(std::uint32_t value,std::uint32_t anchor) {
-    const auto difference=std::uint32_t(value-anchor);
-    if(difference==0x80000000u)return {};
-    return difference<0x80000000u?std::int64_t(difference):std::int64_t(difference)-0x100000000LL;
-}
-bool sameEndpoint(const Packet& packet,const TcpEndpoint& expected,bool source) {
-    const auto& tcp=*packet.tcp;if((source?tcp.sourcePort:tcp.destinationPort)!=expected.port)return false;
-    if(expected.ipv6){const auto& address=source?packet.sourceIpv6:packet.destinationIpv6;return address && *address==expected.address;}
-    const auto& address=source?packet.sourceIp:packet.destinationIp;
-    return address && std::equal(address->begin(),address->end(),expected.address.begin());
-}
+using detail::sequenceDistance;
 std::optional<unsigned> directionOf(const Packet& packet,const TcpStreamRequest& request) {
-    if(packet.vlanId!=request.key.vlan || packet.raw.interfaceId!=request.key.interfaceId)return {};
-    if(sameEndpoint(packet,request.key.a,true) && sameEndpoint(packet,request.key.b,false))return 0;
-    if(sameEndpoint(packet,request.key.b,true) && sameEndpoint(packet,request.key.a,false))return 1;
-    return {};
+    return detail::streamDirection(packet, request.key);
 }
 void addEvent(TcpStreamResult& result,StreamEventKind kind,unsigned direction,const Packet& packet,std::uint64_t related=0) {
     if(result.events.size()>=streamEventLimit){++result.eventsOmitted;return;}
@@ -73,9 +61,9 @@ TcpStreamResult reassembleTcp(const TcpStreamRequest& request,std::stop_token st
         const auto sequence=t.sequence+((t.flags&2)?1u:0u);
         if(!d.anchor) {
             d.anchor=sequence;d.low=d.high=d.frontier=0;
-            if(starts[*side]){const auto begin=relative(*starts[*side],sequence);if(begin && *begin<=0 && *begin>=-streamSequenceWindow){d.beginning=*begin;d.frontier=*begin;}}
+            if(starts[*side]){const auto begin=sequenceDistance(*starts[*side],sequence);if(begin && *begin<=0 && *begin>=-streamSequenceWindow){d.beginning=*begin;d.frontier=*begin;}}
         }
-        const auto relativeStart=relative(sequence,*d.anchor);
+        const auto relativeStart=sequenceDistance(sequence,*d.anchor);
         if(!relativeStart || std::max(d.high,*relativeStart+std::int64_t(t.payloadLength))-std::min(d.low,*relativeStart)>streamSequenceWindow){output.limited=true;++output.skippedSegments;continue;}
         const auto start=*relativeStart,end=start+t.payloadLength;const auto priorHigh=d.high;
         const auto priorLow=d.beginning.value_or(d.low);const bool hadData=!d.pieces.empty();const bool ahead=start>d.frontier;
@@ -123,7 +111,7 @@ TcpStreamResult reassembleTcp(const TcpStreamRequest& request,std::stop_token st
         auto& output=result.directions[side];const auto& d=directions[side];output.startKnown=starts[side].has_value();
         if(!d.anchor || d.pieces.empty()) {
             if(starts[side] && ends[side]) {
-                const auto length=relative(*ends[side],*starts[side]);
+                const auto length=sequenceDistance(*ends[side],*starts[side]);
                 if(!length || *length>streamSequenceWindow)output.limited=true;
                 else if(*length<0)output.boundaryConflict=true;
                 else if(*length>0){appendGap(output,0,*length,*starts[side]);output.prefixMissing=output.suffixMissing=true;}
@@ -132,7 +120,7 @@ TcpStreamResult reassembleTcp(const TcpStreamRequest& request,std::stop_token st
         }
         auto cursor=d.pieces.begin()->first;
         if(starts[side]) {
-            const auto beginning=relative(*starts[side],*d.anchor);output.prefixMissing=!beginning || *beginning<cursor;output.boundaryConflict=beginning && *beginning>cursor;
+            const auto beginning=sequenceDistance(*starts[side],*d.anchor);output.prefixMissing=!beginning || *beginning<cursor;output.boundaryConflict=beginning && *beginning>cursor;
             if(beginning && *beginning<cursor && cursor-*beginning<=streamSequenceWindow)cursor=*beginning;
         }
         for(const auto& [offset,piece]:d.pieces) {
@@ -142,7 +130,7 @@ TcpStreamResult reassembleTcp(const TcpStreamRequest& request,std::stop_token st
             block.bytes.assign(piece.bytes.begin(),piece.bytes.end());output.blocks.push_back(std::move(block));cursor=offset+static_cast<std::int64_t>(piece.bytes.size());
         }
         if(ends[side]) {
-            const auto ending=relative(*ends[side],*d.anchor);output.suffixMissing=!ending || *ending>cursor;output.boundaryConflict=output.boundaryConflict || (ending && *ending<cursor);
+            const auto ending=sequenceDistance(*ends[side],*d.anchor);output.suffixMissing=!ending || *ending>cursor;output.boundaryConflict=output.boundaryConflict || (ending && *ending<cursor);
             if(ending && *ending>cursor && *ending-cursor<=streamSequenceWindow)appendGap(output,cursor,*ending,*d.anchor);
         }
     }

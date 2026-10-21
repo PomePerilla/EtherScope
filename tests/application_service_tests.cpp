@@ -16,6 +16,47 @@ std::vector<TcpConversation> connections(const SessionStore& store){return {stor
 class ApplicationServiceTests:public QObject {
     Q_OBJECT
 private slots:
+    void incrementalStateSurvivesCacheEviction() {
+        SessionStore store;
+        traffic(store);
+        auto info = store.tcp().items().front();
+        std::weak_ptr<const Packet> first = store.packets().front();
+        const auto originalBytes = store.packets().back()->tcp->payloadLength;
+        ApplicationAnalysisService service;
+        service.submit({store.packets().begin(), store.packets().end()}, connections(store), 1);
+        QTRY_VERIFY_WITH_TIMEOUT(!service.busy(), 5000);
+        service.takeResults();
+        QCOMPARE(service.stats().deliveredBytes, std::uint64_t(originalBytes));
+        const std::string next = "GET /next HTTP/1.1\r\nHost: next.example\r\n\r\n";
+        auto packet = std::make_shared<Packet>(decodeSummary(fixtures::tcp(24, 100 + originalBytes, 500,
+            false, 50000, false, {next.begin(), next.end()})));
+        packet->id = 5;
+        packet->tcpConversationId = info.id;
+        store.clear();
+        service.submit({packet}, {info}, 5);
+        QTRY_VERIFY_WITH_TIMEOUT(!service.busy() && first.expired(), 5000);
+        auto results = service.takeResults();
+        QVERIFY(!results.empty());
+        const auto &result = *results.back().result;
+        QCOMPARE(result.status, AnalysisStatus::Complete);
+        QCOMPARE(result.messages.size(), 1u);
+        QCOMPARE(service.stats().deliveredBytes, std::uint64_t(originalBytes + next.size()));
+        QVERIFY(service.stats().stateBytes <= applicationStateBudget && service.stats().retainedBytes <= applicationInputBudget);
+        QVERIFY(!results.back().facts.contains(4));
+        const auto expression = compileDisplayFilter("http.host == \"next.example\"").value;
+        QCOMPARE(expression->evaluate(*packet, &results.back().facts.at(5)), FilterTruth::True);
+
+        QTemporaryDir directory;
+        QFile file(directory.filePath("unrelated.keys"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write(("CLIENT_RANDOM " + std::string(64, '0') + " " + std::string(96, '0') + "\n").c_str());
+        file.close();
+        QSignalSpy keys(&service, &ApplicationAnalysisService::keyLogChanged);
+        service.setKeyLog(file.fileName());
+        QTRY_VERIFY_WITH_TIMEOUT(!keys.empty() && !service.busy(), 5000);
+        QCOMPARE(service.stats().keyReplays, 0u);
+        QCOMPARE(service.stats().deliveredBytes, std::uint64_t(originalBytes + next.size()));
+    }
     void completedReplaySupersedesUndeliveredLimitMarker() {
         SessionStore store;
         traffic(store);

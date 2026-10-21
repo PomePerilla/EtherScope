@@ -1,4 +1,4 @@
-# EtherScope v1.10.1
+# EtherScope v1.11.0
 
 [English](README.md) | 简体中文 | [繁體中文](README.zh-TW.md)
 
@@ -11,15 +11,16 @@ Windows x64 网络协议分析器。
 - DNS、HTTP/1.x、HTTP/2、TLS 元数据与密钥日志解密。
 - PCAPNG 滚动录制与显示表达式。
 - English、简体中文、繁體中文。
+- TCP 应用层增量分析。
 
 ## 下载
 
-[EtherScope v1.10.1](https://github.com/PomePerilla/EtherScope/releases/tag/v1.10.1)
+[EtherScope v1.11.0](https://github.com/PomePerilla/EtherScope/releases/tag/v1.11.0)
 
 | 文件 | 用途 |
 |---|---|
-| `EtherScope-1.10.1-windows-x64.zip` | 安装后使用 |
-| `EtherScope-1.10.1-sourcecode.zip` | 编译后使用 |
+| `EtherScope-1.11.0-windows-x64.zip` | 安装后使用 |
+| `EtherScope-1.11.0-sourcecode.zip` | 编译后使用 |
 
 1. 安装 [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe)。
 2. 解压程序包，运行安装器。

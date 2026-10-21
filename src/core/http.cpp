@@ -1,5 +1,7 @@
 #include "core/application.h"
 #include "core/bytes.h"
+#include "core/application_stream.h"
+#include "core/application_buffer.h"
 #include <algorithm>
 #include <charconv>
 #include <deque>
@@ -247,5 +249,260 @@ ApplicationResult decodeHttp1(const std::array<ApplicationInput, 2> &input, std:
         }
     }
     return result;
+}
+
+struct Http1Stream::Impl {
+    enum class Body { Empty, Fixed, Chunked, Close };
+    struct Pending {
+        ApplicationMessage message;
+        Body body{};
+        std::size_t header{}, cursor{}, remaining{}, trailers{}, trailerStart{};
+        unsigned stage{};
+        std::uint64_t status{};
+        std::string method;
+    };
+    std::array<detail::ApplicationBuffer, 2> buffers;
+    std::array<std::optional<Pending>, 2> pending;
+    std::array<bool, 2> done{};
+    std::deque<Request> requests;
+    std::optional<unsigned> client;
+    std::uint64_t requestNumber{}, droppedThrough{}, retentionFloor{};
+    ApplicationResult result;
+    bool failed{};
+
+    bool chunkEnd(Pending &p, std::string_view bytes) {
+        for (;;) {
+            if (p.stage == 1) {
+                if (p.remaining > bytes.size() - p.cursor ||
+                    bytes.size() - p.cursor - p.remaining < 2)
+                    return false;
+                p.cursor += p.remaining;
+                if (bytes.substr(p.cursor, 2) != "\r\n")
+                    throw std::runtime_error("Invalid HTTP chunk delimiter");
+                p.cursor += 2;
+                p.stage = 0;
+            }
+            const auto end = bytes.find("\r\n", p.cursor);
+            if (end == std::string_view::npos) {
+                if (bytes.size() - p.cursor > applicationHeaderLimit)
+                    throw std::length_error("HTTP chunk line exceeds limit");
+                return false;
+            }
+            if (end - p.cursor > applicationHeaderLimit)
+                throw std::length_error("HTTP chunk line exceeds limit");
+            const auto line = bytes.substr(p.cursor, end - p.cursor);
+            if (p.stage == 2) {
+                if (end - p.trailerStart > applicationHeaderLimit ||
+                    ++p.trailers > applicationHeaderCount)
+                    throw std::length_error("HTTP trailer limit reached");
+                p.cursor = end + 2;
+                if (line.empty())
+                    return true;
+                const auto colon = line.find(':');
+                if (colon == std::string_view::npos || !token(line.substr(0, colon)))
+                    throw std::runtime_error("Invalid HTTP trailer");
+                continue;
+            }
+            p.remaining =
+                static_cast<std::size_t>(number(trim(line.substr(0, line.find(';'))), 16));
+            if (p.remaining > streamDirectionLimit)
+                throw std::length_error("Application input limit reached");
+            p.cursor = end + 2;
+            p.stage = p.remaining ? 1 : 2;
+            p.trailerStart = p.cursor;
+        }
+    }
+    void process(unsigned side, std::stop_token stop) {
+        auto &buffer = buffers[side];
+        const bool response = side != *client;
+        while (buffer.size() && !done[side] && !stop.stop_requested()) {
+            const auto &input = buffer.data;
+            const std::string_view bytes(reinterpret_cast<const char *>(input.bytes->data()),
+                                         input.bytes->size());
+            if (!input.startKnown)
+                return;
+            if (!pending[side]) {
+                const auto end = bytes.find("\r\n\r\n");
+                if (end == std::string_view::npos) {
+                    if (bytes.size() > applicationHeaderLimit)
+                        throw std::length_error("HTTP header limit reached");
+                    return;
+                }
+                const auto length = end + 4;
+                ApplicationInput header = input;
+                header.bytes = std::make_shared<const std::vector<std::uint8_t>>(
+                    input.bytes->begin(),
+                    input.bytes->begin() + static_cast<std::ptrdiff_t>(length));
+                header.sources = messageSources(input, 0, length);
+                header.endKnown = header.incomplete = false;
+                auto context = requests;
+                ApplicationResult parsed;
+                try {
+                    direction(header, response, context, parsed, stop);
+                } catch (const std::length_error &) {
+                    throw;
+                } catch (const std::exception &) {
+                    if (parsed.messages.empty())
+                        throw;
+                }
+                if (parsed.messages.empty())
+                    return;
+                Pending p;
+                p.message = std::move(parsed.messages.front());
+                p.header = p.cursor = length;
+                std::optional<std::uint64_t> contentLength;
+                std::string encoding;
+                for (const auto &f : p.message.fields) {
+                    if (f.key == "http.request.method")
+                        p.method = std::get<std::string>(f.value);
+                    else if (f.key == "http.response.code")
+                        p.status = std::get<std::uint64_t>(f.value);
+                    else if (f.key == "http.header.content-length")
+                        contentLength = number(std::get<std::string>(f.value));
+                    else if (f.key == "http.header.transfer-encoding") {
+                        if (!encoding.empty())
+                            encoding += ',';
+                        encoding += lower(std::get<std::string>(f.value));
+                    }
+                }
+                if (response && !requests.empty())
+                    p.method = requests.front().method;
+                const bool empty =
+                    response && ((p.status >= 100 && p.status < 200) || p.status == 204 ||
+                                 p.status == 304 || p.method == "HEAD" ||
+                                 (p.method == "CONNECT" && p.status >= 200 && p.status < 300));
+                if (empty)
+                    p.body = Body::Empty;
+                else if (!encoding.empty()) {
+                    const auto last = encoding.rfind(',');
+                    if (trim(std::string_view(encoding).substr(
+                            last == std::string::npos ? 0 : last + 1)) == "chunked")
+                        p.body = Body::Chunked;
+                    else if (response)
+                        p.body = Body::Close;
+                    else
+                        throw std::runtime_error("Unsupported HTTP transfer framing");
+                } else if (contentLength) {
+                    if (*contentLength > streamDirectionLimit - length)
+                        throw std::length_error("Application input limit reached");
+                    p.body = Body::Fixed;
+                    p.remaining = static_cast<std::size_t>(*contentLength);
+                } else
+                    p.body = response ? Body::Close : Body::Empty;
+                if (!response) {
+                    if (requests.size() >= 1024)
+                        throw std::length_error("HTTP message limit reached");
+                    requests.push_back({p.method, ++requestNumber});
+                }
+                pending[side] = std::move(p);
+            }
+            auto &p = *pending[side];
+            std::size_t end = p.header;
+            if (p.body == Body::Fixed) {
+                end += p.remaining;
+                if (end > bytes.size())
+                    return;
+            } else if (p.body == Body::Chunked) {
+                if (!chunkEnd(p, bytes))
+                    return;
+                end = p.cursor;
+            } else if (p.body == Body::Close) {
+                if (!input.endKnown)
+                    return;
+                end = bytes.size();
+            }
+            p.message.bytes = input.bytes;
+            p.message.offset = 0;
+            p.message.length = end;
+            p.message.status = AnalysisStatus::Complete;
+            p.message.sources = messageSources(input, 0, end);
+            detail::freezeMessage(p.message, buffer.base);
+            detail::appendStreamMessage(result, std::move(p.message), droppedThrough);
+            if (response && (p.status >= 200 || p.status == 101) && !requests.empty())
+                requests.pop_front();
+            done[side] = response && (p.status == 101 ||
+                                      (p.method == "CONNECT" && p.status >= 200 && p.status < 300));
+            pending[side].reset();
+            buffer.consume(end);
+        }
+    }
+};
+Http1Stream::Http1Stream() : impl_(std::make_unique<Impl>()) {}
+Http1Stream::~Http1Stream() = default;
+ApplicationResult Http1Stream::append(const std::array<ApplicationInput, 2> &input,
+                                      std::stop_token stop) {
+    auto &state = *impl_;
+    try {
+        if (!state.failed) {
+            for (unsigned side = 0; side < 2; ++side)
+                state.buffers[side].append(input[side]);
+            if (!state.client)
+                for (unsigned side = 0; side < 2; ++side) {
+                    const auto &bytes = *state.buffers[side].data.bytes;
+                    const std::string_view text(reinterpret_cast<const char *>(bytes.data()),
+                                                bytes.size());
+                    if (text.find("\r\n") != std::string_view::npos) {
+                        state.client = text.starts_with("HTTP/1.") ? 1 - side : side;
+                        break;
+                    }
+                }
+            if (state.client) {
+                state.process(*state.client, stop);
+                state.process(1 - *state.client, stop);
+            }
+        }
+    } catch (const std::length_error &error) {
+        state.failed = true;
+        state.result.status = AnalysisStatus::Limited;
+        state.result.error = error.what();
+    } catch (const std::exception &error) {
+        state.failed = true;
+        state.result.status = AnalysisStatus::Incomplete;
+        state.result.error = error.what();
+    }
+    auto snapshot = state.result;
+    for (unsigned side = 0; side < 2; ++side) {
+        if (state.pending[side]) {
+            auto message = state.pending[side]->message;
+            message.bytes = state.buffers[side].data.bytes;
+            message.length = state.buffers[side].size();
+            message.status = AnalysisStatus::Incomplete;
+            message.sources = messageSources(state.buffers[side].data, 0, message.length);
+            try {
+                detail::freezeMessage(message, state.buffers[side].base);
+                appendApplicationMessage(snapshot, std::move(message));
+            } catch (const std::length_error &error) {
+                snapshot.status = AnalysisStatus::Limited;
+                snapshot.error = error.what();
+            }
+        }
+        if ((state.buffers[side].size() || state.buffers[side].data.incomplete) &&
+            snapshot.status == AnalysisStatus::Complete)
+            snapshot.status = AnalysisStatus::Incomplete;
+    }
+    if (state.droppedThrough && state.droppedThrough >= state.retentionFloor) {
+        snapshot.status = AnalysisStatus::Limited;
+        snapshot.error = "Application result limit reached";
+    }
+    snapshot.estimatedBytes = estimateApplicationBytes(snapshot);
+    return snapshot;
+}
+void Http1Stream::prune(std::uint64_t first) {
+    impl_->retentionFloor = first;
+    detail::pruneMessages(impl_->result, first);
+}
+std::size_t Http1Stream::estimatedBytes() const {
+    std::size_t bytes = sizeof(Impl) + estimateApplicationBytes(impl_->result);
+    for (unsigned side = 0; side < 2; ++side) {
+        bytes += impl_->buffers[side].estimatedBytes();
+        if (impl_->pending[side]) {
+            ApplicationResult pending;
+            pending.messages.push_back(impl_->pending[side]->message);
+            bytes += estimateApplicationBytes(pending);
+        }
+    }
+    for (const auto &request : impl_->requests)
+        bytes += sizeof(Request) + request.method.capacity() + 32;
+    return bytes;
 }
 } // namespace etherscope

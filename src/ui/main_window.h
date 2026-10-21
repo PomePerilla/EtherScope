@@ -75,6 +75,10 @@ public:
     bool applyExpression(const QString& expression);
     void setTlsKeyLog(const QString& path);
     const ApplicationIndex& applicationIndex() const {return applicationIndex_[view_];}
+    ApplicationServiceStats applicationStats() const { return applications_[view_]->stats(); }
+    bool applicationBusy() const {
+        return applications_[view_]->busy() || applications_[view_]->stats().pendingUpdates;
+    }
     RecordingStats recordingStats() const {return recording_.stats();}
     bool recordingBusy() const {return recording_.running();}
 signals:

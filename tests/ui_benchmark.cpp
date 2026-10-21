@@ -79,11 +79,34 @@ int main(int argc,char** argv) {
     if(const auto position=args.indexOf("--application-pcap");position>=0 && position+1<args.size()){
         CaptureReader reader(std::filesystem::path(args[position+1].toStdWString()));raws.clear();while(auto raw=reader.next())raws.push_back(std::move(*raw));if(raws.empty())return 2;
     }
+    const bool longHttp = args.contains("--long-http");
+    const std::string longRequest = "GET /keep HTTP/1.1\r\nHost: persistent.example\r\n\r\n";
+    const std::string longResponse = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+    if (longHttp)
+        raws = {fixtures::tcp(2,99), fixtures::tcp(18,499,100,true), fixtures::tcp(16,100,500),
+                fixtures::tcp(24,100,500,false,50000,false,{longRequest.begin(),longRequest.end()}),
+                fixtures::tcp(24,500,100,true,50000,false,{longResponse.begin(),longResponse.end()})};
     const bool streamLoad=args.contains("--stream-load");
     if(streamLoad)raws={fixtures::tcp(24,100,0,false,50000,false,std::vector<std::uint8_t>(1024,'x'))};
     for(auto& raw:raws) {raw.bytes.resize(std::max<std::size_t>(64,raw.bytes.size()),0);raw.originalLength=static_cast<std::uint32_t>(raw.bytes.size());}
     const auto target=std::uint64_t(seconds)*pps;
-    auto rawAt=[&](std::uint64_t index){auto raw=raws[index%raws.size()];raw.timestampNs=timestampBase+static_cast<std::int64_t>(index)*1000000;if(streamLoad){const auto sequence=static_cast<std::uint32_t>(index*1024+100);for(unsigned i=0;i<4;++i)raw.bytes[38+i]=static_cast<std::uint8_t>(sequence>>(24-8*i));}return raw;};
+    auto rawAt=[&](std::uint64_t index) {
+        auto raw = raws[longHttp ? (index < 3 ? index : 3 + (index - 3) % 2) : index % raws.size()];
+        raw.timestampNs = timestampBase + static_cast<std::int64_t>(index) * 1000000;
+        auto write = [&](std::size_t offset, std::uint32_t value) {
+            for (unsigned byte=0;byte<4;++byte)
+                raw.bytes[offset+byte]=static_cast<std::uint8_t>(value>>(24-8*byte));
+        };
+        if (streamLoad)
+            write(38, static_cast<std::uint32_t>(index*1024+100));
+        if (longHttp && index>=3) {
+            const auto round=(index-3)/2;
+            const bool response=(index-3)%2;
+            write(38,static_cast<std::uint32_t>((response?500:100)+round*(response?longResponse.size():longRequest.size())));
+            write(42,static_cast<std::uint32_t>(response?100+(round+1)*longRequest.size():500+round*longResponse.size()));
+        }
+        return raw;
+    };
     MainWindowOptions options;QTemporaryDir temporary;options.settingsFile=temporary.filePath("settings.ini");const bool languageCycle=args.contains("--language-cycle");options.language=languageCycle?"en":"zh_CN";
     options.capture.interfaces=[](QString& error){error.clear();return std::vector<CaptureInterface>{{"benchmark","性能测试","192.0.2.1"}};};
     options.capture.run=[&](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions&){
@@ -101,10 +124,15 @@ int main(int argc,char** argv) {
     };
     struct ExpectedExport {std::uint64_t count;std::int64_t first,last;};std::deque<ExpectedExport> expectedExports;
     options.snapshotObserver=[&](const PacketSnapshot& snapshot){expectedExports.push_back({snapshot.size(),snapshot.front()->raw.timestampNs,snapshot.back()->raw.timestampNs});};
-    std::vector<std::size_t> footprints;for(auto raw:raws)footprints.push_back(decodeSummary(std::move(raw)).estimatedBytes);
     std::size_t expectedRetained=0,expectedRaw=0,expectedBytes=0;
-    for(auto id=target;id>0 && expectedRetained<10000;--id){const auto index=static_cast<std::size_t>((id-1)%raws.size()),rawBytes=raws[index].bytes.size(),cost=footprints[index];
-        if(expectedRaw+rawBytes>64*1024*1024 || expectedBytes+cost>64*1024*1024)break;++expectedRetained;expectedRaw+=rawBytes;expectedBytes+=cost;}
+    for(auto id=target;id>0 && expectedRetained<10000;--id) {
+        auto raw = rawAt(id-1);
+        const auto rawBytes=raw.bytes.size(),cost=decodeSummary(std::move(raw)).estimatedBytes;
+        if(expectedRaw+rawBytes>64*1024*1024 || expectedBytes+cost>64*1024*1024)break;
+        ++expectedRetained;expectedRaw+=rawBytes;expectedBytes+=cost;
+    }
+    const auto payloadRecords=target>3?target-3:0;
+    const auto expectedDelivered=(payloadRecords+1)/2*longRequest.size()+payloadRecords/2*longResponse.size();
     const bool recordingLoad=args.contains("--recording");
     if(recordingLoad){QSettings settings(options.settingsFile,QSettings::IniFormat);settings.setValue("recording/directory",temporary.filePath("recordings"));settings.setValue("recording/fileMiB",16);settings.setValue("recording/diskMiB",64);settings.sync();}
     MainWindow window(nullptr,options);window.resize(1280,820);window.show();
@@ -116,7 +144,7 @@ int main(int argc,char** argv) {
     QElapsedTimer clock,stopClock;clock.start();const auto cpuStart=cpuSeconds();
     std::vector<qint64> delays,appendTimes,filterTimes;QJsonArray memorySamples;QJsonArray exports;QJsonArray stalls;
     QTimer poll;poll.setTimerType(Qt::PreciseTimer);qint64 lastBeat=0,lastMemory=-1000,nextProgress=60000;
-    bool stopping=false,selected=false,theme=false,filtered=false,cleared=false,intentionalReset=false;qint64 captureStopMs=-1;
+    bool stopping=false,selected=false,theme=false,filtered=false,cleared=false,intentionalReset=false;qint64 captureStopMs=-1, recordingStopMs=-1;
     int resets=0,saveRequests=0,languageChanges=0;qint64 nextLanguage=10000;bool saveValid=true;
     qint64 themeUs=0;std::vector<std::future<QJsonObject>> validations;
     QObject::connect(window.packetModel(),&QAbstractItemModel::modelReset,&app,[&]{if(!intentionalReset && window.captureState()!=MainWindow::CaptureState::Starting)++resets;});
@@ -178,8 +206,9 @@ int main(int argc,char** argv) {
         }
         if(!stopping && now>=seconds*1000 && c.enqueued>=target) {stopping=true;stopClock.start();window.stopCapture();}
         if(stopping && !window.busy() && captureStopMs<0)captureStopMs=stopClock.elapsed();
-        if(stopping && !window.busy() && !window.saving() && !window.recordingBusy() && validations.empty() && (!streamPane || !streamPane->busy())) {
-            poll.stop();const auto stopMs=captureStopMs;const auto final=window.captureCounters();const auto recording=window.recordingStats();
+        if(stopping && !window.recordingBusy() && recordingStopMs<0)recordingStopMs=stopClock.elapsed();
+        if(stopping && !window.busy() && !window.applicationBusy() && !window.saving() && !window.recordingBusy() && validations.empty() && (!streamPane || !streamPane->busy())) {
+            poll.stop();const auto stopMs=captureStopMs;const auto final=window.captureCounters();const auto recording=window.recordingStats();const auto analysis=window.applicationStats();
             double warm=0,tail=0;int wn=0,tn=0;std::uint64_t peak=0;
             const auto warmBegin=std::min(60000,seconds*250),warmEnd=std::min(120000,seconds*500);
             for(const auto& value:memorySamples) {
@@ -202,9 +231,12 @@ int main(int argc,char** argv) {
             const bool recordingValid=!recordingLoad || (!recording.failed && recording.unwritten==0 && recording.written==final.received && recording.queued==0);
             const bool passed=counts && recordingValid && final.queueDropped==0 && (seconds>=7200 || (p99<=10 && maximum<=250 && appendP99<=8000 && filterMax<=100000))
                 && stopMs<=1000 && peak<=256*1024*1024 && (seconds>=7200?(!warmMemory.empty() && !tailMemory.empty() && medianGrowth<=8*1024*1024):growth<=16*1024*1024) && window.packetModel()->rowCount()==static_cast<int>(expectedRetained)
+                && analysis.rejectedPackets==0 && analysis.stateBytes<=applicationStateBudget && analysis.retainedBytes<=applicationInputBudget
+                && (!longHttp || (analysis.deliveredBytes==expectedDelivered && analysis.stateEvictions==0))
+                && analysis.queuedBytes==0 && analysis.pendingUpdates==0 && window.applicationIndex().estimatedBytes()<=applicationIndexBudget
                 && window.retainedRawBytes()==expectedRaw && window.retainedEstimatedBytes()<=64*1024*1024 && resets==0 && saveRequests==2 && exports.size()==2 && saveValid && streamValid && (!streamLoad || streamCompleted==streamRequests) && (!languageCycle || languageChanges>=(seconds-1)/10);
             QJsonObject report{{"kind","synthetic_source_capture_decode_queue_store_ui"},{"version",ETHERSCOPE_VERSION},
-                {"tcp_fixture",args.contains("--tcp")},{"tcp_panel",args.contains("--tcp-panel")},
+                {"long_http_connection",longHttp},{"expected_delivered_bytes",double(expectedDelivered)},{"tcp_fixture",args.contains("--tcp")},{"tcp_panel",args.contains("--tcp-panel")},
                 {"stream_load",streamLoad},{"stream_requests",streamRequests},{"stream_completed",streamCompleted},
                 {"language_cycle",languageCycle},{"language_switches",languageChanges},
                 {"tcp_connections",double(window.tcpConversations().items().size())},{"tcp_estimated_bytes",double(window.tcpConversations().estimatedBytes())},
@@ -217,7 +249,12 @@ int main(int argc,char** argv) {
                 {"heartbeat_p99_delay_ms",double(p99)},{"heartbeat_max_delay_ms",double(maximum)},
                 {"theme_change_us",double(themeUs)},{"batch_p99_us",double(appendP99)},{"batch_max_us",double(appendTimes.empty()?0:*std::max_element(appendTimes.begin(),appendTimes.end()))},{"heartbeat_stalls",stalls},{"filter_max_us",double(filterMax)},{"model_resets_during_feed",resets},
                 {"stop_completed_ms",double(stopMs)},{"peak_private_bytes",double(peak)},{"tail_growth_bytes",growth},{"warm_tail_median_growth_bytes",double(medianGrowth)},
-                {"recording_enabled",recordingLoad},{"recording_written",double(recording.written)},{"recording_unwritten",double(recording.unwritten)},{"recording_finalize_ms",double(stopClock.elapsed())},{"recording_valid",recordingValid},{"application_index_bytes",double(window.applicationIndex().estimatedBytes())},
+                {"recording_enabled",recordingLoad},{"recording_written",double(recording.written)},{"recording_unwritten",double(recording.unwritten)},{"recording_finalize_ms",double(recordingStopMs)},{"recording_valid",recordingValid},{"application_index_bytes",double(window.applicationIndex().estimatedBytes())},
+                {"analysis_submitted_packets",double(analysis.submittedPackets)},{"analysis_rejected_packets",double(analysis.rejectedPackets)},
+                {"analysis_completed_updates",double(analysis.completedUpdates)},{"analysis_delivered_bytes",double(analysis.deliveredBytes)},
+                {"analysis_key_replays",double(analysis.keyReplays)},{"analysis_state_evictions",double(analysis.stateEvictions)},
+                {"analysis_state_bytes",double(analysis.stateBytes)},{"analysis_retained_bytes",double(analysis.retainedBytes)},
+                {"analysis_unresolved_pending",double(window.applicationIndex().unresolved().first)},{"analysis_unresolved_incomplete",double(window.applicationIndex().unresolved().second)},
                 {"cpu_single_core_average_percent",(cpuSeconds()-cpuStart)*100000.0/now},
                 {"exports",exports},{"memory_samples",memorySamples},{"counts_reconciled",counts},{"passed",passed}};
             QFile file(output);if(!file.open(QIODevice::WriteOnly)){app.exit(3);return;}file.write(QJsonDocument(report).toJson());

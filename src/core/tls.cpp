@@ -1,5 +1,7 @@
 #include "core/tls.h"
 #include "core/bytes.h"
+#include "core/application_stream.h"
+#include "core/application_buffer.h"
 #include <algorithm>
 #include <set>
 
@@ -18,12 +20,15 @@ struct Direction {
     std::vector<SourceSpan> handshakeSources;
     std::size_t handshakeCursor{};
     std::uint64_t sequence{};
-    bool encrypted{}, application{}, failed{};
+    bool encrypted{}, application{}, failed{}, handshakeDecrypted{};
     std::shared_ptr<Bytes> plaintext = std::make_shared<Bytes>();
 };
 struct Decoder {
     const std::array<ApplicationInput, 2> &input;
-    const TlsKeyLog &keys;
+    const TlsKeyLog *keys;
+    bool incremental{};
+    std::uint64_t droppedThrough{}, retentionFloor{};
+    std::array<std::uint64_t, 2> handshakeBase{}, plaintextBase{};
     TlsResult result;
     std::array<Direction, 2> directions;
     std::optional<unsigned> client;
@@ -32,7 +37,7 @@ struct Decoder {
     std::uint16_t suite{};
     std::optional<tls::Cipher> cipher;
     explicit Decoder(const std::array<ApplicationInput, 2> &data, const TlsKeyLog &log)
-        : input(data), keys(log) {}
+        : input(data), keys(&log) {}
     void status(AnalysisStatus state, const char *error) {
         if (result.analysis.status == AnalysisStatus::Complete ||
             state == AnalysisStatus::AuthenticationFailed || state == AnalysisStatus::Limited) {
@@ -112,10 +117,12 @@ struct Decoder {
             return;
         const std::string label = std::string(side == *client ? "CLIENT_" : "SERVER_") +
                                   (application ? "TRAFFIC_SECRET_0" : "HANDSHAKE_TRAFFIC_SECRET");
-        const auto *secret = keys.find(clientRandom, label);
+        d.application = application;
+        const auto *secret = keys->find(clientRandom, label);
         if (!secret) {
             status(AnalysisStatus::MissingKeys, "TLS keys are missing");
-            d.failed = true;
+            if (!incremental)
+                d.failed = true;
             return;
         }
         if (secret->size() != (std::string_view(cipher->hash) == "SHA384" ? 48u : 32u))
@@ -129,7 +136,7 @@ struct Decoder {
     void legacyKeys() {
         if (!cipher || !client)
             return;
-        const auto *master = keys.find(clientRandom, "CLIENT_RANDOM");
+        const auto *master = keys->find(clientRandom, "CLIENT_RANDOM");
         if (!master) {
             status(AnalysisStatus::MissingKeys, "TLS keys are missing");
             return;
@@ -230,6 +237,8 @@ struct Decoder {
         if (payload.size() > applicationHeaderLimit - d.handshakes.size())
             throw std::length_error("TLS handshake limit reached");
         const auto old = d.handshakes.size();
+        if (!old)
+            d.handshakeDecrypted = decrypted;
         d.handshakes.insert(d.handshakes.end(), payload.begin(), payload.end());
         for (auto source : sources) {
             source.bufferOffset = old;
@@ -245,7 +254,7 @@ struct Decoder {
                 throw std::length_error("TLS handshake limit reached");
             if (length > d.handshakes.size() - at - 4)
                 break;
-            if (result.analysis.messages.size() >= 1024)
+            if (result.analysis.messages.size() >= 1024 && !incremental)
                 throw std::length_error("TLS message limit reached");
             ApplicationInput source;
             source.bytes = std::make_shared<const Bytes>(d.handshakes);
@@ -280,7 +289,12 @@ struct Decoder {
                 d.iv = tls::expandLabel(d.secret, cipher->hash, "iv", 12);
                 d.sequence = 0;
             }
-            appendApplicationMessage(result.analysis, std::move(m));
+            if (incremental)
+                detail::freezeMessage(m, handshakeBase[side]);
+            if (incremental)
+                detail::appendStreamMessage(result.analysis, std::move(m), droppedThrough);
+            else
+                appendApplicationMessage(result.analysis, std::move(m));
             d.handshakeCursor += length + 4;
         }
     }
@@ -327,6 +341,83 @@ struct Decoder {
             tls::decrypt(*cipher, d.key, iv, aad, body.first(body.size() - 16), body.last(16));
         ++d.sequence;
         return plaintext;
+    }
+    void processRecord(const Record &record) {
+        auto &d = directions[record.side];
+        if (d.failed)
+            return;
+        const auto payload =
+            std::span(*input[record.side].bytes).subspan(record.offset + 5, record.length);
+        const auto sources = messageSources(input[record.side], record.offset, record.length + 5);
+        if (record.type == 20) {
+            if (payload.size() != 1 || payload[0] != 1)
+                throw std::runtime_error("Invalid TLS ChangeCipherSpec");
+            if (!is13) {
+                d.encrypted = true;
+                d.sequence = 0;
+            }
+            return;
+        }
+        std::uint8_t type = record.type;
+        std::optional<Bytes> plaintext;
+        const bool encrypted = (is13 && type == 23) || (!is13 && d.encrypted);
+        if (encrypted) {
+            plaintext = open(record, payload);
+            if (!plaintext) {
+                if (cipher && !d.key.empty())
+                    status(AnalysisStatus::AuthenticationFailed, "TLS authentication failed");
+                d.failed = true;
+                return;
+            }
+            if (is13) {
+                while (!plaintext->empty() && plaintext->back() == 0)
+                    plaintext->pop_back();
+                if (plaintext->empty())
+                    throw std::runtime_error("Invalid TLS inner plaintext");
+                type = plaintext->back();
+                plaintext->pop_back();
+                if (type != 21 && type != 22 && type != 23)
+                    throw std::runtime_error("Invalid TLS inner content type");
+            }
+            result.decrypted = true;
+        }
+        const auto bytes = plaintext ? std::span<const std::uint8_t>(*plaintext) : payload;
+        if (type == 22)
+            handshake(record.side, bytes,
+                      encrypted
+                          ? sources
+                          : messageSources(input[record.side], record.offset + 5, record.length),
+                      encrypted);
+        else if (type == 23 && encrypted) {
+            if (bytes.size() > streamDirectionLimit - d.plaintext->size())
+                throw std::length_error("TLS plaintext limit reached");
+            const auto offset = d.plaintext->size();
+            d.plaintext->insert(d.plaintext->end(), bytes.begin(), bytes.end());
+            result.plaintext[record.side].startKnown = true;
+            for (auto source : sources) {
+                source.bufferOffset = offset;
+                source.bufferLength = bytes.size();
+                result.plaintext[record.side].sources.push_back(source);
+            }
+            ApplicationMessage m;
+            m.protocol = "TLS";
+            m.summary = "Application data";
+            m.direction = record.side;
+            m.source = DataSource::Decrypted;
+            m.bytes = d.plaintext;
+            m.offset = offset;
+            m.length = bytes.size();
+            m.sources = messageSources(result.plaintext[record.side], offset, bytes.size());
+            add(m, "Decrypted", "tls.decrypted", true, offset, 0);
+            if (incremental)
+                detail::freezeMessage(m, plaintextBase[record.side]);
+            if (incremental)
+                detail::appendStreamMessage(result.analysis, std::move(m), droppedThrough);
+            else
+                appendApplicationMessage(result.analysis, std::move(m));
+        } else if (type == 23) {
+            status(AnalysisStatus::Unsupported, "TLS early data is unsupported");
+        }
     }
     TlsResult run(std::stop_token stop) {
         std::vector<Record> records;
@@ -395,73 +486,7 @@ struct Decoder {
             const auto &record = *ordered[side][cursor[side]++];
             if (stop.stop_requested())
                 break;
-            auto &d = directions[record.side];
-            if (d.failed)
-                continue;
-            const auto payload =
-                std::span(*input[record.side].bytes).subspan(record.offset + 5, record.length);
-            const auto sources =
-                messageSources(input[record.side], record.offset, record.length + 5);
-            if (record.type == 20) {
-                if (payload.size() != 1 || payload[0] != 1)
-                    throw std::runtime_error("Invalid TLS ChangeCipherSpec");
-                if (!is13) {
-                    d.encrypted = true;
-                    d.sequence = 0;
-                }
-                continue;
-            }
-            std::uint8_t type = record.type;
-            std::optional<Bytes> plaintext;
-            const bool encrypted = (is13 && type == 23) || (!is13 && d.encrypted);
-            if (encrypted) {
-                plaintext = open(record, payload);
-                if (!plaintext) {
-                    if (cipher && !d.key.empty())
-                        status(AnalysisStatus::AuthenticationFailed, "TLS authentication failed");
-                    d.failed = true;
-                    continue;
-                }
-                if (is13) {
-                    while (!plaintext->empty() && plaintext->back() == 0)
-                        plaintext->pop_back();
-                    if (plaintext->empty())
-                        throw std::runtime_error("Invalid TLS inner plaintext");
-                    type = plaintext->back();
-                    plaintext->pop_back();
-                    if (type != 21 && type != 22 && type != 23)
-                        throw std::runtime_error("Invalid TLS inner content type");
-                }
-                result.decrypted = true;
-            }
-            const auto bytes = plaintext ? std::span<const std::uint8_t>(*plaintext) : payload;
-            if (type == 22)
-                handshake(record.side, bytes, sources, encrypted);
-            else if (type == 23 && encrypted) {
-                if (bytes.size() > streamDirectionLimit - d.plaintext->size())
-                    throw std::length_error("TLS plaintext limit reached");
-                const auto offset = d.plaintext->size();
-                d.plaintext->insert(d.plaintext->end(), bytes.begin(), bytes.end());
-                result.plaintext[record.side].startKnown = true;
-                for (auto source : sources) {
-                    source.bufferOffset = offset;
-                    source.bufferLength = bytes.size();
-                    result.plaintext[record.side].sources.push_back(source);
-                }
-                ApplicationMessage m;
-                m.protocol = "TLS";
-                m.summary = "Application data";
-                m.direction = record.side;
-                m.source = DataSource::Decrypted;
-                m.bytes = d.plaintext;
-                m.offset = offset;
-                m.length = bytes.size();
-                m.sources = sources;
-                add(m, "Decrypted", "tls.decrypted", true, offset, 0);
-                appendApplicationMessage(result.analysis, std::move(m));
-            } else if (type == 23) {
-                status(AnalysisStatus::Unsupported, "TLS early data is unsupported");
-            }
+            processRecord(record);
         }
         for (unsigned side = 0; side < 2; ++side) {
             const auto &d = directions[side];
@@ -486,5 +511,209 @@ TlsResult decodeTls(const std::array<ApplicationInput, 2> &input, const TlsKeyLo
         decoder.result.analysis.error = e.what();
     }
     return std::move(decoder.result);
+}
+struct TlsStream::Impl {
+    std::array<detail::ApplicationBuffer, 2> buffers;
+    std::array<ApplicationInput, 2> input;
+    std::array<std::size_t, 2> cursor{};
+    std::unique_ptr<Decoder> decoder;
+    std::optional<unsigned> helloSide;
+    bool failed{};
+    std::optional<Record> head(unsigned side) {
+        const auto &data = *input[side].bytes;
+        const auto at = cursor[side];
+        if (!input[side].startKnown || !containsBytes(data.size(), at, 5))
+            return {};
+        ByteView view(data);
+        const auto length = static_cast<std::size_t>(view.integer(at + 3, 2));
+        if (length > 18432)
+            throw std::runtime_error("Invalid TLS record length");
+        if (!containsBytes(data.size(), at + 5, length))
+            return {};
+        Record record{
+            side, at, length, data[at], static_cast<std::uint16_t>(view.integer(at + 1, 2)), 0};
+        if (record.type < 20 || record.type > 24 || record.version < 0x0301 ||
+            record.version > 0x0303)
+            throw std::runtime_error("Invalid TLS record header");
+        for (const auto &source : messageSources(input[side], at, length + 5))
+            record.packet = std::max(record.packet, source.packetId);
+        return record;
+    }
+};
+TlsStream::TlsStream() : impl_(std::make_unique<Impl>()) {}
+TlsStream::~TlsStream() = default;
+TlsResult TlsStream::append(const std::array<ApplicationInput, 2> &incoming, const TlsKeyLog &keys,
+                            std::stop_token stop) {
+    auto &state = *impl_;
+    if (!state.decoder) {
+        state.decoder = std::make_unique<Decoder>(state.input, keys);
+        state.decoder->incremental = true;
+    }
+    auto &decoder = *state.decoder;
+    decoder.keys = &keys;
+    if (!state.failed) {
+        decoder.result.analysis.status = AnalysisStatus::Complete;
+        decoder.result.analysis.error.clear();
+    }
+    decoder.result.decrypted = false;
+    for (unsigned side = 0; side < 2; ++side) {
+        decoder.plaintextBase[side] += decoder.directions[side].plaintext->size();
+        decoder.directions[side].plaintext = std::make_shared<Bytes>();
+        auto &target = decoder.result.plaintext[side];
+        target = {};
+        target.direction = side;
+        target.source = DataSource::Decrypted;
+        target.bytes = decoder.directions[side].plaintext;
+    }
+    try {
+        if (!state.failed) {
+            for (unsigned side = 0; side < 2; ++side) {
+                state.buffers[side].append(incoming[side]);
+                state.input[side] = state.buffers[side].data;
+                decoder.result.plaintext[side].endKnown = state.input[side].endKnown;
+            }
+            if (decoder.haveServer && decoder.cipher && decoder.client) {
+                if (decoder.is13) {
+                    for (unsigned side = 0; side < 2; ++side)
+                        if (decoder.directions[side].key.empty())
+                            decoder.traffic(side, decoder.directions[side].application);
+                } else if (decoder.directions[0].key.empty() || decoder.directions[1].key.empty())
+                    decoder.legacyKeys();
+            }
+            for (unsigned count = 0; !stop.stop_requested(); ++count) {
+                if (count >= 4096)
+                    throw std::length_error("TLS record limit reached");
+                std::array<std::optional<Record>, 2> heads{state.head(0), state.head(1)};
+                if (!heads[0] && !heads[1])
+                    break;
+                std::optional<unsigned> side;
+                for (unsigned candidate = 0; candidate < 2; ++candidate) {
+                    if (!heads[candidate] || decoder.directions[candidate].failed)
+                        continue;
+                    const auto &record = *heads[candidate];
+                    if (!decoder.haveClient) {
+                        if (record.type != 22 || !record.length)
+                            continue;
+                        if (!state.helloSide &&
+                            (*state.input[candidate].bytes)[record.offset + 5] == 1)
+                            state.helloSide = candidate;
+                        if (state.helloSide != candidate)
+                            continue;
+                    } else if (!decoder.haveServer && decoder.client &&
+                               candidate == *decoder.client) {
+                        if (record.type != 22)
+                            continue;
+                    }
+                    const bool encrypted =
+                        (decoder.is13 && record.type == 23) ||
+                        (!decoder.is13 && decoder.directions[candidate].encrypted);
+                    if (encrypted &&
+                        (!decoder.cipher || decoder.directions[candidate].key.empty())) {
+                        decoder.status(decoder.haveServer ? AnalysisStatus::MissingKeys
+                                                          : AnalysisStatus::Incomplete,
+                                       "TLS decryption context is missing");
+                        continue;
+                    }
+                    if (!side || record.packet < heads[*side]->packet)
+                        side = candidate;
+                }
+                if (!side)
+                    break;
+                const auto record = *heads[*side];
+                decoder.processRecord(record);
+                state.cursor[*side] += record.length + 5;
+                if (decoder.result.analysis.status == AnalysisStatus::AuthenticationFailed ||
+                    decoder.result.analysis.status == AnalysisStatus::Unsupported ||
+                    decoder.result.analysis.status == AnalysisStatus::Limited)
+                    state.failed = true;
+                if (state.failed)
+                    break;
+            }
+            for (unsigned side = 0; side < 2; ++side) {
+                state.input[side] = {};
+                state.buffers[side].consume(state.cursor[side]);
+                state.cursor[side] = 0;
+                auto &direction = decoder.directions[side];
+                if (direction.handshakeCursor) {
+                    const auto consumed = direction.handshakeCursor;
+                    decoder.handshakeBase[side] += consumed;
+                    direction.handshakes.erase(direction.handshakes.begin(),
+                                               direction.handshakes.begin() +
+                                                   static_cast<std::ptrdiff_t>(consumed));
+                    for (auto source = direction.handshakeSources.begin();
+                         source != direction.handshakeSources.end();) {
+                        const auto length =
+                            source->bufferLength ? source->bufferLength : source->length;
+                        if (source->bufferOffset + length <= consumed) {
+                            source = direction.handshakeSources.erase(source);
+                        } else {
+                            const auto removed = consumed > source->bufferOffset
+                                                     ? consumed - source->bufferOffset
+                                                     : 0;
+                            if (!direction.handshakeDecrypted) {
+                                source->rawOffset += removed;
+                                source->length -= std::min(removed, source->length);
+                            }
+                            source->bufferLength = length - removed;
+                            source->bufferOffset += removed;
+                            source->bufferOffset -= consumed;
+                            ++source;
+                        }
+                    }
+                    direction.handshakeCursor = 0;
+                }
+                if ((state.buffers[side].size() ||
+                     direction.handshakeCursor != direction.handshakes.size() ||
+                     state.buffers[side].data.incomplete) &&
+                    decoder.result.analysis.status == AnalysisStatus::Complete)
+                    decoder.status(AnalysisStatus::Incomplete, "TLS stream is incomplete");
+                decoder.result.plaintext[side].endKnown = state.buffers[side].data.endKnown &&
+                                                          !state.buffers[side].size() &&
+                                                          !direction.failed;
+                decoder.result.plaintext[side].incomplete =
+                    state.buffers[side].data.incomplete || direction.failed;
+            }
+        }
+    } catch (const std::length_error &error) {
+        state.failed = true;
+        decoder.result.analysis.status = AnalysisStatus::Limited;
+        decoder.result.analysis.error = error.what();
+    } catch (const std::exception &error) {
+        state.failed = true;
+        decoder.result.analysis.status = AnalysisStatus::Incomplete;
+        decoder.result.analysis.error = error.what();
+    }
+    auto snapshot = decoder.result;
+    if (decoder.droppedThrough && decoder.droppedThrough >= decoder.retentionFloor) {
+        snapshot.analysis.status = AnalysisStatus::Limited;
+        snapshot.analysis.error = "Application result limit reached";
+    }
+    snapshot.analysis.estimatedBytes = estimateApplicationBytes(snapshot.analysis);
+    return snapshot;
+}
+void TlsStream::prune(std::uint64_t first) {
+    if (impl_->decoder) {
+        impl_->decoder->retentionFloor = first;
+        detail::pruneMessages(impl_->decoder->result.analysis, first);
+    }
+}
+std::optional<TlsKeyLog::Random> TlsStream::clientRandom() const {
+    if (!impl_->decoder || !impl_->decoder->haveClient)
+        return {};
+    return impl_->decoder->clientRandom;
+}
+std::size_t TlsStream::estimatedBytes() const {
+    std::size_t bytes = sizeof(Impl);
+    for (const auto &buffer : impl_->buffers)
+        bytes += buffer.estimatedBytes();
+    if (impl_->decoder) {
+        bytes += sizeof(Decoder) + estimateApplicationBytes(impl_->decoder->result.analysis);
+        for (const auto &direction : impl_->decoder->directions)
+            bytes += direction.secret.capacity() + direction.key.capacity() +
+                     direction.iv.capacity() + direction.handshakes.capacity() +
+                     direction.handshakeSources.capacity() * sizeof(SourceSpan) +
+                     direction.plaintext->capacity();
+    }
+    return bytes;
 }
 } // namespace etherscope

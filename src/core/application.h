@@ -34,6 +34,7 @@ struct ApplicationMessage {
     AnalysisStatus status{AnalysisStatus::Complete};
     std::shared_ptr<const std::vector<std::uint8_t>> bytes;
     std::size_t offset{}, length{};
+    std::optional<std::uint64_t> streamOffset;
     std::vector<SourceSpan> sources;
     std::vector<ApplicationField> fields;
 };
@@ -55,11 +56,15 @@ inline constexpr std::size_t applicationBudget = 64 * 1024 * 1024,
 // Live and file sessions split the resident budget. Shared packet bytes are
 // conservatively charged again while retained by the analysis worker.
 inline constexpr std::size_t applicationInputBudget = 4 * 1024 * 1024;
+inline constexpr std::size_t applicationStateBudget = 8 * 1024 * 1024;
 inline constexpr std::size_t applicationQueueBudget = 2 * 1024 * 1024;
 inline constexpr std::size_t applicationStagingBudget = 3 * 1024 * 1024;
 inline constexpr std::size_t applicationIndexBudget = 8 * 1024 * 1024;
 inline constexpr std::size_t applicationKeyLogLimit = 4 * 1024 * 1024;
 inline constexpr std::size_t applicationResultLimit = 2 * 1024 * 1024;
+static_assert(2 * (applicationInputBudget + applicationStateBudget + applicationQueueBudget +
+                  applicationStagingBudget + applicationIndexBudget + applicationKeyLogLimit +
+                  applicationResultLimit) <= applicationBudget);
 std::string applicationText(const ApplicationValue &value);
 std::vector<SourceSpan> messageSources(const ApplicationInput &input, std::size_t offset,
                                        std::size_t length);

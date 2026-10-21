@@ -8,7 +8,7 @@ $lines=& cmd.exe /d /c ('call "{0}" >nul && set' -f $setup)
 if($LASTEXITCODE){throw 'MSVC initialization failed.'}
 foreach($line in $lines){if($line -match '^([^=]+)=(.*)$'){[Environment]::SetEnvironmentVariable($Matches[1],$Matches[2],'Process')}}
 $cmake=Join-Path $sourceRoot '.tools/cmake/bin/cmake.exe'
-$build=Join-Path $sourceRoot 'build/fuzz-1.10'
+$build=Join-Path $sourceRoot 'build/fuzz'
 & $cmake -S $sourceRoot -B $build -G 'NMake Makefiles' -DCMAKE_BUILD_TYPE=RelWithDebInfo -DETHERSCOPE_BUILD_GUI=OFF -DETHERSCOPE_BUILD_FUZZERS=ON
 if($LASTEXITCODE){throw 'Fuzz configuration failed.'}
 & $cmake --build $build --target packet_fuzzer stream_fuzzer application_fuzzer file_fuzzer make_fuzz_corpus

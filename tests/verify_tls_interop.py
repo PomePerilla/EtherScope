@@ -23,6 +23,9 @@ for case in manifest['cases']:
         elif values[0] == 'status':
             assert values[1] == '1', (case['name'], line)
     assert plaintext == [case['expected_request'], case['expected_response']], case['name']
-    reports.append({'name': case['name'], 'exact_plaintext': True, 'resumed': case['resumed']})
+    incremental = subprocess.check_output([args.inspector, case['capture'], case['keylog'],
+                                          '--plaintext', '--incremental'], text=True, encoding='utf-8')
+    assert sorted(incremental.splitlines()) == sorted(result.stdout.splitlines()), case['name']
+    reports.append({'name': case['name'], 'exact_plaintext': True, 'incremental_equal': True, 'resumed': case['resumed']})
 (args.output / 'verification.json').write_text(json.dumps(reports, indent=2))
 print(f'PASS: {len(reports)} endpoint captures with exact decrypted bytes')

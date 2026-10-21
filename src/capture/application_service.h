@@ -16,6 +16,11 @@ struct ApplicationHooks {
     std::function<ApplicationResult(const TcpStreamRequest &, const TlsKeyLog &, std::stop_token)>
         conversation;
 };
+struct ApplicationServiceStats {
+    std::uint64_t submittedPackets{}, rejectedPackets{}, completedUpdates{}, deliveredBytes{},
+        keyReplays{}, stateEvictions{};
+    std::size_t stateBytes{}, retainedBytes{}, queuedBytes{}, pendingUpdates{};
+};
 class ApplicationAnalysisService final : public QObject {
     Q_OBJECT
   public:
@@ -29,6 +34,7 @@ class ApplicationAnalysisService final : public QObject {
     std::vector<ApplicationUpdate> takeResults();
     std::uint64_t generation() const;
     bool busy() const;
+    ApplicationServiceStats stats() const;
     void requestStop();
   signals:
     void changed();
@@ -49,6 +55,7 @@ class ApplicationAnalysisService final : public QObject {
     std::map<std::uint64_t, ApplicationFacts> limited_;
     std::uint64_t generation_{1}, keyCommand_{}, retentionFloor_{};
     std::size_t queuedBytes_{}, resultBytes_{};
+    ApplicationServiceStats stats_;
     QString keyPath_;
     bool working_{}, stopped_{};
     std::stop_source activeStop_;

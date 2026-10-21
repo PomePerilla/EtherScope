@@ -28,7 +28,27 @@ int main(int argc,char** argv) {
             }
         };
         for(const auto& p:store.packets())if(p->udp)print(analyzeDatagram(*p));
-        for(const auto& c:store.tcp().items())if(auto request=snapshotTcpStream(store,c.id))print(analyzeConversation(*request,keys));
+        for(const auto& c:store.tcp().items())if(auto request=snapshotTcpStream(store,c.id)) {
+            bool incremental = false;
+            for (int index = 3; index < argc; ++index)
+#ifdef _WIN32
+                incremental |= std::wstring_view(argv[index]) == L"--incremental";
+#else
+                incremental |= std::string_view(argv[index]) == "--incremental";
+#endif
+            if (!incremental)
+                print(analyzeConversation(*request,keys));
+            else {
+                ConversationAnalysis analysis;
+                ApplicationResult result;
+                auto part = *request;
+                for (const auto &packet : request->packets) {
+                    part.packets = {packet};
+                    result = analysis.append(part, keys);
+                }
+                print(result);
+            }
+        }
         return 0;
     }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}
 }

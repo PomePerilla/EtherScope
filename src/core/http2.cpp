@@ -1,5 +1,7 @@
 #include "core/application.h"
 #include "core/bytes.h"
+#include "core/application_stream.h"
+#include "core/application_buffer.h"
 #include <nghttp2/nghttp2.h>
 #include <algorithm>
 #include <charconv>
@@ -108,9 +110,149 @@ void inflate(Inflater &inflater, Headers &headers, ApplicationMessage &m, std::s
             throw std::runtime_error("Incomplete HPACK block");
     }
 }
+struct Http2State {
+    bool compact{};
+    std::array<std::uint64_t, 2> base{};
+    std::uint64_t droppedThrough{}, retentionFloor{};
+    ApplicationResult result;
+    std::array<Inflater, 2> inflaters;
+    std::array<Headers, 2> headers;
+    std::array<std::uint32_t, 2> maxFrame{16384, 16384};
+    std::set<std::uint32_t> streams;
+    void process(const Frame &frame, const std::array<ApplicationInput, 2> &input) {
+        const auto &source = input[frame.side];
+        const auto &data = *source.bytes;
+        ByteView view(data);
+        auto &pending = headers[frame.side];
+        if (frame.length > maxFrame[frame.side])
+            throw std::runtime_error("HTTP/2 frame exceeds negotiated size");
+        if (pending.open && (frame.type != 9 || pending.stream != frame.stream))
+            throw std::runtime_error("HTTP/2 CONTINUATION expected");
+        if (result.messages.size() >= 1024 && !compact)
+            throw std::length_error("HTTP/2 message limit reached");
+        ApplicationMessage m;
+        m.protocol = "HTTP2";
+        m.direction = frame.side;
+        m.streamId = frame.stream;
+        m.source = source.source;
+        m.bytes = source.bytes;
+        m.offset = frame.offset;
+        m.length = frame.length + 9;
+        m.sources = messageSources(source, m.offset, m.length);
+        m.summary =
+            "Frame " + std::to_string(frame.type) + " stream " + std::to_string(frame.stream);
+        add(m, "Frame type", "http2.type", std::uint64_t(frame.type), frame.offset + 3, 1);
+        add(m, "Stream", "http2.streamid", std::uint64_t(frame.stream), frame.offset + 5, 4);
+        auto begin = frame.offset + 9, end = begin + frame.length;
+        if (frame.type == 0 || frame.type == 1 || frame.type == 5) {
+            if (!frame.stream)
+                throw std::runtime_error("HTTP/2 stream ID is zero");
+            if (frame.flags & 8) {
+                const auto padding = view.integer(begin++, 1);
+                if (begin > end || padding > end - begin)
+                    throw std::runtime_error("Invalid HTTP/2 padding");
+                end -= static_cast<std::size_t>(padding);
+            }
+        }
+        if (frame.type == 1 || frame.type == 5) {
+            if (streams.size() >= 1024 && !streams.contains(frame.stream))
+                throw std::length_error("HTTP/2 stream limit reached");
+            streams.insert(frame.stream);
+            if (frame.type == 1 && frame.flags & 32) {
+                if (end - begin < 5 || (view.integer(begin, 4) & 0x7fffffff) == frame.stream)
+                    throw std::runtime_error("Invalid HTTP/2 priority");
+                begin += 5;
+            }
+            if (frame.type == 5) {
+                if (end - begin < 4 || !(view.integer(begin, 4) & 0x7fffffff))
+                    throw std::runtime_error("Invalid HTTP/2 promised stream");
+                m.streamId = static_cast<std::uint32_t>(view.integer(begin, 4) & 0x7fffffff);
+                begin += 4;
+            }
+            pending = {};
+            pending.stream = frame.stream;
+            pending.message = result.messages.size();
+            pending.offset = begin;
+            pending.open = true;
+        }
+        if (frame.type == 1 || frame.type == 5 || frame.type == 9) {
+            if (!pending.open || pending.stream != frame.stream)
+                throw std::runtime_error("Unexpected HTTP/2 CONTINUATION");
+            if (end - begin > applicationHeaderLimit - pending.bytes.size())
+                throw std::length_error("HTTP/2 header limit reached");
+            const auto part = view.slice(begin, end - begin);
+            pending.bytes.insert(pending.bytes.end(), part.begin(), part.end());
+            if (frame.flags & 4) {
+                auto &target = frame.type == 9 ? result.messages[pending.message] : m;
+                target.bytes = source.bytes;
+                inflate(inflaters[frame.side], pending, target, end);
+                if (frame.type == 9) {
+                    target.sources.insert(target.sources.end(), m.sources.begin(), m.sources.end());
+                    target.length = end - target.offset;
+                }
+                pending.open = false;
+                pending.bytes.clear();
+            }
+        } else if (frame.type == 2) {
+            if (!frame.stream || frame.length != 5 ||
+                (view.integer(begin, 4) & 0x7fffffff) == frame.stream)
+                throw std::runtime_error("Invalid HTTP/2 PRIORITY");
+        } else if (frame.type == 3) {
+            if (!frame.stream || frame.length != 4)
+                throw std::runtime_error("Invalid HTTP/2 RST_STREAM");
+            add(m, "Error code", "http2.error", view.integer(begin, 4), begin, 4);
+        } else if (frame.type == 4) {
+            if (frame.stream || frame.length % 6 || ((frame.flags & 1) && frame.length))
+                throw std::runtime_error("Invalid HTTP/2 SETTINGS");
+            for (auto at = begin; at < end; at += 6) {
+                const auto key = view.integer(at, 2), value = view.integer(at + 2, 4);
+                if (key == 1) {
+                    if (value > 65536)
+                        throw std::length_error("HPACK table limit reached");
+                    if (nghttp2_hd_inflate_change_table_size(inflaters[1 - frame.side].value,
+                                                             static_cast<std::size_t>(value)))
+                        throw std::runtime_error("Invalid HPACK table size");
+                } else if (key == 2 && value > 1)
+                    throw std::runtime_error("Invalid HTTP/2 ENABLE_PUSH");
+                else if (key == 4 && value > 0x7fffffff)
+                    throw std::runtime_error("Invalid HTTP/2 window size");
+                else if (key == 5) {
+                    if (value < 16384 || value > 16777215)
+                        throw std::runtime_error("Invalid HTTP/2 maximum frame size");
+                    maxFrame[1 - frame.side] = static_cast<std::uint32_t>(value);
+                }
+            }
+        } else if (frame.type == 6) {
+            if (frame.stream || frame.length != 8)
+                throw std::runtime_error("Invalid HTTP/2 PING");
+        } else if (frame.type == 7) {
+            if (frame.stream || frame.length < 8)
+                throw std::runtime_error("Invalid HTTP/2 GOAWAY");
+            add(m, "Error code", "http2.error", view.integer(begin + 4, 4), begin + 4, 4);
+        } else if (frame.type == 8) {
+            if (frame.length != 4 || !(view.integer(begin, 4) & 0x7fffffff))
+                throw std::runtime_error("Invalid HTTP/2 WINDOW_UPDATE");
+        }
+        if (compact) {
+            if (!(pending.open && pending.message == result.messages.size()))
+                detail::freezeMessage(m, base[frame.side]);
+            std::size_t protectedFrom = result.messages.size();
+            for (const auto &header : headers)
+                if (header.open && header.message < result.messages.size())
+                    protectedFrom = std::min(protectedFrom, header.message);
+            const auto removed =
+                detail::appendStreamMessage(result, std::move(m), droppedThrough, protectedFrom);
+            for (auto &header : headers)
+                if (header.open)
+                    header.message -= removed;
+        } else
+            appendApplicationMessage(result, std::move(m));
+    }
+};
 } // namespace
 ApplicationResult decodeHttp2(const std::array<ApplicationInput, 2> &input, std::stop_token stop) {
-    ApplicationResult result;
+    Http2State state;
+    auto &result = state.result;
     try {
         std::vector<Frame> frames;
         std::optional<unsigned> client;
@@ -174,10 +316,6 @@ ApplicationResult decodeHttp2(const std::array<ApplicationInput, 2> &input, std:
         for (const auto &frame : frames)
             ordered[frame.side].push_back(&frame);
         std::array<std::size_t, 2> cursor{};
-        std::array<Inflater, 2> inflaters;
-        std::array<Headers, 2> headers;
-        std::array<std::uint32_t, 2> maxFrame{16384, 16384};
-        std::set<std::uint32_t> streams;
         for (std::size_t index = 0; index < frames.size(); ++index) {
             unsigned side = cursor[0] == ordered[0].size() ? 1 : 0;
             if (cursor[1] < ordered[1].size() && cursor[0] < ordered[0].size() &&
@@ -187,123 +325,10 @@ ApplicationResult decodeHttp2(const std::array<ApplicationInput, 2> &input, std:
             const auto &frame = *ordered[side][cursor[side]++];
             if (stop.stop_requested())
                 return result;
-            const auto &source = input[frame.side];
-            const auto &data = *source.bytes;
-            ByteView view(data);
-            auto &pending = headers[frame.side];
-            if (frame.length > maxFrame[frame.side])
-                throw std::runtime_error("HTTP/2 frame exceeds negotiated size");
-            if (pending.open && (frame.type != 9 || pending.stream != frame.stream))
-                throw std::runtime_error("HTTP/2 CONTINUATION expected");
-            if (result.messages.size() >= 1024)
-                throw std::length_error("HTTP/2 message limit reached");
-            ApplicationMessage m;
-            m.protocol = "HTTP2";
-            m.direction = frame.side;
-            m.streamId = frame.stream;
-            m.source = source.source;
-            m.bytes = source.bytes;
-            m.offset = frame.offset;
-            m.length = frame.length + 9;
-            m.sources = messageSources(source, m.offset, m.length);
-            m.summary =
-                "Frame " + std::to_string(frame.type) + " stream " + std::to_string(frame.stream);
-            add(m, "Frame type", "http2.type", std::uint64_t(frame.type), frame.offset + 3, 1);
-            add(m, "Stream", "http2.streamid", std::uint64_t(frame.stream), frame.offset + 5, 4);
-            auto begin = frame.offset + 9, end = begin + frame.length;
-            if (frame.type == 0 || frame.type == 1 || frame.type == 5) {
-                if (!frame.stream)
-                    throw std::runtime_error("HTTP/2 stream ID is zero");
-                if (frame.flags & 8) {
-                    const auto padding = view.integer(begin++, 1);
-                    if (begin > end || padding > end - begin)
-                        throw std::runtime_error("Invalid HTTP/2 padding");
-                    end -= static_cast<std::size_t>(padding);
-                }
-            }
-            if (frame.type == 1 || frame.type == 5) {
-                if (streams.size() >= 1024 && !streams.contains(frame.stream))
-                    throw std::length_error("HTTP/2 stream limit reached");
-                streams.insert(frame.stream);
-                if (frame.type == 1 && frame.flags & 32) {
-                    if (end - begin < 5 || (view.integer(begin, 4) & 0x7fffffff) == frame.stream)
-                        throw std::runtime_error("Invalid HTTP/2 priority");
-                    begin += 5;
-                }
-                if (frame.type == 5) {
-                    if (end - begin < 4 || !(view.integer(begin, 4) & 0x7fffffff))
-                        throw std::runtime_error("Invalid HTTP/2 promised stream");
-                    m.streamId = static_cast<std::uint32_t>(view.integer(begin, 4) & 0x7fffffff);
-                    begin += 4;
-                }
-                pending = {};
-                pending.stream = frame.stream;
-                pending.message = result.messages.size();
-                pending.offset = begin;
-                pending.open = true;
-            }
-            if (frame.type == 1 || frame.type == 5 || frame.type == 9) {
-                if (!pending.open || pending.stream != frame.stream)
-                    throw std::runtime_error("Unexpected HTTP/2 CONTINUATION");
-                if (end - begin > applicationHeaderLimit - pending.bytes.size())
-                    throw std::length_error("HTTP/2 header limit reached");
-                const auto part = view.slice(begin, end - begin);
-                pending.bytes.insert(pending.bytes.end(), part.begin(), part.end());
-                if (frame.flags & 4) {
-                    auto &target = frame.type == 9 ? result.messages[pending.message] : m;
-                    inflate(inflaters[frame.side], pending, target, end);
-                    if (frame.type == 9) {
-                        target.sources.insert(target.sources.end(), m.sources.begin(),
-                                              m.sources.end());
-                        target.length = end - target.offset;
-                    }
-                    pending.open = false;
-                    pending.bytes.clear();
-                }
-            } else if (frame.type == 2) {
-                if (!frame.stream || frame.length != 5 ||
-                    (view.integer(begin, 4) & 0x7fffffff) == frame.stream)
-                    throw std::runtime_error("Invalid HTTP/2 PRIORITY");
-            } else if (frame.type == 3) {
-                if (!frame.stream || frame.length != 4)
-                    throw std::runtime_error("Invalid HTTP/2 RST_STREAM");
-                add(m, "Error code", "http2.error", view.integer(begin, 4), begin, 4);
-            } else if (frame.type == 4) {
-                if (frame.stream || frame.length % 6 || ((frame.flags & 1) && frame.length))
-                    throw std::runtime_error("Invalid HTTP/2 SETTINGS");
-                for (auto at = begin; at < end; at += 6) {
-                    const auto key = view.integer(at, 2), value = view.integer(at + 2, 4);
-                    if (key == 1) {
-                        if (value > 65536)
-                            throw std::length_error("HPACK table limit reached");
-                        if (nghttp2_hd_inflate_change_table_size(inflaters[1 - frame.side].value,
-                                                                 static_cast<std::size_t>(value)))
-                            throw std::runtime_error("Invalid HPACK table size");
-                    } else if (key == 2 && value > 1)
-                        throw std::runtime_error("Invalid HTTP/2 ENABLE_PUSH");
-                    else if (key == 4 && value > 0x7fffffff)
-                        throw std::runtime_error("Invalid HTTP/2 window size");
-                    else if (key == 5) {
-                        if (value < 16384 || value > 16777215)
-                            throw std::runtime_error("Invalid HTTP/2 maximum frame size");
-                        maxFrame[1 - frame.side] = static_cast<std::uint32_t>(value);
-                    }
-                }
-            } else if (frame.type == 6) {
-                if (frame.stream || frame.length != 8)
-                    throw std::runtime_error("Invalid HTTP/2 PING");
-            } else if (frame.type == 7) {
-                if (frame.stream || frame.length < 8)
-                    throw std::runtime_error("Invalid HTTP/2 GOAWAY");
-                add(m, "Error code", "http2.error", view.integer(begin + 4, 4), begin + 4, 4);
-            } else if (frame.type == 8) {
-                if (frame.length != 4 || !(view.integer(begin, 4) & 0x7fffffff))
-                    throw std::runtime_error("Invalid HTTP/2 WINDOW_UPDATE");
-            }
-            appendApplicationMessage(result, std::move(m));
+            state.process(frame, input);
         }
         for (unsigned side = 0; side < 2; ++side)
-            if (headers[side].open || input[side].incomplete)
+            if (state.headers[side].open || input[side].incomplete)
                 result.status = AnalysisStatus::Incomplete;
     } catch (const std::length_error &e) {
         result.status = AnalysisStatus::Limited;
@@ -313,5 +338,129 @@ ApplicationResult decodeHttp2(const std::array<ApplicationInput, 2> &input, std:
         result.error = e.what();
     }
     return result;
+}
+struct Http2Stream::Impl : Http2State {
+    std::array<detail::ApplicationBuffer, 2> buffers;
+    std::array<std::size_t, 2> cursor{};
+    std::array<bool, 2> beginning{true, true}, first{true, true};
+    std::optional<unsigned> client;
+    bool failed{};
+    std::optional<Frame> head(unsigned side) {
+        const auto &input = buffers[side].data;
+        const auto &bytes = *input.bytes;
+        auto &at = cursor[side];
+        if (!input.startKnown || bytes.empty())
+            return {};
+        if (beginning[side]) {
+            const auto prefix = std::min(bytes.size(), preface.size());
+            if (std::equal(bytes.begin(), bytes.begin() + static_cast<std::ptrdiff_t>(prefix),
+                           preface.begin())) {
+                if (bytes.size() < preface.size())
+                    return {};
+                if (client)
+                    throw std::runtime_error("Duplicate HTTP/2 preface");
+                client = side;
+                at = preface.size();
+            }
+            beginning[side] = false;
+        }
+        if (!containsBytes(bytes.size(), at, 9))
+            return {};
+        ByteView view(bytes);
+        const auto length = static_cast<std::size_t>(view.integer(at, 3));
+        if (length > maxFrame[side])
+            throw std::runtime_error("HTTP/2 frame exceeds negotiated size");
+        if (!containsBytes(bytes.size(), at + 9, length))
+            return {};
+        Frame frame{side,
+                    at,
+                    length,
+                    static_cast<std::uint32_t>(view.integer(at + 5, 4) & 0x7fffffff),
+                    bytes[at + 3],
+                    bytes[at + 4],
+                    0};
+        for (const auto &source : messageSources(input, at, length + 9))
+            frame.packet = std::max(frame.packet, source.packetId);
+        return frame;
+    }
+};
+Http2Stream::Http2Stream() : impl_(std::make_unique<Impl>()) {}
+Http2Stream::~Http2Stream() = default;
+ApplicationResult Http2Stream::append(const std::array<ApplicationInput, 2> &input,
+                                      std::stop_token stop) {
+    auto &state = *impl_;
+    state.compact = true;
+    try {
+        if (!state.failed) {
+            for (unsigned side = 0; side < 2; ++side)
+                state.buffers[side].append(input[side]);
+            while (!stop.stop_requested()) {
+                std::array<std::optional<Frame>, 2> heads{state.head(0), state.head(1)};
+                if (!state.client || (!heads[0] && !heads[1]))
+                    break;
+                const auto side =
+                    !heads[0] ? 1u : (!heads[1] || heads[0]->packet <= heads[1]->packet ? 0u : 1u);
+                const auto &frame = *heads[side];
+                if (state.first[side] && (frame.type != 4 || frame.flags & 1))
+                    throw std::runtime_error("HTTP/2 SETTINGS expected");
+                state.first[side] = false;
+                state.base = {state.buffers[0].base, state.buffers[1].base};
+                state.process(frame, {state.buffers[0].data, state.buffers[1].data});
+                state.cursor[side] += frame.length + 9;
+                // An open header block keeps its bytes until CONTINUATION completes.
+                for (auto &message : state.result.messages) {
+                    if (message.streamOffset)
+                        continue;
+                    const auto &pending = state.headers[message.direction];
+                    if (pending.open && &message == &state.result.messages[pending.message])
+                        continue;
+                    detail::freezeMessage(message, state.buffers[message.direction].base);
+                }
+            }
+            for (unsigned side = 0; side < 2; ++side)
+                if (!state.headers[side].open) {
+                    state.buffers[side].consume(state.cursor[side]);
+                    state.cursor[side] = 0;
+                }
+        }
+    } catch (const std::length_error &error) {
+        state.failed = true;
+        state.result.status = AnalysisStatus::Limited;
+        state.result.error = error.what();
+    } catch (const std::exception &error) {
+        state.failed = true;
+        state.result.status = AnalysisStatus::Incomplete;
+        state.result.error = error.what();
+    }
+    auto snapshot = state.result;
+    for (auto &message : snapshot.messages)
+        if (!message.streamOffset) {
+            message.bytes = state.buffers[message.direction].data.bytes;
+            detail::freezeMessage(message, state.buffers[message.direction].base);
+            message.status = AnalysisStatus::Incomplete;
+        }
+    for (unsigned side = 0; side < 2; ++side)
+        if ((state.headers[side].open || state.buffers[side].size() ||
+             state.buffers[side].data.incomplete) &&
+            snapshot.status == AnalysisStatus::Complete)
+            snapshot.status = AnalysisStatus::Incomplete;
+    if (state.droppedThrough && state.droppedThrough >= state.retentionFloor) {
+        snapshot.status = AnalysisStatus::Limited;
+        snapshot.error = "Application result limit reached";
+    }
+    snapshot.estimatedBytes = estimateApplicationBytes(snapshot);
+    return snapshot;
+}
+void Http2Stream::prune(std::uint64_t first) {
+    impl_->retentionFloor = first;
+    if (!impl_->headers[0].open && !impl_->headers[1].open)
+        detail::pruneMessages(impl_->result, first);
+}
+std::size_t Http2Stream::estimatedBytes() const {
+    std::size_t bytes = sizeof(Impl) + estimateApplicationBytes(impl_->result);
+    for (unsigned side = 0; side < 2; ++side)
+        bytes += impl_->buffers[side].estimatedBytes() + impl_->headers[side].bytes.capacity() +
+                 nghttp2_hd_inflate_get_dynamic_table_size(impl_->inflaters[side].value) + 4096;
+    return bytes;
 }
 } // namespace etherscope

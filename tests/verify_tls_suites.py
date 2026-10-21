@@ -117,12 +117,15 @@ def run_case(suite, args):
         elif fields[0] == 'status':
             assert fields[1] == '1', (suite, line)
     assert plaintext == [REQUEST.hex(), RESPONSE.hex()], suite
+    incremental = subprocess.check_output([str(args.inspector), str(capture), str(keylog),
+                                          '--plaintext', '--incremental'], text=True, encoding='utf-8')
+    assert sorted(incremental.splitlines()) == sorted(analysis.splitlines()), suite
     if args.tshark:
         reference = subprocess.check_output([str(args.tshark), '-n', '-r', str(capture), '-o',
                                              'tls.keylog_file:' + str(keylog), '-T', 'fields',
                                              '-e', 'http.host', '-e', 'http.response.code'], text=True, encoding='utf-8')
         assert 'example.com' in reference and '200' in reference, (suite, reference)
-    return {'suite': suite, 'records': records, 'exact_plaintext': True, 'tshark': bool(args.tshark)}
+    return {'suite': suite, 'records': records, 'exact_plaintext': True, 'incremental_equal': True, 'tshark': bool(args.tshark)}
 
 
 if __name__ == '__main__':

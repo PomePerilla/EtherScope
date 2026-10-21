@@ -1,4 +1,5 @@
 #include "core/tls.h"
+#include "core/application_stream.h"
 #include <openssl/evp.h>
 #include <iostream>
 #include <stdexcept>
@@ -63,7 +64,42 @@ Case sample(std::uint16_t suite,bool v13,bool update=false){
 void run(){
     for(bool v13:{false,true}) {
         const auto suites=v13?std::vector<std::uint16_t>{0x1301,0x1302,0x1303}:std::vector<std::uint16_t>{0x009c,0x009d,0x009e,0x009f,0xc02b,0xc02c,0xc02f,0xc030,0xcca8,0xcca9,0xccaa};
-        for(auto suite:suites){auto c=sample(suite,v13,v13);TlsKeyLog keys;keys.append(c.keylog);auto result=decodeTls(c.input,keys);if(result.analysis.status!=AnalysisStatus::Complete)throw std::runtime_error(std::to_string(suite)+": "+result.analysis.error);check(result.decrypted,"TLS decryption");const auto http=decodeHttp1(result.plaintext);check(http.status==AnalysisStatus::Complete && http.messages.size()==(v13?3u:2u),"TLS plaintext HTTP parsing");for(const auto& message:http.messages)check(!message.sources.empty() && message.source==DataSource::Decrypted,"Plaintext source mapping");}
+        for(auto suite:suites){auto c=sample(suite,v13,v13);TlsKeyLog keys;keys.append(c.keylog);auto result=decodeTls(c.input,keys);if(result.analysis.status!=AnalysisStatus::Complete)throw std::runtime_error(std::to_string(suite)+": "+result.analysis.error);check(result.decrypted,"TLS decryption");const auto http=decodeHttp1(result.plaintext);check(http.status==AnalysisStatus::Complete && http.messages.size()==(v13?3u:2u),"TLS plaintext HTTP parsing");for(const auto& message:http.messages)check(!message.sources.empty() && message.source==DataSource::Decrypted,"Plaintext source mapping");
+            TlsStream stream;
+            std::map<std::uint64_t, std::pair<unsigned, SourceSpan>> records;
+            for (unsigned side = 0; side < 2; ++side)
+                for (const auto &source : c.input[side].sources)
+                    records[source.packetId] = {side, source};
+            std::array<Bytes, 2> plaintext;
+            TlsResult incremental;
+            for (const auto &[packet, item] : records) {
+                const auto &[side, source] = item;
+                for (std::size_t offset = 0; offset < source.length; ++offset) {
+                    std::array<ApplicationInput, 2> input;
+                    auto &part = input[side];
+                    part.direction = side;
+                    part.startKnown = true;
+                    part.bytes = std::make_shared<const Bytes>(1, c.bytes[side][source.bufferOffset + offset]);
+                    part.sources = {{packet, 54 + offset, 1, 0}};
+                    incremental = stream.append(input, keys);
+                    for (unsigned direction = 0; direction < 2; ++direction)
+                        if (incremental.plaintext[direction].bytes)
+                            append(plaintext[direction], *incremental.plaintext[direction].bytes);
+                }
+            }
+            if (incremental.analysis.status != AnalysisStatus::Complete)
+                throw std::runtime_error("Incremental suite " + std::to_string(suite) + ": " + incremental.analysis.error);
+            check(plaintext[0] == *result.plaintext[0].bytes && plaintext[1] == *result.plaintext[1].bytes,
+                  "Incremental TLS one-byte records and KeyUpdate equal whole-input plaintext");
+            check(incremental.analysis.messages.size() == result.analysis.messages.size(),
+                  "Incremental TLS never duplicates handshake or application messages");
+            for (const auto &message : incremental.analysis.messages) {
+                check(message.bytes && message.streamOffset.has_value(), "Incremental TLS messages own stable ranges");
+                for (const auto &field : message.fields)
+                    check(field.offset <= message.bytes->size() && field.length <= message.bytes->size() - field.offset,
+                          "Incremental TLS field ranges stay inside immutable data");
+            }
+        }
     }
     for(bool v13:{false,true}){
         auto reordered=sample(v13?0x1301:0xc02b,v13,v13);TlsKeyLog log;log.append(reordered.keylog);

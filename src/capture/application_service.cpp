@@ -4,6 +4,7 @@
 #include <QDateTime>
 #include <algorithm>
 #include <set>
+#include <utility>
 
 namespace etherscope {
 ApplicationAnalysisService::ApplicationAnalysisService(QObject *parent, ApplicationHooks hooks)
@@ -22,6 +23,13 @@ bool ApplicationAnalysisService::busy() const {
     std::lock_guard lock(mutex_);
     return working_ || !pending_.empty();
 }
+ApplicationServiceStats ApplicationAnalysisService::stats() const {
+    std::lock_guard lock(mutex_);
+    auto result = stats_;
+    result.queuedBytes = queuedBytes_;
+    result.pendingUpdates = completed_.size() + (limited_.empty() ? 0 : 1);
+    return result;
+}
 std::uint64_t ApplicationAnalysisService::reset() {
     std::stop_source active;
     std::uint64_t result;
@@ -32,6 +40,7 @@ std::uint64_t ApplicationAnalysisService::reset() {
         completed_.clear();
         limited_.clear();
         queuedBytes_ = resultBytes_ = 0;
+        stats_ = {};
         retentionFloor_ = 0;
         active = activeStop_;
     }
@@ -48,10 +57,12 @@ void ApplicationAnalysisService::submit(std::vector<std::shared_ptr<const Packet
     if (stopped_)
         return;
     retentionFloor_ = std::max(retentionFloor_, firstRetained);
+    stats_.submittedPackets += packets.size();
     std::size_t bytes = conversations.capacity() * sizeof(TcpConversation);
     for (const auto &p : packets)
         bytes += p->estimatedBytes + sizeof(std::shared_ptr<const Packet>);
     if (bytes > applicationQueueBudget || queuedBytes_ > applicationQueueBudget - bytes) {
+        stats_.rejectedPackets += packets.size();
         // Budget exhaustion is visible to three-valued filters; packets never look absent.
         for (const auto &p : packets)
             limited_[p->id].status = AnalysisStatus::Limited;
@@ -117,11 +128,15 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
         std::deque<std::shared_ptr<const Packet>> packets;
         std::size_t bytes{};
         std::uint64_t revision{};
-        bool partial{};
+        bool partial{}, ordered{};
+        std::vector<std::shared_ptr<const Packet>> incoming;
+        std::unique_ptr<ConversationAnalysis> analysis;
+        std::size_t analysisBytes{};
     };
     std::map<std::uint64_t, Connection> connections;
     std::deque<std::uint64_t> order;
     std::size_t retained = 0;
+    std::size_t analysisBytes = 0;
     std::uint64_t epoch = 0, keyCommand = 0, keyRevision = 0, appliedFloor = 0;
     QString path;
     std::unique_ptr<TlsKeyLog> keys = std::make_unique<TlsKeyLog>();
@@ -160,6 +175,7 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
             connections.clear();
             order.clear();
             retained = 0;
+            analysisBytes = 0;
             epoch = current;
         }
         std::set<std::uint64_t> dirty;
@@ -192,15 +208,24 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                         next->append(std::string_view(bytes.constData(),
                                                       static_cast<std::size_t>(bytes.size())));
                     }
+                    for (auto &[id, connection] : connections)
+                        if (hooks_.conversation ||
+                            (connection.analysis &&
+                             connection.analysis->keysChanged(*keys, *next))) {
+                            analysisBytes -= connection.analysisBytes;
+                            connection.analysisBytes = 0;
+                            connection.analysis.reset();
+                            connection.incoming.assign(connection.packets.begin(),
+                                                       connection.packets.end());
+                            dirty.insert(id);
+                            std::lock_guard lock(mutex_);
+                            ++stats_.keyReplays;
+                        }
                     keys = std::move(next);
                     ++keyRevision;
                     path = desiredPath;
                     fileSize = size;
                     fileTime = time;
-                    for (const auto &[id, c] : connections) {
-                        (void)c;
-                        dirty.insert(id);
-                    }
                 }
             } catch (const std::exception &e) {
                 success = false;
@@ -222,7 +247,15 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                         c.packets.pop_front();
                         c.partial = true;
                     }
-                    if (c.packets.empty()) {
+                    std::erase_if(c.incoming,
+                                  [floor](const auto &packet) { return packet->id < floor; });
+                    if (c.analysis) {
+                        analysisBytes -= c.analysisBytes;
+                        c.analysis->prune(floor);
+                        c.analysisBytes = c.analysis->estimatedBytes();
+                        analysisBytes += c.analysisBytes;
+                    }
+                    if (c.packets.empty() && !c.analysis) {
                         std::erase(order, it->first);
                         dirty.erase(it->first);
                         it = connections.erase(it);
@@ -238,8 +271,10 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                     continue;
                 if (packet->tcpConversationId) {
                     auto &c = connections[packet->tcpConversationId];
-                    if (c.packets.empty())
+                    if (!c.ordered) {
                         order.push_back(packet->tcpConversationId);
+                        c.ordered = true;
+                    }
                     const auto size = packet->estimatedBytes;
                     while (!c.packets.empty() &&
                            (c.packets.size() >= 10000 || c.bytes + size > applicationInputBudget)) {
@@ -250,6 +285,7 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                     }
                     if (size <= applicationInputBudget) {
                         c.packets.push_back(packet);
+                        c.incoming.push_back(packet);
                         c.bytes += size;
                         retained += size;
                     } else
@@ -268,7 +304,7 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                     results.push_back(std::move(update));
                 }
             }
-            while ((retained > applicationInputBudget ||
+            while (((retained > applicationInputBudget || analysisBytes > applicationStateBudget) ||
                     connections.size() > TcpConversations::connectionLimit) &&
                    !order.empty()) {
                 const auto id = order.front();
@@ -278,14 +314,20 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                     continue;
                 ApplicationUpdate update;
                 update.generation = epoch;
-                update.conversation = id;
                 auto result = std::make_shared<ApplicationResult>();
                 result->status = AnalysisStatus::Limited;
                 update.result = std::move(result);
-                for (const auto &packet : it->second.packets)
+                // Releasing computation state does not invalidate already published facts.
+                for (const auto &packet : it->second.incoming)
                     update.facts[packet->id].status = AnalysisStatus::Limited;
-                results.push_back(std::move(update));
+                if (!update.facts.empty())
+                    results.push_back(std::move(update));
                 retained -= it->second.bytes;
+                analysisBytes -= it->second.analysisBytes;
+                {
+                    std::lock_guard lock(mutex_);
+                    ++stats_.stateEvictions;
+                }
                 dirty.erase(id);
                 connections.erase(it);
             }
@@ -302,7 +344,11 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
             request.generation = epoch;
             request.key = c.info.key;
             request.cachePartial = c.partial;
-            request.packets.assign(c.packets.begin(), c.packets.end());
+            if (hooks_.conversation) {
+                request.packets.assign(c.packets.begin(), c.packets.end());
+                c.incoming.clear();
+            } else
+                request.packets = std::exchange(c.incoming, {});
             for (unsigned side = 0; side < 2; ++side) {
                 if (c.info.syn[side].seen)
                     request.start[side] = c.info.syn[side].sequence + 1;
@@ -317,10 +363,25 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                 if (c.info.id != id) {
                     result = std::make_shared<ApplicationResult>();
                     result->status = AnalysisStatus::Limited;
-                } else
-                    result = std::make_shared<ApplicationResult>(
-                        hooks_.conversation ? hooks_.conversation(request, *keys, token)
-                                            : analyzeConversation(request, *keys, token));
+                } else {
+                    if (hooks_.conversation)
+                        result = std::make_shared<ApplicationResult>(
+                            hooks_.conversation(request, *keys, token));
+                    else {
+                        if (!c.analysis)
+                            c.analysis = std::make_unique<ConversationAnalysis>();
+                        const auto before = c.analysis->deliveredBytes();
+                        c.analysis->prune(floor);
+                        result = std::make_shared<ApplicationResult>(
+                            c.analysis->append(request, *keys, token));
+                        analysisBytes -= c.analysisBytes;
+                        c.analysisBytes = c.analysis->estimatedBytes();
+                        analysisBytes += c.analysisBytes;
+                        std::lock_guard lock(mutex_);
+                        if (epoch == generation_)
+                            stats_.deliveredBytes += c.analysis->deliveredBytes() - before;
+                    }
+                }
             } catch (const std::exception &e) {
                 result = std::make_shared<ApplicationResult>();
                 result->status = AnalysisStatus::Incomplete;
@@ -331,13 +392,32 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
             update.revision = c.revision;
             update.keyRevision = keyRevision;
             update.conversation = id;
-            update.facts = indexApplication(*result, request.packets);
+            const std::vector<std::shared_ptr<const Packet>> retainedPackets(c.packets.begin(),
+                                                                             c.packets.end());
+            update.facts = indexApplication(*result, retainedPackets);
             update.result = std::move(result);
             results.push_back(std::move(update));
+        }
+        while ((retained > applicationInputBudget || analysisBytes > applicationStateBudget) &&
+               !order.empty()) {
+            const auto id = order.front();
+            order.pop_front();
+            const auto found = connections.find(id);
+            if (found == connections.end())
+                continue;
+            retained -= found->second.bytes;
+            analysisBytes -= found->second.analysisBytes;
+            connections.erase(found);
+            std::lock_guard lock(mutex_);
+            ++stats_.stateEvictions;
         }
         {
             std::lock_guard lock(mutex_);
             working_ = false;
+            if (epoch == generation_) {
+                stats_.stateBytes = analysisBytes;
+                stats_.retainedBytes = retained;
+            }
             if (epoch == generation_ && !token.stop_requested())
                 for (auto &result : results) {
                     const auto size = sizeof(ApplicationUpdate) +
@@ -360,6 +440,7 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                         limited_.erase(id);
                     }
                     resultBytes_ += size;
+                    ++stats_.completedUpdates;
                     completed_.push_back(std::move(result));
                 }
         }
