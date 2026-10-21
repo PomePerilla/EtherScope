@@ -1,6 +1,6 @@
 #pragma once
 #include "core/display_filter.h"
-#include <deque>
+#include <set>
 
 namespace etherscope {
 class ApplicationIndex {
@@ -13,19 +13,34 @@ class ApplicationIndex {
     std::vector<std::shared_ptr<const ApplicationResult>> results(std::uint64_t packet) const;
     std::vector<std::shared_ptr<const ApplicationResult>> conversation(std::uint64_t id) const;
     std::size_t estimatedBytes() const {
-        return bytes_ + facts_.size() * (sizeof(ApplicationFacts) + 64);
+        return bytes_;
     }
     std::pair<std::size_t, std::size_t> unresolved() const;
 
   private:
-    struct Entry {
-        std::shared_ptr<const ApplicationResult> result;
-        std::vector<std::uint64_t> packets;
+    using EntryKey = std::pair<bool, std::uint64_t>;
+    struct FactRecord {
+        ApplicationFacts value;
+        EntryKey key{};
+        std::uint64_t owner{};
         std::size_t bytes{};
     };
-    std::map<std::pair<bool, std::uint64_t>, Entry> entries_;
-    std::map<std::uint64_t, ApplicationFacts> facts_;
-    std::deque<std::pair<bool, std::uint64_t>> order_;
+    struct Entry {
+        std::uint64_t id{};
+        std::shared_ptr<const ApplicationResult> result;
+        std::set<std::uint64_t> packets;
+        // Fixed entry, ordering and result storage; memberships are charged separately.
+        std::size_t bytes{};
+    };
+    using Entries = std::map<EntryKey, Entry>;
+    Entries entries_;
+    std::map<std::uint64_t, FactRecord> facts_;
+    std::map<std::uint64_t, EntryKey> order_;
     std::size_t bytes_{};
+    std::uint64_t nextEntry_{};
+    static std::size_t estimateFactBytes(const ApplicationFacts &facts);
+    void detach(std::uint64_t packet, FactRecord &record);
+    void eraseEmptyEntry(Entries::iterator entry);
+    void removeEntry(Entries::iterator entry, bool retainLimited);
 };
 } // namespace etherscope

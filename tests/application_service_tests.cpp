@@ -16,6 +16,74 @@ std::vector<TcpConversation> connections(const SessionStore& store){return {stor
 class ApplicationServiceTests:public QObject {
     Q_OBJECT
 private slots:
+    void completedReplaySupersedesUndeliveredLimitMarker() {
+        SessionStore store;
+        traffic(store);
+        ApplicationAnalysisService service;
+        auto rejected = std::make_shared<Packet>();
+        rejected->id = 4;
+        rejected->estimatedBytes = applicationQueueBudget + 1;
+        service.submit({rejected}, {});
+        service.submit({store.packets().begin(), store.packets().end()}, connections(store));
+        QTRY_VERIFY_WITH_TIMEOUT(!service.busy(), 5000);
+        ApplicationIndex index;
+        for (auto &update : service.takeResults())
+            index.apply(update.conversation, std::move(update.result), std::move(update.facts));
+        QVERIFY(index.facts(4));
+        QCOMPARE(index.facts(4)->status, AnalysisStatus::Complete);
+        const auto expression = compileDisplayFilter("http.host == \"example.com\"").value;
+        QCOMPARE(expression->evaluate(*store.packets().back(), index.facts(4)), FilterTruth::True);
+        QCOMPARE(index.results(4).size(), 1u);
+    }
+    void limitedNotificationThenSuccessSurvivesEviction() {
+        SessionStore store;
+        traffic(store);
+        ApplicationAnalysisService service;
+        ApplicationIndex index;
+        auto collect = [&] {
+            for (auto &update : service.takeResults()) {
+                QCOMPARE(update.generation, service.generation());
+                index.apply(update.conversation, std::move(update.result), std::move(update.facts));
+            }
+        };
+        auto submit = [&] {
+            service.submit({store.packets().begin(), store.packets().end()}, connections(store));
+        };
+        submit();
+        QTRY_VERIFY_WITH_TIMEOUT(!service.busy(), 5000);
+        collect();
+        const auto expression = compileDisplayFilter("http.host == \"example.com\"").value;
+        QCOMPARE(expression->evaluate(*store.packets().back(), index.facts(4)), FilterTruth::True);
+
+        std::vector<std::shared_ptr<const Packet>> rejected;
+        for (unsigned id = 1; id <= 1000; ++id) {
+            auto packet = std::make_shared<Packet>();
+            packet->id = id;
+            packet->estimatedBytes = applicationQueueBudget + 1;
+            rejected.push_back(std::move(packet));
+        }
+        service.submit(std::move(rejected), {});
+        collect();
+        QCOMPARE(index.facts(4)->status, AnalysisStatus::Limited);
+        QCOMPARE(expression->evaluate(*store.packets().back(), index.facts(4)), FilterTruth::Unknown);
+
+        submit();
+        QTRY_VERIFY_WITH_TIMEOUT(!service.busy(), 5000);
+        collect();
+        QCOMPARE(index.results(4).size(), 1u);
+        auto pressure = std::make_shared<ApplicationResult>();
+        pressure->estimatedBytes = applicationIndexBudget - index.estimatedBytes();
+        ApplicationFacts complete;
+        complete.status = AnalysisStatus::Complete;
+        index.apply(77, std::move(pressure), {{1001, std::move(complete)}});
+        QCOMPARE(index.facts(4)->status, AnalysisStatus::Complete);
+        QCOMPARE(expression->evaluate(*store.packets().back(), index.facts(4)), FilterTruth::True);
+        QCOMPARE(index.results(4).size(), 1u);
+        QVERIFY(index.estimatedBytes() <= applicationIndexBudget);
+        index.prune(4, 4);
+        QVERIFY(!index.facts(3));
+        QCOMPARE(expression->evaluate(*store.packets().back(), index.facts(4)), FilterTruth::True);
+    }
     void rejectedBatchStillReleasesEvictedPackets(){
         ApplicationAnalysisService service;SessionStore store;traffic(store);std::weak_ptr<const Packet> first=store.packets().front();
         service.submit({store.packets().begin(),store.packets().end()},connections(store),1);QTRY_VERIFY_WITH_TIMEOUT(!service.busy(),5000);store.clear();QVERIFY(!first.expired());

@@ -354,6 +354,11 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                             limited_.erase(limited_.begin());
                         continue;
                     }
+                    // A completed replay supersedes earlier queue or staging limit markers.
+                    for (const auto &[id, fact] : result.facts) {
+                        (void)fact;
+                        limited_.erase(id);
+                    }
                     resultBytes_ += size;
                     completed_.push_back(std::move(result));
                 }
