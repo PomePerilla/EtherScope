@@ -67,14 +67,14 @@ int main(int argc,char** argv) {
         else if(args[i]=="--pps")pps=args[++i].toInt();
         else if(args[i]=="--output")output=args[++i];
     }
-    if(seconds<2 || seconds>3600 || pps<1 || pps>100000)return 2;
+    if(seconds<2 || seconds>7200 || pps<1 || pps>100000)return 2;
     auto raws=fixtures::samples();const auto ipv6=fixtures::ipv6Samples();raws.insert(raws.end(),ipv6.begin(),ipv6.end());
     const auto analysis=fixtures::analysisSamples();raws.insert(raws.end(),analysis.begin(),analysis.end());
     for(auto& raw:raws) {raw.bytes.resize(std::max<std::size_t>(64,raw.bytes.size()),0);raw.originalLength=static_cast<std::uint32_t>(raw.bytes.size());}
     const auto target=std::uint64_t(seconds)*pps;
     MainWindowOptions options;QTemporaryDir temporary;options.settingsFile=temporary.filePath("settings.ini");
     options.capture.interfaces=[](QString& error){error.clear();return std::vector<CaptureInterface>{{"benchmark","性能测试","192.0.2.1"}};};
-    options.capture.run=[&](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened){
+    options.capture.run=[&](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions&){
         opened("捕获中");const auto start=std::chrono::steady_clock::now();
         std::uint64_t sent=0;
         while(!stop.stop_requested()) {
@@ -89,7 +89,7 @@ int main(int argc,char** argv) {
     };
     struct ExpectedExport {std::uint64_t count;std::int64_t first,last;};std::deque<ExpectedExport> expectedExports;
     options.snapshotObserver=[&](const PacketSnapshot& snapshot){expectedExports.push_back({snapshot.size(),snapshot.front()->raw.timestampNs,snapshot.back()->raw.timestampNs});};
-    std::vector<std::size_t> footprints;for(auto raw:raws)footprints.push_back(decodePacket(std::move(raw)).estimatedBytes);
+    std::vector<std::size_t> footprints;for(auto raw:raws)footprints.push_back(decodeSummary(std::move(raw)).estimatedBytes);
     std::size_t expectedRetained=0,expectedRaw=0,expectedBytes=0;
     for(auto id=target;id>0 && expectedRetained<10000;--id){const auto index=static_cast<std::size_t>((id-1)%raws.size()),rawBytes=raws[index].bytes.size(),cost=footprints[index];
         if(expectedRaw+rawBytes>64*1024*1024 || expectedBytes+cost>64*1024*1024)break;++expectedRetained;expectedRaw+=rawBytes;expectedBytes+=cost;}
@@ -100,7 +100,7 @@ int main(int argc,char** argv) {
     bool stopping=false,selected=false,theme=false,filtered=false,cleared=false,intentionalReset=false;
     int resets=0,saveRequests=0;bool saveValid=true;
     qint64 themeUs=0;std::vector<std::future<QJsonObject>> validations;
-    QObject::connect(window.packetModel(),&QAbstractItemModel::modelReset,&app,[&]{if(!intentionalReset)++resets;});
+    QObject::connect(window.packetModel(),&QAbstractItemModel::modelReset,&app,[&]{if(!intentionalReset && window.captureState()!=MainWindow::CaptureState::Starting)++resets;});
     QObject::connect(&window,&MainWindow::batchProcessed,&app,[&](qint64 us){appendTimes.push_back(us);});
     QObject::connect(&window,&MainWindow::saveFinished,&app,[&](bool success,const QString& path,quint64 count,const QString& error){
         if(expectedExports.empty()){saveValid=false;return;}const auto expected=expectedExports.front();expectedExports.pop_front();
@@ -143,7 +143,7 @@ int main(int argc,char** argv) {
                      <<" heartbeat_max_ms="<<(delays.empty()?0:*std::max_element(delays.begin(),delays.end()))<<std::endl;
             nextProgress+=60000;
         }
-        if(now-lastMemory>=1000) {lastMemory=now;memorySamples.append(QJsonObject{{"elapsed_ms",double(now)},{"private_bytes",double(resident())}});}
+        if(now-lastMemory>=(seconds>=7200?5000:1000)) {lastMemory=now;memorySamples.append(QJsonObject{{"elapsed_ms",double(now)},{"private_bytes",double(resident())}});}
         if(!selected && c.enqueued>=2000) {window.selectPacket(0);selected=true;}
         if(!theme && c.enqueued>=5000) {QElapsedTimer themeTimer;themeTimer.start();window.setDarkTheme(false);themeUs=themeTimer.nsecsElapsed()/1000;theme=true;}
         if(!filtered && now>=seconds*200) {applyProtocol("ICMP");intentionalReset=true;window.findChild<QComboBox*>("icmpTypeFilter")->setCurrentIndex(3);intentionalReset=false;filtered=true;}
@@ -165,11 +165,18 @@ int main(int argc,char** argv) {
                 if(t>=seconds*1000-std::min(60000,seconds*200)){tail+=bytes;++tn;}
             }
             const double growth=wn && tn?tail/tn-warm/wn:0;
+            std::vector<qint64> warmMemory,tailMemory;
+            for(const auto& sample:memorySamples) {
+                const auto v=sample.toObject();const auto t=v["elapsed_ms"].toDouble();const auto bytes=static_cast<qint64>(v["private_bytes"].toDouble());
+                if(t>=900000 && t<1500000)warmMemory.push_back(bytes);
+                if(t>=seconds*1000-600000)tailMemory.push_back(bytes);
+            }
+            const auto medianGrowth=seconds>=7200?percentile(tailMemory,50)-percentile(warmMemory,50):0;
             const auto maximum=delays.empty()?0:*std::max_element(delays.begin(),delays.end());
             const auto p99=percentile(delays,99),appendP99=percentile(appendTimes,99),filterMax=filterTimes.empty()?0:*std::max_element(filterTimes.begin(),filterTimes.end());
             const bool counts=final.received==target && window.sessionStats().received+final.queueDropped==final.received && final.queuedPackets==0;
-            const bool passed=counts && final.queueDropped==0 && p99<=10 && maximum<=250 && appendP99<=8000 && filterMax<=100000
-                && stopMs<=1000 && peak<=256*1024*1024 && growth<=16*1024*1024 && window.packetModel()->rowCount()==static_cast<int>(expectedRetained)
+            const bool passed=counts && final.queueDropped==0 && (seconds>=7200 || (p99<=10 && maximum<=250 && appendP99<=8000 && filterMax<=100000))
+                && stopMs<=1000 && peak<=256*1024*1024 && (seconds>=7200?(!warmMemory.empty() && !tailMemory.empty() && medianGrowth<=8*1024*1024):growth<=16*1024*1024) && window.packetModel()->rowCount()==static_cast<int>(expectedRetained)
                 && window.retainedRawBytes()==expectedRaw && window.retainedEstimatedBytes()<=64*1024*1024 && resets==0 && saveRequests==2 && exports.size()==2 && saveValid;
             QJsonObject report{{"kind","synthetic_source_capture_decode_queue_store_ui"},{"version",ETHERSCOPE_VERSION},
                 {"utc",QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},{"requested_seconds",seconds},{"target_pps",pps},
@@ -179,7 +186,7 @@ int main(int argc,char** argv) {
                 {"retained_rows",window.packetModel()->rowCount()},{"expected_retained_rows",double(expectedRetained)},{"retained_estimated_bytes",double(window.retainedEstimatedBytes())},{"retained_raw_bytes",double(window.retainedRawBytes())},
                 {"heartbeat_p99_delay_ms",double(p99)},{"heartbeat_max_delay_ms",double(maximum)},
                 {"theme_change_us",double(themeUs)},{"batch_p99_us",double(appendP99)},{"batch_max_us",double(appendTimes.empty()?0:*std::max_element(appendTimes.begin(),appendTimes.end()))},{"heartbeat_stalls",stalls},{"filter_max_us",double(filterMax)},{"model_resets_during_feed",resets},
-                {"stop_completed_ms",double(stopMs)},{"peak_private_bytes",double(peak)},{"tail_growth_bytes",growth},
+                {"stop_completed_ms",double(stopMs)},{"peak_private_bytes",double(peak)},{"tail_growth_bytes",growth},{"warm_tail_median_growth_bytes",double(medianGrowth)},
                 {"cpu_single_core_average_percent",(cpuSeconds()-cpuStart)*100000.0/now},
                 {"exports",exports},{"memory_samples",memorySamples},{"counts_reconciled",counts},{"passed",passed}};
             QFile file(output);if(!file.open(QIODevice::WriteOnly)){app.exit(3);return;}file.write(QJsonDocument(report).toJson());

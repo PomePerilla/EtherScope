@@ -29,6 +29,7 @@ QString warningText(const std::string& value) {
 void MainWindow::showDetails() {
     const auto packetAtRow=model_->packetAt(table_->currentIndex().row());
     if(packetAtRow && packetAtRow==selected_)return;
+    detailTimer_.stop();fieldItems_.clear();selectedDetails_.reset();details_.cancel();detailsPending_=false;
     selected_=packetAtRow;QSignalBlocker block(fields_);fields_->clear();hex_->setExtraSelections({});hex_->clear();hexPager_->hide();hexStart_=0;
     if(!selected_){for(auto* label:{detailId_,detailProtocol_,detailCaptured_,detailOriginal_,detailIssues_})label->clear();detailIssues_->setToolTip({});return;}
     const auto& packet=*selected_;
@@ -36,15 +37,22 @@ void MainWindow::showDetails() {
     detailCaptured_->setText(QString("%1 B").arg(packet.raw.bytes.size()));detailOriginal_->setText(QString("%1 B").arg(packet.raw.originalLength));
     QStringList issues;if(!packet.error.empty())issues<<q(packet.error);for(const auto& warning:packet.warnings)issues<<warningText(warning);
     detailIssues_->setText(issues.isEmpty()?QString{}:issues.front());detailIssues_->setToolTip(issues.join("\n"));
-    std::function<void(QTreeWidgetItem*,const Field&)> add=[&](QTreeWidgetItem* parent,const Field& field){
-        auto* item=parent?new QTreeWidgetItem(parent):new QTreeWidgetItem(fields_);item->setText(0,q(field.name));item->setText(1,fieldText(field.value));
+    detailsPending_=true;detailRequest_=details_.request(selected_);
+    renderHexPage(0);
+}
+void MainWindow::fillDetails() {
+    QSignalBlocker block(fields_);QElapsedTimer elapsed;elapsed.start();
+    while(!fieldItems_.empty() && elapsed.nsecsElapsed()<2000000) {
+        const auto entry=fieldItems_.back();fieldItems_.pop_back();const auto& field=*entry.field;
+        auto* item=entry.parent?new QTreeWidgetItem(entry.parent):new QTreeWidgetItem(fields_);
+        item->setText(0,q(field.name));item->setText(1,fieldText(field.value));
         const auto name=q(field.name);if(name.contains("地址") || name.contains("MAC") || q(field.value).startsWith("0x"))item->setFont(1,QFontDatabase::systemFont(QFontDatabase::FixedFont));
         item->setData(0,Qt::UserRole,QVariant::fromValue<qulonglong>(field.offset));item->setData(0,Qt::UserRole+1,QVariant::fromValue<qulonglong>(field.length));
-        const auto path=(parent?parent->data(0,Qt::UserRole+2).toString():QString{})+"/"+q(field.name);
-        item->setData(0,Qt::UserRole+2,path);
-        for(const auto& c:field.children)add(item,c);item->setExpanded(!collapsedFields_.contains(path));
-    };for(const auto& field:packet.fields) add(nullptr,field);
-    renderHexPage(0);
+        const auto path=(entry.parent?entry.parent->data(0,Qt::UserRole+2).toString():QString{})+"/"+name;
+        item->setData(0,Qt::UserRole+2,path);item->setExpanded(!collapsedFields_.contains(path));
+        for(auto child=field.children.rbegin();child!=field.children.rend();++child)fieldItems_.push_back({item,&*child});
+    }
+    if(fieldItems_.empty()){detailTimer_.stop();detailsPending_=false;emit detailsFinished(detailRequest_);}
 }
 void MainWindow::renderHexPage(std::size_t start) {
     if(!selected_) return;

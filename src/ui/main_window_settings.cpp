@@ -28,6 +28,7 @@ void MainWindow::restoreSettings() {
     statistics_->setChecked(settings_->value("ui/statistics",false).toBool());chartPanel_->setVisible(statistics_->isChecked());
     addressToggle_->setChecked(settings_->value("ui/addressExpanded",false).toBool());
     preferredDevice_=settings_->value("capture/device").toString();
+    successfulBpf_=settings_->value("capture/bpf").toString();bpfDraft_=successfulBpf_;
     openDirectory_=usableDirectory(settings_->value("files/openDirectory").toString());saveDirectory_=usableDirectory(settings_->value("files/saveDirectory").toString());
     bool macOk=false,ipOk=false;const auto md=settings_->value("filter/macDirection",0).toInt(&macOk),id=settings_->value("filter/ipDirection",0).toInt(&ipOk);
     const auto protocol=settings_->value("filter/protocol").toString();const auto protocolIndex=protocol.isEmpty()?0:protocol_->findText(protocol);
@@ -47,6 +48,7 @@ void MainWindow::saveSettings() {
     settings_->setValue("ui/addressExpanded",addressToggle_->isChecked());
     for(auto* splitter:findChildren<QSplitter*>()) settings_->setValue("ui/"+splitter->objectName(),splitter->saveState());
     const auto device=devices_->currentData().toString();settings_->setValue("capture/device",device.isEmpty()?preferredDevice_:device);
+    settings_->setValue("capture/bpf",successfulBpf_);
     const auto& f=model_->filter();settings_->setValue("filter/mac",f.mac?q(formatMac(*f.mac)):QString{});settings_->setValue("filter/ip",f.ip?q(formatIp(*f.ip)):(f.ipv6?q(formatIpv6(*f.ipv6)):QString{}));
     settings_->setValue("filter/macDirection",static_cast<int>(f.macDirection));settings_->setValue("filter/ipDirection",static_cast<int>(f.ipDirection));settings_->setValue("filter/protocol",q(f.protocol));
     if(f.protocol=="ICMP" && f.icmpType)settings_->setValue("filter/icmpType",int(*f.icmpType));else settings_->remove("filter/icmpType");

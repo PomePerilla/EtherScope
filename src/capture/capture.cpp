@@ -27,6 +27,10 @@ struct CaptureEngine::Api {
     decltype(&pcap_getevent) getEvent{};
     decltype(&pcap_setmintocopy) setMinToCopy{};
     decltype(&pcap_geterr) getError{};
+    decltype(&pcap_compile) compile{};
+    decltype(&pcap_setfilter) setFilter{};
+    decltype(&pcap_freecode) freeCode{};
+    decltype(&pcap_lookupnet) lookupNet{};
     ~Api() { if(module) FreeLibrary(module); }
     template<class T> void symbol(T& target,const char* name) {
         target=reinterpret_cast<T>(GetProcAddress(module,name));
@@ -44,6 +48,7 @@ struct CaptureEngine::Api {
             symbol(findAll,"pcap_findalldevs"); symbol(freeAll,"pcap_freealldevs"); symbol(openLive,"pcap_open_live");
             symbol(close,"pcap_close"); symbol(datalink,"pcap_datalink"); symbol(setNonblock,"pcap_setnonblock");
             symbol(next,"pcap_next_ex");symbol(stats,"pcap_stats");symbol(getError,"pcap_geterr");
+            symbol(compile,"pcap_compile");symbol(setFilter,"pcap_setfilter");symbol(freeCode,"pcap_freecode");symbol(lookupNet,"pcap_lookupnet");
             getEvent=reinterpret_cast<decltype(getEvent)>(GetProcAddress(module,"pcap_getevent"));
             setMinToCopy=reinterpret_cast<decltype(setMinToCopy)>(GetProcAddress(module,"pcap_setmintocopy"));
         } catch(...) { FreeLibrary(module); module=nullptr; throw; }
@@ -98,7 +103,7 @@ void CaptureEngine::enqueue(RawPacket raw,bool file,std::stop_token stop) {
         const std::size_t limit=file?32*1024*1024:8*1024*1024;
         if(!file && (queue_.size()>=8192 || n>limit || queuedBytes_>limit-n || queuedEstimatedBytes_>=estimatedLimit)){++queueDropped_;return;}
     }
-    auto packet=decodePacket(std::move(raw));const auto footprint=packet.estimatedBytes;
+    auto packet=decodeSummary(std::move(raw));const auto footprint=packet.estimatedBytes;
     std::unique_lock lock(mutex_);
     if(file) {
         if(n>32*1024*1024 || footprint>estimatedLimit)throw std::runtime_error("数据包超过队列预算");
@@ -109,21 +114,21 @@ void CaptureEngine::enqueue(RawPacket raw,bool file,std::stop_token stop) {
     peakQueuedPackets_=std::max<std::uint64_t>(peakQueuedPackets_,queue_.size());peakQueuedBytes_=std::max<std::uint64_t>(peakQueuedBytes_,queuedBytes_);
     peakQueuedEstimatedBytes_=std::max<std::uint64_t>(peakQueuedEstimatedBytes_,queuedEstimatedBytes_);
 }
-void CaptureEngine::startLive(const QString& device) {start(device,false);}
+void CaptureEngine::startLive(const QString& device,LiveCaptureOptions options) {start(device,false,{},std::move(options));}
 void CaptureEngine::startFile(const QString& path,PreparedFile reader) {start(path,true,std::move(reader));}
-void CaptureEngine::start(const QString& target,bool file,PreparedFile reader) {
+void CaptureEngine::start(const QString& target,bool file,PreparedFile reader,LiveCaptureOptions options) {
     reset();running_=true;
-    try {worker_=std::jthread([this,target,file,reader=std::move(reader),epoch=generation_](std::stop_token stop){
+    try {worker_=std::jthread([this,target,file,reader=std::move(reader),options=std::move(options),epoch=generation_](std::stop_token stop){
         try {
             if(hooks_.run) hooks_.run(target,file,stop,[this,file,stop](RawPacket raw){enqueue(std::move(raw),file,stop);},
-                [this,epoch](const QString& text){emit opened(epoch,text);});
+                [this,epoch,stop](const QString& text){if(!stop.stop_requested())emit opened(epoch,text);},options);
             else if(file) runFile(target,epoch,stop,reader);
-            else runLive(target,epoch,stop);
+            else runLive(target,epoch,stop,options);
         } catch(const std::exception& e) {emit failed(epoch,QString::fromUtf8(e.what()));}
         running_=false;emit finished(epoch);
     });} catch(const std::exception& e) {running_=false;emit failed(generation_,QString::fromUtf8(e.what()));emit finished(generation_);}
 }
-void CaptureEngine::runLive(const QString& device,quint64 epoch,std::stop_token stop) {
+void CaptureEngine::runLive(const QString& device,quint64 epoch,std::stop_token stop,const LiveCaptureOptions& options) {
     api_->load();
 #ifdef _WIN32
             char err[PCAP_ERRBUF_SIZE]{}; const auto name=device.toLocal8Bit();
@@ -131,6 +136,17 @@ void CaptureEngine::runLive(const QString& device,quint64 epoch,std::stop_token 
             if(!handle) throw std::runtime_error(std::string("无法打开接口: ")+err);
             struct Guard { Api* a; pcap_t* p; ~Guard(){a->close(p);} } guard{api_.get(),handle};
             if(api_->datalink(handle)!=DLT_EN10MB) throw std::runtime_error("接口链路类型不支持");
+            if(options.bpf.contains(QChar(0)))throw std::runtime_error("捕获过滤包含无效字符");
+            if(!options.bpf.trimmed().isEmpty()) {
+                bpf_u_int32 network{},mask=PCAP_NETMASK_UNKNOWN;char lookupError[PCAP_ERRBUF_SIZE]{};
+                if(api_->lookupNet(name.constData(),&network,&mask,lookupError)!=0)mask=PCAP_NETMASK_UNKNOWN;
+                bpf_program program{};const auto expression=options.bpf.toUtf8();
+                if(api_->compile(handle,&program,expression.constData(),1,mask)!=0)
+                    throw std::runtime_error(std::string("捕获过滤无效: ")+api_->getError(handle));
+                struct FilterGuard {Api* api;bpf_program* program;~FilterGuard(){api->freeCode(program);}} filterGuard{api_.get(),&program};
+                if(api_->setFilter(handle,&program)!=0)throw std::runtime_error(std::string("捕获过滤安装失败: ")+api_->getError(handle));
+            }
+            if(stop.stop_requested())return;
             if(api_->setNonblock(handle,1,err)!=0) throw std::runtime_error(err);
             HANDLE stopped=CreateEventW(nullptr,TRUE,FALSE,nullptr);
             if(!stopped)throw std::runtime_error("停止事件创建失败");
@@ -163,7 +179,7 @@ void CaptureEngine::runLive(const QString& device,quint64 epoch,std::stop_token 
             }
             pcap_stat s{}; if(api_->stats(handle,&s)==0) driverDropped_=s.ps_drop;
 #else
-    (void)device;(void)epoch;(void)stop;
+    (void)device;(void)epoch;(void)stop;(void)options;
 #endif
 }
 void CaptureEngine::runFile(const QString& path,quint64 epoch,std::stop_token stop,PreparedFile reader) {

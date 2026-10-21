@@ -43,8 +43,9 @@ int main(int argc,char** argv) {
         auto batch=engine.takeBatch();if(!batch.empty() && firstBatchMs<0 && openedClock.isValid())firstBatchMs=openedClock.elapsed();decoded+=batch.size();if(marker.isEmpty())return;
         for(auto& packet:batch) {
             if(packet.protocol!=(ipv6?"ICMPv6":"ICMP") || (packet.source!=target.toStdString() && packet.destination!=target.toStdString()))continue;
-            const auto group=std::find_if(packet.fields.begin(),packet.fields.end(),[&](const Field& f){return f.name==(ipv6?"ICMPv6":"ICMP");});
-            if(group==packet.fields.end() || group->length!=static_cast<std::size_t>(payload.size())+8)continue;
+            const auto details=decodeDetails(packet.raw);
+            const auto group=std::find_if(details.fields.begin(),details.fields.end(),[&](const Field& f){return f.name==(ipv6?"ICMPv6":"ICMP");});
+            if(group==details.fields.end() || group->length!=static_cast<std::size_t>(payload.size())+8)continue;
             const auto offset=group->offset;const auto& bytes=packet.raw.bytes;
             const auto requestType=ipv6?128:8,replyType=ipv6?129:0;
             if(offset+group->length>bytes.size() || bytes[offset+1]!=0 || (bytes[offset]!=replyType && bytes[offset]!=requestType))continue;
@@ -74,7 +75,7 @@ int main(int argc,char** argv) {
     };
     QObject::connect(&engine,&CaptureEngine::finished,&app,[&](quint64){finish();});
     if(device.isEmpty()) {error=error.isEmpty()?"No IPv4 interface available":error;finish();return 2;}
-    engine.startLive(device);
+    engine.startLive(device,{args.contains("--bpf")?args.value(args.indexOf("--bpf")+1):QString{}});
     QTimer::singleShot(duration,&app,[&]{stopping=true;stop.start();engine.requestStop();});
     QTimer::singleShot(duration+5000,&app,[&]{if(engine.running()){engine.requestStop();app.exit(4);}});
     return app.exec();

@@ -1,6 +1,7 @@
 #include "ui/main_window.h"
 #include <QCheckBox>
 #include <QAction>
+#include <QDialog>
 #include <QMenu>
 #include <QIcon>
 #include <QFileDialog>
@@ -49,6 +50,16 @@ bool waitForInterfaces(MainWindow& window) {
     QElapsedTimer deadline;deadline.start();while(window.discovering() && deadline.elapsed()<5000)QTest::qWait(1);
     return !window.discovering();
 }
+bool waitForDetails(MainWindow& window) {
+    QElapsedTimer deadline;deadline.start();while(window.detailsBusy() && deadline.elapsed()<5000)QTest::qWait(1);
+    return !window.detailsBusy();
+}
+bool setBpf(MainWindow& window,const QString& expression) {
+    window.findChild<QAction*>("captureFilterAction")->trigger();
+    auto* input=window.findChild<QLineEdit*>("bpfInput");
+    if(!input || input->isReadOnly())return false;
+    input->setText(expression);window.findChild<QPushButton*>("applyBpfButton")->click();QTest::qWait(1);return true;
+}
 struct Gate {
     std::mutex mutex;std::condition_variable cv;bool released=false;std::atomic<bool> entered{};
     void wait() {entered=true;std::unique_lock lock(mutex);cv.wait(lock,[this]{return released;});}
@@ -57,7 +68,7 @@ struct Gate {
 struct ReleaseGate {std::shared_ptr<Gate> gate;~ReleaseGate(){gate->release();}};
 CaptureHooks fakeCapture(std::shared_ptr<Gate> starting={},std::shared_ptr<Gate> fileStarting={},std::shared_ptr<std::atomic<int>> starts={}) {
     CaptureHooks hooks;hooks.interfaces=[](QString& error){error.clear();return std::vector<CaptureInterface>{{"fake-a","测试网卡 A","192.0.2.1"},{"fake-b","测试网卡 B","192.0.2.2"}};};
-    hooks.run=[starting,fileStarting,starts](const QString& target,bool file,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened){
+    hooks.run=[starting,fileStarting,starts](const QString& target,bool file,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions&){
         if(starts) ++*starts;
         if(file) {
             if(fileStarting) fileStarting->wait();PcapReader reader(std::filesystem::path(target.toStdWString()));opened("测试文件读取");
@@ -80,6 +91,60 @@ QString sampleFile(QTemporaryDir& directory) {
 class DesktopTests:public QObject {
     Q_OBJECT
 private slots:
+    void bpfStartIsTransactional() {
+        auto options=testOptions();options.capture=fakeCapture();auto base=options.capture.run;
+        options.capture.run=[base](const QString& target,bool file,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions& capture){
+            if(capture.bpf=="bad (")throw std::runtime_error("捕获过滤无效: syntax");
+            if(capture.bpf!="icmp")throw std::runtime_error("Unexpected BPF");
+            base(target,file,stop,sink,opened,capture);
+        };
+        {QSettings saved(options.settingsFile,QSettings::IniFormat);saved.setValue("capture/bpf","icmp");}
+        {
+            MainWindow window(nullptr,options);QVERIFY(waitForInterfaces(window));window.show();
+            auto* start=window.findChild<QPushButton*>("startButton");start->click();QTRY_VERIFY(window.sessionStats().received>0);
+            window.findChild<QAction*>("captureFilterAction")->trigger();QVERIFY(window.findChild<QLineEdit*>("bpfInput")->isReadOnly());window.findChild<QDialog*>("captureFilterDialog")->close();QTest::qWait(1);
+            window.stopCapture();QTRY_VERIFY(!window.busy());QVERIFY(waitForDetails(window));
+            const auto retained=window.packetModel()->rowCount();const auto first=window.packetModel()->packetAt(0);
+            QVERIFY(retained>0);QCOMPARE(window.findChild<QLabel*>("bpfMarker")->toolTip(),QString("icmp"));
+            window.findChild<QComboBox*>("protocolFilter")->setCurrentText("ICMP");
+            QVERIFY(setBpf(window,"bad ("));start->click();QTRY_VERIFY(!window.busy());
+            QCOMPARE(window.packetModel()->rowCount(),retained);QCOMPARE(window.packetModel()->packetAt(0),first);
+            QCOMPARE(window.packetModel()->filter().protocol,std::string("ICMP"));QVERIFY(window.findChild<QLabel*>("captureStatus")->text().contains("syntax"));
+        }
+        QSettings saved(options.settingsFile,QSettings::IniFormat);QCOMPARE(saved.value("capture/bpf").toString(),QString("icmp"));
+        MainWindow restored(nullptr,options);QVERIFY(waitForInterfaces(restored));QVERIFY(!restored.busy());
+        restored.findChild<QAction*>("captureFilterAction")->trigger();QCOMPARE(restored.findChild<QLineEdit*>("bpfInput")->text(),QString("icmp"));
+    }
+    void bpfCancelledStartKeepsCache() {
+        auto gate=std::make_shared<Gate>();auto options=testOptions();options.capture=fakeCapture();auto source=options.capture.run;
+        auto delay=std::make_shared<std::atomic<bool>>(false);
+        options.capture.run=[gate,delay,source](const QString& target,bool file,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions& capture){
+            if(*delay)gate->wait();if(stop.stop_requested())return;source(target,file,stop,sink,opened,capture);
+        };
+        MainWindow window(nullptr,options);ReleaseGate release{gate};QVERIFY(waitForInterfaces(window));window.show();
+        auto* start=window.findChild<QPushButton*>("startButton");start->click();QTRY_VERIFY(window.sessionStats().received>0);window.stopCapture();QTRY_VERIFY(!window.busy());
+        const auto count=window.packetModel()->rowCount();const auto first=window.packetModel()->packetAt(0);*delay=true;
+        QVERIFY(setBpf(window,"tcp"));start->click();QTRY_VERIFY(gate->entered.load());window.stopCapture();QCOMPARE(window.captureState(),MainWindow::CaptureState::Stopping);
+        gate->release();QTRY_VERIFY(!window.busy());QCOMPARE(window.packetModel()->rowCount(),count);QCOMPARE(window.packetModel()->packetAt(0),first);
+    }
+    void asynchronousDetailsKeepLatestSelection() {
+        auto gate=std::make_shared<Gate>();auto calls=std::make_shared<std::atomic<int>>(0);auto options=testOptions();
+        options.detailDecoder=[gate,calls](const RawPacket& raw,std::stop_token){if(++*calls==1)gate->wait();return decodeDetails(raw);};
+        MainWindow window(nullptr,options);ReleaseGate release{gate};QVERIFY(waitForInterfaces(window));window.show();
+        std::vector<Packet> packets;packets.push_back(decodeSummary(fixtures::icmp()));packets.push_back(decodeSummary(fixtures::icmp(0)));window.ingestBenchmark(std::move(packets));window.selectPacket(0);
+        QTRY_VERIFY(gate->entered.load());int beats=0;QTimer heartbeat;connect(&heartbeat,&QTimer::timeout,this,[&]{++beats;});heartbeat.start(5);QTest::qWait(40);QVERIFY(beats>=3);
+        for(int i=0;i<100;++i)window.selectPacket(i%2);gate->release();QVERIFY(waitForDetails(window));
+        QCOMPARE(calls->load(),2);QCOMPARE(window.findChild<QLabel*>("detailPacketId")->text(),QString("#2"));
+        auto* tree=window.findChild<QTreeWidget*>("fieldTree");QCOMPARE(tree->topLevelItemCount(),3);QVERIFY(tree->topLevelItem(2)->child(0)->text(1).startsWith("0 "));
+        std::vector<Packet> evict;for(int i=0;i<10001;++i)evict.push_back(decodeSummary(fixtures::icmp()));window.ingestBenchmark(std::move(evict));window.selectPacket(0);QVERIFY(waitForDetails(window));
+        QVERIFY(window.findChild<QLabel*>("detailPacketId")->text()!="#2");
+    }
+    void closeWaitsForDetails() {
+        auto gate=std::make_shared<Gate>();auto options=testOptions();options.detailDecoder=[gate](const RawPacket& raw,std::stop_token){gate->wait();return decodeDetails(raw);};
+        MainWindow window(nullptr,options);ReleaseGate release{gate};QVERIFY(waitForInterfaces(window));window.show();
+        std::vector<Packet> packets;packets.push_back(decodeSummary(fixtures::icmp()));window.ingestBenchmark(std::move(packets));window.selectPacket(0);QTRY_VERIFY(gate->entered.load());
+        QVERIFY(!window.close());QVERIFY(window.isVisible());gate->release();QTRY_VERIFY(!window.isVisible());
+    }
     void initTestCase() {
         qApp->setStyle(QStyleFactory::create("Fusion"));qApp->setApplicationVersion(ETHERSCOPE_VERSION);
         if(QGuiApplication::platformName()=="offscreen") {
@@ -103,7 +168,7 @@ private slots:
         ip->setText("192.0.2.1");apply->click();QCOMPARE(window.packetModel()->rowCount(),10);
         ip->setText("999.0.0.1");apply->click();QCOMPARE(window.packetModel()->rowCount(),10);QCOMPARE(filterStatus->text(),QString("IPv4 地址无效"));
         window.findChild<QPushButton*>("clearFilterButton")->click();QCOMPARE(window.packetModel()->rowCount(),12);
-        window.selectPacket(0);auto* tree=window.findChild<QTreeWidget*>("fieldTree");QVERIFY(tree && tree->topLevelItemCount()==3);
+        window.selectPacket(0);QVERIFY(waitForDetails(window));auto* tree=window.findChild<QTreeWidget*>("fieldTree");QVERIFY(tree && tree->topLevelItemCount()==3);
         auto* ipGroup=tree->topLevelItem(1);QVERIFY(ipGroup->text(0)=="IPv4");tree->setCurrentItem(ipGroup->child(0));
         auto* hex=window.findChild<QPlainTextEdit*>("hexView");QVERIFY(!hex->extraSelections().empty());QCOMPARE(hex->extraSelections().front().cursor.selectedText(),QString("45"));
         QSignalSpy savedResult(&window,&MainWindow::saveFinished);QVERIFY(window.saveFile(output));QTRY_COMPARE_WITH_TIMEOUT(savedResult.count(),1,5000);QVERIFY(savedResult.front()[0].toBool());
@@ -115,7 +180,7 @@ private slots:
         window.findChild<QPushButton*>("clearFilterButton")->click();
         const auto screenshotDir=qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");
         if(!screenshotDir.isEmpty()) {
-            QDir().mkpath(screenshotDir);window.findChild<QPushButton*>("addressFilterToggle")->setChecked(false);window.selectPacket(2);window.resize(1440,900);window.setDarkTheme(false);QTest::qWait(100);
+            QDir().mkpath(screenshotDir);window.findChild<QPushButton*>("addressFilterToggle")->setChecked(false);window.selectPacket(2);QVERIFY(waitForDetails(window));window.resize(1440,900);window.setDarkTheme(false);QTest::qWait(100);
             QVERIFY(window.grab().save(screenshotDir+"/light.png"));window.setDarkTheme(true);QTest::qWait(100);QVERIFY(window.grab().save(screenshotDir+"/dark.png"));
             window.resize(1024,768);QTest::qWait(100);QVERIFY(window.grab().save(screenshotDir+"/compact.png"));
         }
@@ -140,7 +205,7 @@ private slots:
             auto* ip=window.findChild<QLineEdit*>("ipInput");auto* protocol=window.findChild<QComboBox*>("protocolFilter");auto* apply=window.findChild<QPushButton*>("applyFilterButton");
             protocol->setCurrentText("IPv6");apply->click();QCOMPARE(window.packetModel()->rowCount(),ipv6Count);
             ip->setText("2001:0DB8:0000:0:0:0:0:1");apply->click();QCOMPARE(window.packetModel()->rowCount(),ipv6Count);
-            window.selectPacket(0);auto* tree=window.findChild<QTreeWidget*>("fieldTree");auto* group=tree->topLevelItem(1);QCOMPARE(group->text(0),QString("IPv6"));
+            window.selectPacket(0);QVERIFY(waitForDetails(window));auto* tree=window.findChild<QTreeWidget*>("fieldTree");auto* group=tree->topLevelItem(1);QCOMPARE(group->text(0),QString("IPv6"));
             QCOMPARE(group->child(8)->text(1),QString("2001:db8::1"));tree->setCurrentItem(group->child(8));auto* hex=window.findChild<QPlainTextEdit*>("hexView");
             QVERIFY(!hex->extraSelections().empty());QVERIFY(hex->extraSelections().front().cursor.selectedText().contains("20 01 0d b8",Qt::CaseInsensitive));
             window.findChild<QComboBox*>("ipDirection")->setCurrentIndex(2);apply->click();QCOMPARE(window.packetModel()->rowCount(),0);
@@ -149,7 +214,7 @@ private slots:
             QSignalSpy done(&window,&MainWindow::saveFinished);QVERIFY(window.saveFile(output));QTRY_COMPARE_WITH_TIMEOUT(done.count(),1,5000);QVERIFY(done.front()[0].toBool());QCOMPARE(done.front()[2].toULongLong(),qulonglong(raws.size()));
             PcapReader reader(std::filesystem::path(output.toStdWString()));for(const auto& raw:raws) {auto saved=reader.next();QVERIFY(saved);QVERIFY(saved->bytes==raw.bytes);}QVERIFY(!reader.next());
             const auto screenshots=qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");if(!screenshots.isEmpty()) {
-                ip->setText("2001:db8::1");protocol->setCurrentText("IPv6");apply->click();window.selectPacket(11);window.resize(1440,900);
+                ip->setText("2001:db8::1");protocol->setCurrentText("IPv6");apply->click();window.selectPacket(11);QVERIFY(waitForDetails(window));window.resize(1440,900);
                 window.findChild<QSplitter*>("packetDetailSplitter")->setSizes({220,360});tree->topLevelItem(0)->setExpanded(false);tree->setCurrentItem(tree->topLevelItem(1)->child(8));tree->scrollToItem(tree->topLevelItem(1));
                 auto* table=window.findChild<QTableView*>("packetTable");table->scrollTo(table->currentIndex());
                 QTest::qWait(100);QVERIFY(window.grab().save(screenshots+"/ipv6.png"));
@@ -201,7 +266,7 @@ private slots:
         QCOMPARE(resets.count(),1);QVERIFY(!selected.isValid());QCOMPARE(model.rowCount(),1);
     }
     void inspectionSurvivesIncomingPackets() {
-        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();std::vector<Packet> first;first.push_back(decodePacket(fixtures::icmp()));window.ingestBenchmark(std::move(first));window.selectPacket(0);
+        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();std::vector<Packet> first;first.push_back(decodePacket(fixtures::icmp()));window.ingestBenchmark(std::move(first));window.selectPacket(0);QVERIFY(waitForDetails(window));
         auto* tree=window.findChild<QTreeWidget*>("fieldTree");auto* hex=window.findChild<QPlainTextEdit*>("hexView");
         auto* item=tree->topLevelItem(1)->child(0);tree->setCurrentItem(item);tree->topLevelItem(0)->setExpanded(false);
         const auto text=hex->toPlainText();QSignalSpy resets(window.packetModel(),&QAbstractItemModel::modelReset);
@@ -213,7 +278,7 @@ private slots:
         QTemporaryDir dir;QVERIFY(dir.isValid());MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();
         auto raw=fixtures::icmp();raw.bytes.resize(16*1024*1024,0x5a);raw.originalLength=static_cast<std::uint32_t>(raw.bytes.size());
         auto packet=decodePacket(raw);packet.fields.push_back({"尾字节","5a",raw.bytes.size()-1,1,{}});
-        std::vector<Packet> batch;batch.push_back(std::move(packet));window.ingestBenchmark(std::move(batch));window.selectPacket(0);
+        std::vector<Packet> batch;batch.push_back(std::move(packet));window.ingestBenchmark(std::move(batch));window.selectPacket(0);QVERIFY(waitForDetails(window));
         auto* tree=window.findChild<QTreeWidget*>("fieldTree");auto* hex=window.findChild<QPlainTextEdit*>("hexView");
         auto* previous=window.findChild<QPushButton*>("previousBytesButton");auto* next=window.findChild<QPushButton*>("nextBytesButton");
         QVERIFY(hex->document()->blockCount()<=257);QVERIFY(next->isVisible() && next->isEnabled());QVERIFY(!previous->isEnabled());
@@ -289,7 +354,7 @@ private slots:
         window.findChild<QTabBar*>("sessionTabs")->setCurrentIndex(0);QVERIFY(window.packetModel()->rowCount()>0);
     }
     void startupFailureAlwaysFinishes() {
-        auto hooks=fakeCapture();hooks.run=[](const QString&,bool,std::stop_token,const CaptureHooks::Sink&,const CaptureHooks::Opened&){throw std::runtime_error("测试开启失败");};
+        auto hooks=fakeCapture();hooks.run=[](const QString&,bool,std::stop_token,const CaptureHooks::Sink&,const CaptureHooks::Opened&,const LiveCaptureOptions&){throw std::runtime_error("测试开启失败");};
         CaptureEngine engine(nullptr,hooks);QSignalSpy failed(&engine,&CaptureEngine::failed),done(&engine,&CaptureEngine::finished);
         engine.startLive("fake-a");QTRY_COMPARE_WITH_TIMEOUT(done.count(),1,3000);QCOMPARE(failed.count(),1);QVERIFY(!engine.running());
         engine.requestStop();engine.requestStop();QCOMPARE(done.count(),1);
@@ -300,7 +365,7 @@ private slots:
         std::vector<Packet> packets;for(int i=0;i<400;++i)packets.push_back(decodePacket(fixtures::icmp()));window.packetModel()->append(std::move(packets));
         auto* table=window.findChild<QTableView*>("packetTable");auto* follow=window.findChild<QCheckBox*>("followLatest");table->scrollToBottom();QTest::qWait(30);QVERIFY(follow->isChecked());
         table->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepSub);QVERIFY(!follow->isChecked());
-        window.selectPacket(10);auto* tree=window.findChild<QTreeWidget*>("fieldTree");auto* item=tree->topLevelItem(1)->child(0);tree->setCurrentItem(item);
+        window.selectPacket(10);QVERIFY(waitForDetails(window));auto* tree=window.findChild<QTreeWidget*>("fieldTree");auto* item=tree->topLevelItem(1)->child(0);tree->setCurrentItem(item);
         follow->setChecked(true);QTest::qWait(30);QCOMPARE(table->verticalScrollBar()->value(),table->verticalScrollBar()->maximum());QCOMPARE(tree->currentItem(),item);
         std::vector<Packet> more;for(int i=0;i<10001;++i)more.push_back(decodePacket(fixtures::icmp()));window.packetModel()->append(std::move(more));QTest::qWait(30);QVERIFY(follow->isChecked());
         const auto index=window.packetModel()->index(10,0);table->scrollTo(index);QTest::qWait(20);QTest::mouseClick(table->viewport(),Qt::LeftButton,Qt::NoModifier,table->visualRect(index).center());QVERIFY(!follow->isChecked());
@@ -349,7 +414,7 @@ private slots:
         gate->release();QTRY_COMPARE_WITH_TIMEOUT(done.count(),1,3000);QVERIFY(done.front()[0].toBool());QCOMPARE(status->text(),error);QTest::qWait(150);QCOMPARE(status->text(),error);
     }
     void filterPreservesMatchingInspection() {
-        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();std::vector<Packet> packets;for(auto raw:fixtures::samples())packets.push_back(decodePacket(std::move(raw)));window.ingestBenchmark(std::move(packets));window.selectPacket(2);
+        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();std::vector<Packet> packets;for(auto raw:fixtures::samples())packets.push_back(decodePacket(std::move(raw)));window.ingestBenchmark(std::move(packets));window.selectPacket(2);QVERIFY(waitForDetails(window));
         auto* table=window.findChild<QTableView*>("packetTable");auto* tree=window.findChild<QTreeWidget*>("fieldTree");auto* hex=window.findChild<QPlainTextEdit*>("hexView");
         auto* field=tree->topLevelItem(1)->child(0);tree->setCurrentItem(field);tree->topLevelItem(0)->setExpanded(false);const auto bytes=hex->toPlainText();
         auto* apply=window.findChild<QPushButton*>("applyFilterButton");window.findChild<QComboBox*>("protocolFilter")->setCurrentText("ICMP");apply->click();
@@ -377,7 +442,7 @@ private slots:
     }
     void boundedDrainAndFullQueueStop() {
         auto hooks=fakeCapture();
-        hooks.run=[](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened){
+        hooks.run=[](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions&){
             opened("捕获中");for(int i=0;i<10000;++i)sink(fixtures::icmp());
             while(!stop.stop_requested())std::this_thread::sleep_for(std::chrono::milliseconds(1));
         };
@@ -395,7 +460,7 @@ private slots:
     void queuedSnapshotBoundaryAndFinalDrain() {
         QTemporaryDir directory;auto source=std::make_shared<Gate>();auto writer=std::make_shared<Gate>();
         auto options=testOptions();options.capture=fakeCapture();options.exportWriter=gatedWriter(writer);
-        options.capture.run=[source](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened){
+        options.capture.run=[source](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions&){
             opened("捕获中");
             for(int i=0;i<5000;++i) {
                 if(i==3000)source->wait();
@@ -430,8 +495,8 @@ private slots:
             QVERIFY(!window.findChild<QWidget*>("trafficChart")->isVisible());
             window.resize(1360,860);QTest::qWait(30);QCOMPARE(ip->mapTo(&window,QPoint()).y(),mac->mapTo(&window,QPoint()).y());
             std::vector<Packet> packets;for(int i=0;i<2;++i)packets.push_back(decodePacket(fixtures::icmp()));window.ingestBenchmark(std::move(packets));
-            window.selectPacket(0);auto* fields=window.findChild<QTreeWidget*>("fieldTree");QVERIFY(fields->topLevelItemCount()>0);fields->topLevelItem(0)->setExpanded(false);
-            window.selectPacket(1);QVERIFY(!fields->topLevelItem(0)->isExpanded());QVERIFY(window.close());
+            window.selectPacket(0);QVERIFY(waitForDetails(window));auto* fields=window.findChild<QTreeWidget*>("fieldTree");QVERIFY(fields->topLevelItemCount()>0);fields->topLevelItem(0)->setExpanded(false);
+            window.selectPacket(1);QVERIFY(waitForDetails(window));QVERIFY(!fields->topLevelItem(0)->isExpanded());QVERIFY(window.close());
         }
         MainWindow restored(nullptr,options);QVERIFY(waitForInterfaces(restored));restored.show();QVERIFY(!restored.findChild<QCheckBox*>("statisticsToggle")->isChecked());
     }
@@ -507,7 +572,7 @@ private slots:
         }
     }
     void checksumDetailsAndIcmpLayout() {
-        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();std::vector<Packet> packets;for(auto raw:fixtures::analysisSamples())packets.push_back(decodePacket(std::move(raw)));window.ingestBenchmark(std::move(packets));window.selectPacket(0);
+        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();std::vector<Packet> packets;for(auto raw:fixtures::analysisSamples())packets.push_back(decodePacket(std::move(raw)));window.ingestBenchmark(std::move(packets));window.selectPacket(0);QVERIFY(waitForDetails(window));
         auto* tree=window.findChild<QTreeWidget*>("fieldTree");const auto matches=tree->findItems("校验状态",Qt::MatchExactly|Qt::MatchRecursive,0);QCOMPARE(matches.size(),2);
         for(auto* item:matches){QCOMPARE(item->text(1),QString("一致"));tree->setCurrentItem(item);QVERIFY(!window.findChild<QPlainTextEdit*>("hexView")->extraSelections().empty());}
         auto* protocol=window.findChild<QComboBox*>("protocolFilter");protocol->setCurrentText("ICMP");auto* type=window.findChild<QComboBox*>("icmpTypeFilter");type->setCurrentIndex(type->findData(8));
@@ -546,11 +611,11 @@ private slots:
     }
     void diagnosticDropCounts() {
         auto filled=std::make_shared<std::atomic<bool>>(false);auto options=testOptions();
-        options.capture.run=[filled](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened){
+        options.capture.run=[filled](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions&){
             opened("捕获中");for(int i=0;i<10000;++i)sink(fixtures::icmp());*filled=true;
             while(!stop.stop_requested())std::this_thread::sleep_for(std::chrono::milliseconds(1));
         };
-        MainWindow window(nullptr,options);QVERIFY(waitForInterfaces(window));window.show();window.findChild<QPushButton*>("startButton")->click();
+        MainWindow window(nullptr,options);QVERIFY(waitForInterfaces(window));window.show();window.findChild<QPushButton*>("startButton")->click();QTRY_COMPARE_WITH_TIMEOUT(window.captureState(),MainWindow::CaptureState::Running,1000);
         QElapsedTimer deadline;deadline.start();while(!filled->load() && deadline.elapsed()<3000)std::this_thread::sleep_for(std::chrono::milliseconds(1));QVERIFY(filled->load());
         const auto dropped=window.captureCounters().queueDropped;QVERIFY(dropped>0);window.stopCapture();QTRY_VERIFY_WITH_TIMEOUT(!window.busy(),1000);
         auto* diagnostics=window.findChild<QPushButton*>("diagnosticsToggle");QVERIFY(diagnostics->property("warning").toBool());QCOMPARE(window.findChild<QLabel*>("droppedCount")->text(),QString::number(dropped));
@@ -624,7 +689,7 @@ private slots:
         auto* selector=window.findChild<QComboBox*>("deviceSelector");QCOMPARE(selector->currentText(),QString("设备·原名"));QCOMPARE(selector->model()->index(0,1).data().toString(),QString("2001:db8::1"));
         std::vector<std::uint8_t> payload(24,0);payload[0]=135;for(int i=0;i<8000;++i)payload.insert(payload.end(),{99,1,0,0,0,0,0,0});const auto raw=fixtures::ipv6(58,payload,255);
         std::vector<Packet> packets;for(int i=0;i<180;++i)packets.push_back(decodePacket(raw));window.ingestBenchmark(std::move(packets));
-        const auto retained=window.packetModel()->rowCount();QVERIFY(retained>0 && retained<180);QVERIFY(window.retainedEstimatedBytes()<=64*1024*1024);window.selectPacket(0);
+        const auto retained=window.packetModel()->rowCount();QVERIFY(retained>0 && retained<180);QVERIFY(window.retainedEstimatedBytes()<=64*1024*1024);window.selectPacket(0);QVERIFY(waitForDetails(window));
         const auto first=window.packetModel()->packetAt(0);std::weak_ptr<const Packet> released=window.packetModel()->packetAt(1);const auto path=dir.filePath("saved.pcap");QSignalSpy done(&window,&MainWindow::saveFinished);QVERIFY(window.saveFile(path));QTRY_VERIFY_WITH_TIMEOUT(gate->entered.load(),1000);
         auto* exporter=window.findChild<ExportEngine*>();QVERIFY(exporter->referencedBytes()>0);window.packetModel()->clear();QVERIFY(!released.expired());gate->release();QTRY_COMPARE_WITH_TIMEOUT(done.count(),1,5000);QVERIFY(done.front()[0].toBool());QCOMPARE(done.front()[2].toInt(),retained);QCOMPARE(exporter->referencedBytes(),std::size_t(0));QVERIFY(released.expired());
         PcapReader reader(std::filesystem::path(path.toStdWString()));for(int i=0;i<retained;++i){auto packet=reader.next();QVERIFY(packet && packet->bytes==raw.bytes);}QVERIFY(!reader.next());
@@ -635,7 +700,7 @@ private slots:
     }
     void denseQueueBudgetAndFileBackpressure() {
         std::vector<std::uint8_t> payload(24,0);payload[0]=135;for(int i=0;i<8000;++i)payload.insert(payload.end(),{99,1,0,0,0,0,0,0});const auto raw=fixtures::ipv6(58,payload,255);
-        auto hooks=fakeCapture();hooks.run=[raw](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened){
+        auto hooks=fakeCapture();hooks.run=[raw](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions&){
             opened("捕获中");for(int i=0;i<160 && !stop.stop_requested();++i)sink(raw);while(!stop.stop_requested())std::this_thread::sleep_for(std::chrono::milliseconds(1));
         };
         CaptureEngine live(nullptr,hooks);live.startLive("fake-a");QTRY_COMPARE_WITH_TIMEOUT(live.counters().received,std::uint64_t(160),5000);live.stop();

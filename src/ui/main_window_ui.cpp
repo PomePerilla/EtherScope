@@ -51,6 +51,9 @@ void MainWindow::buildUi() {
     save_=new QPushButton("保存",toolbarBar);save_->setObjectName("saveButton");
     auto* more=new QPushButton("更多",toolbarBar);more->setObjectName("moreButton");auto* menu=new QMenu(more);
     refresh_=menu->addAction("刷新接口");refresh_->setObjectName("refreshAction");refresh_->setShortcut(QKeySequence(Qt::Key_F5));addAction(refresh_);
+    captureFilterAction_=menu->addAction("捕获过滤");captureFilterAction_->setObjectName("captureFilterAction");
+    connect(captureFilterAction_,&QAction::triggered,this,&MainWindow::configureCaptureFilter);
+    bpfMarker_=new QLabel("BPF",toolbarBar);bpfMarker_->setObjectName("bpfMarker");bpfMarker_->hide();toolbar->addWidget(bpfMarker_);
     theme_=menu->addAction("深色主题");theme_->setObjectName("darkThemeAction");theme_->setCheckable(true);
     menu->addSeparator();menu->addAction("EtherScope "+QCoreApplication::applicationVersion())->setEnabled(false);more->setMenu(menu);
     toolbar->addWidget(devices_,1);for(auto* b:{start_,stop_,open_,save_,more})toolbar->addWidget(b);layout->addWidget(toolbarBar);
@@ -123,8 +126,8 @@ void MainWindow::buildUi() {
     vertical->addWidget(table_);vertical->addWidget(lower);vertical->setSizes({400,300});layout->addWidget(vertical,1);
     chart_=new TrafficChart(root);chart_->setObjectName("trafficChart");chartPanel_=panel("统计",chart_,root);chartPanel_->setMaximumHeight(130);chartPanel_->hide();layout->addWidget(chartPanel_);connect(statistics_,&QCheckBox::toggled,chartPanel_,&QWidget::setVisible);
     diagnosticPanel_=new QWidget(root);diagnosticPanel_->setObjectName("diagnosticPanel");auto* diagnosticLayout=new QGridLayout(diagnosticPanel_);diagnosticLayout->setContentsMargins(style::margin,6,style::margin,6);diagnosticLayout->setHorizontalSpacing(12);
-    const QStringList captions={"捕获","解析","缓存","显示","覆盖","队列丢弃","驱动丢包","异常","缓存占用","队列占用","导出引用"};
-    const QStringList keys={"Received","Parsed","Retained","Displayed","Overwritten","QueueDropped","DriverDropped","Malformed","CacheBytes","QueueBytes","ExportBytes"};
+    const QStringList captions={"捕获","解析","缓存","显示","覆盖","队列丢弃","驱动丢包","异常","缓存占用","队列占用","导出引用","详情占用"};
+    const QStringList keys={"Received","Parsed","Retained","Displayed","Overwritten","QueueDropped","DriverDropped","Malformed","CacheBytes","QueueBytes","ExportBytes","DetailBytes"};
     for(qsizetype i=0;i<captions.size();++i){
         auto* caption=new QLabel(captions[i],diagnosticPanel_);auto* value=new QLabel("0",diagnosticPanel_);value->setObjectName("diagnostic"+keys[i]);value->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));diagnosticValues_.append(value);
         diagnosticLayout->addWidget(caption,static_cast<int>(i/3),static_cast<int>(i%3)*2);diagnosticLayout->addWidget(value,static_cast<int>(i/3),static_cast<int>(i%3)*2+1);

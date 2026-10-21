@@ -14,6 +14,7 @@ namespace etherscope {
 class PcapReader;
 using PreparedFile=std::shared_ptr<PcapReader>;
 struct CaptureInterface { QString name, description, addresses; };
+struct LiveCaptureOptions { QString bpf; };
 struct CaptureCounters {
     std::uint64_t received{},bytes{},queueDropped{};
     std::optional<std::uint64_t> driverDropped;
@@ -25,7 +26,7 @@ struct CaptureHooks {
     using Sink=std::function<void(RawPacket)>;
     using Opened=std::function<void(const QString&)>;
     std::function<std::vector<CaptureInterface>(QString&)> interfaces;
-    std::function<void(const QString&,bool,std::stop_token,const Sink&,const Opened&)> run;
+    std::function<void(const QString&,bool,std::stop_token,const Sink&,const Opened&,const LiveCaptureOptions&)> run;
     bool disableDataEvent{};
 };
 class CaptureEngine final:public QObject {
@@ -34,7 +35,7 @@ public:
     explicit CaptureEngine(QObject* parent=nullptr,CaptureHooks hooks={});
     ~CaptureEngine() override;
     std::vector<CaptureInterface> interfaces(QString& error);
-    void startLive(const QString& device);
+    void startLive(const QString& device,LiveCaptureOptions options={});
     void startFile(const QString& path,PreparedFile reader={});
     void stop();
     void requestStop();
@@ -66,8 +67,8 @@ private:
     quint64 generation_{};
     void reset();
     void enqueue(RawPacket raw,bool file,std::stop_token stop);
-    void start(const QString& target,bool file,PreparedFile reader={});
-    void runLive(const QString& device,quint64 epoch,std::stop_token stop);
+    void start(const QString& target,bool file,PreparedFile reader={},LiveCaptureOptions options={});
+    void runLive(const QString& device,quint64 epoch,std::stop_token stop,const LiveCaptureOptions& options);
     void runFile(const QString& path,quint64 epoch,std::stop_token stop,PreparedFile reader);
 };
 }
