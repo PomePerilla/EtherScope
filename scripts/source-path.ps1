@@ -1,5 +1,6 @@
 function Get-EtherScopeSourceRoot([string]$ProjectRoot) {
-    if ($ProjectRoot -notmatch '[^\x00-\x7F]') { return $ProjectRoot }
+    # MSVC resource object paths must leave room below the Windows path limit.
+    if ($ProjectRoot -notmatch '[^\x00-\x7F]' -and $ProjectRoot.Length -le 96) { return $ProjectRoot }
 
     # Preserve existing build caches created through the original junction.
     $legacy = Join-Path $env:TEMP 'EtherScope-20261012-source'

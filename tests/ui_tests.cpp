@@ -388,6 +388,8 @@ private slots:
         QVERIFY(!window.close());QVERIFY(window.isVisible());gate->release();QTRY_VERIFY(!window.isVisible());
     }
     void initTestCase() {
+        const auto screenshots=qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");
+        if(!screenshots.isEmpty())QVERIFY(QDir().mkpath(screenshots));
         qApp->setStyle(QStyleFactory::create("Fusion"));qApp->setApplicationVersion(ETHERSCOPE_VERSION);
         if(QGuiApplication::platformName()=="offscreen") {
             const auto fonts=qEnvironmentVariable("WINDIR")+"/Fonts/";
