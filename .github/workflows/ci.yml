@@ -50,14 +50,25 @@ jobs:
       - name: Configure
         run: >-
           cmake -S . -B build/core -G Ninja -DETHERSCOPE_BUILD_GUI=OFF
-          -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++-18
+          -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++-18 -DETHERSCOPE_BUILD_FUZZERS=ON
           '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer'
           '-DCMAKE_CXX_CLANG_TIDY=clang-tidy-18;--checks=-*,clang-analyzer-*;--warnings-as-errors=*'
       - run: cmake --build build/core
       - run: ctest --test-dir build/core --output-on-failure --output-junit tests.xml
+      - name: Fuzz
+        env:
+          FUZZ_SECONDS: ${{ inputs.fuzz_seconds || '120' }}
+        run: |
+          case "$FUZZ_SECONDS" in *[!0-9]*|'') exit 2;; esac
+          test "$FUZZ_SECONDS" -ge 1 && test "$FUZZ_SECONDS" -le 1800
+          build/core/make_fuzz_corpus build/corpus
+          mkdir -p build/fuzz-failures
+          build/core/packet_fuzzer build/corpus -max_len=65540 -timeout=5 -rss_limit_mb=512 -max_total_time="$FUZZ_SECONDS" -artifact_prefix=build/fuzz-failures/
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: core-tests
-          path: build/core/tests.xml
+          path: |
+            build/core/tests.xml
+            build/fuzz-failures/
           retention-days: 7

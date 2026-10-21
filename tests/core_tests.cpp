@@ -1,4 +1,6 @@
 #include "fixtures.h"
+#include <algorithm>
+#include "parser_invariants.h"
 #include "core/filter.h"
 #include "core/pcap_file.h"
 #include "core/session.h"
@@ -247,6 +249,25 @@ void resourceBudgets() {
     SessionStore tiny(10000,64*1024*1024,cost-1);tiny.append(decodePacket(raw));require(tiny.packets().empty() && tiny.stats().overwritten==1,"Oversized decoded record");
     auto packet=decodePacket(fixtures::icmp());const auto base=estimatePacketBytes(packet);packet.summary.reserve(4096);require(estimatePacketBytes(packet)>base+3000,"String capacities included");
 }
+void summaryModes() {
+    auto raws=fixtures::samples();for(auto list:{fixtures::ipv6Samples(),fixtures::analysisSamples()})raws.insert(raws.end(),list.begin(),list.end());
+    std::vector<std::uint8_t> options(24,0);options[0]=135;
+    for(int i=0;i<8000;++i)options.insert(options.end(),{99,1,0,0,0,0,0,0});
+    raws.push_back(fixtures::ipv6(58,options,255));options[options.size()-7]=0;raws.push_back(fixtures::ipv6(58,options,255));
+    auto check=[](const RawPacket& raw){
+        auto full=decodePacket(raw),summary=decodeSummary(raw);auto details=decodeDetails(raw);
+        require(testing::sameSummary(full,summary),"Summary and full metadata identical");
+        require(summary.fields.empty() && summary.fields.capacity()==0,"Summary creates no field storage");
+        require(full.fields==details.fields,"Borrowed details preserve all fields");
+        std::size_t count=0;require(testing::validFields(details.fields,raw.bytes.size(),count),"Details bounded");
+        require(summary.raw.bytes==raw.bytes && summary.estimatedBytes==estimatePacketBytes(summary),"Summary owns exact raw data");
+    };
+    for(const auto& raw:raws){check(raw);if(raw.bytes.size()<1024)for(std::size_t n=0;n<raw.bytes.size();++n){auto cut=raw;cut.bytes.resize(n);check(cut);}}
+    std::mt19937 rng(1600);for(int i=0;i<1000;++i){auto raw=raws[rng()%(raws.size()-2)];raw.bytes[rng()%raw.bytes.size()]=static_cast<std::uint8_t>(rng());check(raw);}
+    SessionStore full,summary;
+    for(int i=0;i<10000;++i){const auto& raw=raws[static_cast<std::size_t>(i)%(raws.size()-2)];full.append(decodePacket(raw));summary.append(decodeSummary(raw));}
+    require(summary.packets().size()==10000 && summary.estimatedBytes()*2<=full.estimatedBytes(),"Summary cache saves at least half the full footprint");
+}
 void sessions() {
     SessionStore count(3,100000);for(int i=0;i<10;++i)count.append(decodePacket(fixtures::icmp()));
     require(count.packets().size()==3 && count.stats().received==10 && count.stats().overwritten==7,"Count ring eviction");
@@ -258,6 +279,6 @@ void sessions() {
 }
 }
 int main() {
-    try {addressFormatting();pcapWireEncoding();protocols();analysis();filters();ipv6();pcap();sessions();resourceBudgets();std::cout<<"PASS: "<<checks<<" checks (IPv4/IPv6 protocols, truncation/mutation, filtering, PCAP, cache)\n";return 0;}
+    try {addressFormatting();pcapWireEncoding();protocols();analysis();filters();ipv6();pcap();sessions();resourceBudgets();summaryModes();std::cout<<"PASS: "<<checks<<" checks (IPv4/IPv6 protocols, truncation/mutation, filtering, PCAP, cache)\n";return 0;}
     catch(const std::exception& e) {std::cerr<<"FAIL after "<<checks<<" checks: "<<e.what()<<"\n";return 1;}
 }

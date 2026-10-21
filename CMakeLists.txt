@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(EtherScope VERSION 1.5.0 LANGUAGES CXX)
+project(EtherScope VERSION 1.6.0 LANGUAGES CXX)
 configure_file(src/version.h.in generated/version.h @ONLY)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,6 +13,16 @@ include(CTest)
 add_library(etherscope_core src/core/packet.cpp src/core/filter.cpp src/core/pcap_file.cpp src/core/session.cpp)
 target_include_directories(etherscope_core PUBLIC src)
 option(ETHERSCOPE_BUILD_GUI "Build the Qt desktop application" ON)
+option(ETHERSCOPE_BUILD_FUZZERS "Build Clang parser fuzz target" OFF)
+if(ETHERSCOPE_BUILD_FUZZERS)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR WIN32)
+    message(FATAL_ERROR "Fuzz targets require Linux Clang")
+  endif()
+  add_executable(packet_fuzzer tests/packet_fuzzer.cpp src/core/packet.cpp)
+  target_include_directories(packet_fuzzer PRIVATE src)
+  target_compile_options(packet_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
+  target_link_options(packet_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined)
+endif()
 if(ETHERSCOPE_BUILD_GUI)
   find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Widgets)
   if(BUILD_TESTING)
@@ -22,6 +32,7 @@ if(ETHERSCOPE_BUILD_GUI)
     src/capture/capture.cpp
     src/capture/preparation.cpp
     src/capture/export.cpp
+    src/capture/details.cpp
     src/ui/main_window.cpp
     src/ui/main_window_ui.cpp
     src/ui/main_window_theme.cpp
@@ -69,6 +80,8 @@ if(BUILD_TESTING)
   target_link_libraries(etherscope_benchmark PRIVATE etherscope_core)
   add_executable(make_samples tests/make_samples.cpp tests/fixtures.cpp)
   target_link_libraries(make_samples PRIVATE etherscope_core)
+  add_executable(make_fuzz_corpus tests/make_fuzz_corpus.cpp tests/fixtures.cpp)
+  target_link_libraries(make_fuzz_corpus PRIVATE etherscope_core)
   add_executable(inspect_pcap tests/inspect_pcap.cpp)
   target_link_libraries(inspect_pcap PRIVATE etherscope_core)
 endif()

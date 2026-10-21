@@ -7,6 +7,7 @@
 
 namespace etherscope {
 struct Field {
+    bool operator==(const Field&) const=default;
     std::string name;
     std::string value;
     std::size_t offset{};
@@ -21,6 +22,7 @@ struct RawPacket {
 };
 enum class ChecksumStatus { NotChecked, Match, Mismatch };
 struct ChecksumResult {
+    bool operator==(const ChecksumResult&) const=default;
     ChecksumStatus status{ChecksumStatus::NotChecked};
     std::optional<std::uint16_t> computed;
 };
@@ -39,7 +41,13 @@ struct Packet {
     std::size_t estimatedBytes{};
 };
 inline constexpr std::size_t maxPacketFields=4096;
+struct PacketDetails {
+    std::vector<Field> fields;
+    std::size_t estimatedBytes{};
+};
 Packet decodePacket(RawPacket raw);
+Packet decodeSummary(RawPacket raw);
+PacketDetails decodeDetails(const RawPacket& raw);
 std::size_t estimatePacketBytes(const Packet& packet);
 std::string formatMac(const std::array<std::uint8_t, 6>& address);
 std::string formatIp(const std::array<std::uint8_t, 4>& address);
