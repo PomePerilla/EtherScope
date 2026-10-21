@@ -86,6 +86,16 @@ void http1() {
     result = close.append(next);
     check(result.status == AnalysisStatus::Complete && result.messages.size() == 2,
           "Close-delimited response completes on an empty end update");
+    Http1Stream lateRequest;
+    next = {};
+    next[1] = chunk("HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n", 1, 2);
+    check(lateRequest.append(next).status == AnalysisStatus::Incomplete,
+          "Response arriving before its request does not guess body framing");
+    next = {};
+    next[0] = chunk("HEAD / HTTP/1.1\r\n\r\n", 0, 1);
+    result = lateRequest.append(next);
+    check(result.status == AnalysisStatus::Complete && result.messages.size() == 2,
+          "Late HEAD request resolves response framing without replay");
 }
 void http2() {
     const std::string preface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";

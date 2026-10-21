@@ -315,6 +315,8 @@ struct Http1Stream::Impl {
     void process(unsigned side, std::stop_token stop) {
         auto &buffer = buffers[side];
         const bool response = side != *client;
+        if (response && requests.empty() && !buffers[*client].data.endKnown)
+            return;
         while (buffer.size() && !done[side] && !stop.stop_requested()) {
             const auto &input = buffer.data;
             const std::string_view bytes(reinterpret_cast<const char *>(input.bytes->data()),

@@ -3,6 +3,7 @@
 #include <openssl/evp.h>
 #include <iostream>
 #include <stdexcept>
+#include <sstream>
 
 using namespace etherscope;
 namespace {
@@ -108,6 +109,33 @@ void run(){
         check(decodeHttp1(decoded.plaintext).messages.size()==(v13?3u:2u),"Reordered TLS application data");
     }
     auto c=sample(0x1301,true);TlsKeyLog empty;auto missing=decodeTls(c.input,empty);check(missing.analysis.status==AnalysisStatus::MissingKeys && !missing.decrypted,"Missing key status");
+    {
+        TlsKeyLog full;
+        full.append(c.keylog);
+        TlsStream deferred;
+        auto result = deferred.append(c.input, empty);
+        check(result.analysis.status == AnalysisStatus::MissingKeys, "Incremental TLS pauses without keys");
+        result = deferred.append({}, full);
+        check(result.analysis.status == AnalysisStatus::Complete && result.decrypted,
+              "Incremental TLS resumes buffered records when keys arrive");
+        TlsKeyLog handshakeOnly;
+        std::string partial;
+        std::istringstream lines(c.keylog);
+        std::string line;
+        while (std::getline(lines, line))
+            if (line.find("HANDSHAKE_TRAFFIC_SECRET") != std::string::npos)
+                partial += line + '\n';
+        handshakeOnly.append(partial);
+        TlsStream phase;
+        auto pending = phase.append(c.input, handshakeOnly);
+        check(pending.analysis.status == AnalysisStatus::MissingKeys,
+              "Missing application secret never reuses the handshake key");
+        pending = phase.append({}, full);
+        check(pending.analysis.status == AnalysisStatus::Complete &&
+                  *pending.plaintext[0].bytes == *result.plaintext[0].bytes &&
+                  *pending.plaintext[1].bytes == *result.plaintext[1].bytes,
+              "Incremental TLS resumes at the correct direction and key epoch");
+    }
     TlsKeyLog keys;keys.append(c.keylog);c.bytes[0].back()^=1;c.input[0].bytes=std::make_shared<const Bytes>(c.bytes[0]);auto invalid=decodeTls(c.input,keys);check(invalid.analysis.status==AnalysisStatus::AuthenticationFailed && invalid.plaintext[0].bytes->empty(),"Tampered plaintext never published");
 }
 }

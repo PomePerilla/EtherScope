@@ -120,6 +120,11 @@ struct Decoder {
         d.application = application;
         const auto *secret = keys->find(clientRandom, label);
         if (!secret) {
+            // A new epoch must not fall back to the previous handshake/application key.
+            d.secret.clear();
+            d.key.clear();
+            d.iv.clear();
+            d.sequence = 0;
             status(AnalysisStatus::MissingKeys, "TLS keys are missing");
             if (!incremental)
                 d.failed = true;

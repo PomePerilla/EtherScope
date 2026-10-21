@@ -264,8 +264,13 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                 }
         }
         if (batch && batch->generation == epoch) {
+            std::set<std::uint64_t> activeIds;
+            for (const auto &packet : batch->packets)
+                if (packet->id >= floor && packet->tcpConversationId)
+                    activeIds.insert(packet->tcpConversationId);
             for (auto &info : batch->conversations)
-                connections[info.id].info = std::move(info);
+                if (activeIds.contains(info.id))
+                    connections[info.id].info = std::move(info);
             for (const auto &packet : batch->packets) {
                 if (packet->id < floor)
                     continue;
@@ -280,7 +285,11 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                            (c.packets.size() >= 10000 || c.bytes + size > applicationInputBudget)) {
                         c.bytes -= c.packets.front()->estimatedBytes;
                         retained -= c.packets.front()->estimatedBytes;
+                        const auto removed = c.packets.front()->id;
                         c.packets.pop_front();
+                        std::erase_if(c.incoming, [removed](const auto &value) {
+                            return value->id <= removed;
+                        });
                         c.partial = true;
                     }
                     if (size <= applicationInputBudget) {
