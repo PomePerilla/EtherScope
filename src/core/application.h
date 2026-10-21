@@ -63,8 +63,9 @@ inline constexpr std::size_t applicationIndexBudget = 8 * 1024 * 1024;
 inline constexpr std::size_t applicationKeyLogLimit = 4 * 1024 * 1024;
 inline constexpr std::size_t applicationResultLimit = 2 * 1024 * 1024;
 static_assert(2 * (applicationInputBudget + applicationStateBudget + applicationQueueBudget +
-                  applicationStagingBudget + applicationIndexBudget + applicationKeyLogLimit +
-                  applicationResultLimit) <= applicationBudget);
+                   applicationStagingBudget + applicationIndexBudget + applicationKeyLogLimit +
+                   applicationResultLimit) <=
+              applicationBudget);
 std::string applicationText(const ApplicationValue &value);
 std::vector<SourceSpan> messageSources(const ApplicationInput &input, std::size_t offset,
                                        std::size_t length);

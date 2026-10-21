@@ -8,7 +8,7 @@
 
 namespace etherscope {
 struct Field {
-    bool operator==(const Field&) const=default;
+    bool operator==(const Field &) const = default;
     std::string name;
     std::string value;
     std::size_t offset{};
@@ -16,7 +16,7 @@ struct Field {
     std::vector<Field> children;
 };
 struct CaptureInterfaceInfo {
-    std::string name,description;
+    std::string name, description;
     std::uint32_t snapLength{65535};
     std::optional<std::uint8_t> fcsLength;
 };
@@ -31,22 +31,22 @@ struct RawPacket {
 };
 enum class ChecksumStatus { NotChecked, Match, Mismatch };
 struct ChecksumResult {
-    bool operator==(const ChecksumResult&) const=default;
+    bool operator==(const ChecksumResult &) const = default;
     ChecksumStatus status{ChecksumStatus::NotChecked};
     std::optional<std::uint16_t> computed;
 };
 struct TcpInfo {
-    bool operator==(const TcpInfo&) const=default;
-    std::uint16_t sourcePort{},destinationPort{};
-    std::uint32_t sequence{},acknowledgment{},payloadLength{};
+    bool operator==(const TcpInfo &) const = default;
+    std::uint16_t sourcePort{}, destinationPort{};
+    std::uint32_t sequence{}, acknowledgment{}, payloadLength{};
     std::uint8_t flags{};
     bool completeSegment{};
     std::uint32_t payloadOffset{};
 };
 struct UdpInfo {
-    bool operator==(const UdpInfo&) const=default;
-    std::uint16_t sourcePort{},destinationPort{};
-    std::uint32_t payloadOffset{},payloadLength{};
+    bool operator==(const UdpInfo &) const = default;
+    std::uint16_t sourcePort{}, destinationPort{};
+    std::uint32_t payloadOffset{}, payloadLength{};
     bool completeDatagram{};
 };
 struct Packet {
@@ -67,16 +67,16 @@ struct Packet {
     std::vector<Field> fields;
     std::size_t estimatedBytes{};
 };
-inline constexpr std::size_t maxPacketFields=4096;
+inline constexpr std::size_t maxPacketFields = 4096;
 struct PacketDetails {
     std::vector<Field> fields;
     std::size_t estimatedBytes{};
 };
 Packet decodePacket(RawPacket raw);
 Packet decodeSummary(RawPacket raw);
-PacketDetails decodeDetails(const RawPacket& raw);
-std::size_t estimatePacketBytes(const Packet& packet);
-std::string formatMac(const std::array<std::uint8_t, 6>& address);
-std::string formatIp(const std::array<std::uint8_t, 4>& address);
-std::string formatIpv6(const std::array<std::uint8_t, 16>& address);
-}
+PacketDetails decodeDetails(const RawPacket &raw);
+std::size_t estimatePacketBytes(const Packet &packet);
+std::string formatMac(const std::array<std::uint8_t, 6> &address);
+std::string formatIp(const std::array<std::uint8_t, 4> &address);
+std::string formatIpv6(const std::array<std::uint8_t, 16> &address);
+} // namespace etherscope

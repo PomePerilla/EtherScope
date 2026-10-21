@@ -15,6 +15,7 @@ class ConversationAnalysis {
     bool keysChanged(const TlsKeyLog &previous, const TlsKeyLog &next) const;
     std::size_t estimatedBytes() const;
     std::uint64_t deliveredBytes() const;
+
   private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
@@ -22,7 +23,6 @@ class ConversationAnalysis {
 ApplicationResult analyzeDatagram(const Packet &packet);
 ApplicationResult analyzeConversation(const TcpStreamRequest &request, const TlsKeyLog &keys,
                                       std::stop_token stop = {});
-std::size_t estimateApplicationBytes(const ApplicationResult &result);
 std::size_t estimateApplicationFacts(const std::map<std::uint64_t, ApplicationFacts> &facts);
 std::map<std::uint64_t, ApplicationFacts>
 indexApplication(const ApplicationResult &result,

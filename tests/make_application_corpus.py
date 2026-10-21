@@ -4,6 +4,7 @@ import sys
 destination = pathlib.Path(sys.argv[1])
 destination.mkdir(parents=True, exist_ok=True)
 seeds = [
+    b'\x05\x01\x02\x03\x01\x01\x04\xff\x06\x0e',
     b'\x00' + bytes.fromhex('123401000001000000000000076578616d706c6503636f6d0000010001'),
     b'\x01GET / HTTP/1.1\r\nHost: example.com\r\n\r\n',
     b'\x01HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabc',

@@ -8,7 +8,8 @@
 
 namespace etherscope {
 struct ApplicationUpdate {
-    std::uint64_t generation{}, revision{}, keyRevision{}, conversation{};
+    std::uint64_t generation{}, revision{}, keyRevision{}, conversation{}, keyCommand{};
+    bool keySensitive{};
     std::shared_ptr<const ApplicationResult> result;
     std::map<std::uint64_t, ApplicationFacts> facts;
 };
@@ -33,6 +34,7 @@ class ApplicationAnalysisService final : public QObject {
     void reloadKeyLog();
     std::vector<ApplicationUpdate> takeResults();
     std::uint64_t generation() const;
+    bool accepts(const ApplicationUpdate &update) const;
     bool busy() const;
     ApplicationServiceStats stats() const;
     void requestStop();

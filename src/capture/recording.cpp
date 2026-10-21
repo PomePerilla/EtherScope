@@ -235,7 +235,7 @@ void RecordingService::run(RecordingOptions options, quint64 request) {
         stats_.failed = true;
         stats_.error = QString::fromUtf8(error.what());
         stats_.unwritten += queue_.size() + pending + (current ? 1u : 0u);
-        stats_.queued=0;
+        stats_.queued = 0;
         queue_.clear();
         queueBytes_ = 0;
         accepting_ = false;

@@ -24,6 +24,43 @@ void ApplicationIndex::clear() {
     order_.clear();
     bytes_ = 0;
     nextEntry_ = 0;
+    tracked_.clear();
+    diagnostics_ = {};
+}
+void ApplicationIndex::changed(std::uint64_t packet) {
+    if (changes_)
+        changes_->packets.insert(packet);
+    const auto tracked = tracked_.find(packet);
+    if (tracked == tracked_.end())
+        return;
+    --diagnostics_.states[static_cast<std::size_t>(tracked->second)];
+    const auto *value = facts(packet);
+    tracked->second = value ? value->status : AnalysisStatus::Pending;
+    ++diagnostics_.states[static_cast<std::size_t>(tracked->second)];
+}
+void ApplicationIndex::observe(const SessionDelta &delta, IndexDelta *changes) {
+    prune(delta.first, delta.last, changes);
+    for (const auto &packet : delta.added) {
+        if (!((packet->tcp && packet->tcp->payloadLength) ||
+              (packet->udp &&
+               (packet->udp->sourcePort == 53 || packet->udp->destinationPort == 53))))
+            continue;
+        if (tracked_.contains(packet->id))
+            continue;
+        const auto *value = facts(packet->id);
+        const auto status = value ? value->status : AnalysisStatus::Pending;
+        tracked_.emplace(packet->id, status);
+        ++diagnostics_.eligible;
+        ++diagnostics_.states[static_cast<std::size_t>(status)];
+        bytes_ += sizeof(decltype(tracked_)::value_type) + treeNodeOverhead;
+    }
+    changes_ = changes;
+    enforceBudget();
+    changes_ = nullptr;
+}
+void ApplicationIndex::enforceBudget() {
+    while (bytes_ > applicationIndexBudget && !order_.empty())
+        removeEntry(entries_.find(order_.begin()->second), true);
 }
 const ApplicationFacts *ApplicationIndex::facts(std::uint64_t id) const {
     const auto found = facts_.find(id);
@@ -48,6 +85,10 @@ void ApplicationIndex::detach(std::uint64_t packet, FactRecord &record) {
     record.key = {};
 }
 void ApplicationIndex::removeEntry(Entries::iterator entry, bool retainLimited) {
+    if (retainLimited) {
+        ++diagnostics_.evictedEntries;
+        diagnostics_.evictedPackets += entry->second.packets.size();
+    }
     for (const auto packet : entry->second.packets) {
         const auto found = facts_.find(packet);
         if (found == facts_.end() || found->second.owner != entry->second.id)
@@ -64,21 +105,31 @@ void ApplicationIndex::removeEntry(Entries::iterator entry, bool retainLimited) 
         } else {
             facts_.erase(found);
         }
+        changed(packet);
     }
     bytes_ -= entry->second.packets.size() * membershipBytes;
     eraseEmptyEntry(entry);
 }
 void ApplicationIndex::apply(std::uint64_t conversation,
                              std::shared_ptr<const ApplicationResult> result,
-                             std::map<std::uint64_t, ApplicationFacts> facts) {
+                             std::map<std::uint64_t, ApplicationFacts> facts, IndexDelta *delta,
+                             std::pair<std::uint64_t, std::uint64_t> revision) {
     if (facts.empty())
         return;
+    changes_ = delta;
     const EntryKey key{conversation != 0, conversation ? conversation : facts.begin()->first};
-    if (const auto old = entries_.find(key); old != entries_.end())
+    if (const auto old = entries_.find(key); old != entries_.end()) {
+        if (revision != std::pair<std::uint64_t, std::uint64_t>{} &&
+            old->second.revision > revision) {
+            changes_ = nullptr;
+            return;
+        }
         removeEntry(old, false);
+    }
 
     Entry entry;
     entry.id = ++nextEntry_;
+    entry.revision = revision;
     entry.result = std::move(result);
     entry.bytes =
         sizeof(Entries::value_type) + treeNodeOverhead + sizeof(decltype(order_)::value_type) +
@@ -101,20 +152,37 @@ void ApplicationIndex::apply(std::uint64_t conversation,
         record.bytes = estimateFactBytes(record.value);
         current->second.packets.insert(packet);
         bytes_ += record.bytes + membershipBytes;
+        changed(packet);
     }
-    while (bytes_ > applicationIndexBudget && !order_.empty())
-        removeEntry(entries_.find(order_.begin()->second), true);
+    enforceBudget();
+    changes_ = nullptr;
 }
-void ApplicationIndex::prune(std::uint64_t first, std::uint64_t last) {
+void ApplicationIndex::prune(std::uint64_t first, std::uint64_t last, IndexDelta *delta) {
+    changes_ = delta;
     for (auto found = facts_.begin(); found != facts_.end();) {
         if (first && found->first >= first && found->first <= last) {
-            ++found;
+            found = facts_.upper_bound(last);
             continue;
         }
+        const auto id = found->first;
         detach(found->first, found->second);
         bytes_ -= found->second.bytes;
         found = facts_.erase(found);
+        changed(id);
     }
+    for (auto found = tracked_.begin(); found != tracked_.end();) {
+        if (first && found->first >= first && found->first <= last) {
+            found = tracked_.upper_bound(last);
+            continue;
+        }
+        --diagnostics_.states[static_cast<std::size_t>(found->second)];
+        --diagnostics_.eligible;
+        bytes_ -= sizeof(decltype(tracked_)::value_type) + treeNodeOverhead;
+        if (changes_)
+            changes_->packets.insert(found->first);
+        found = tracked_.erase(found);
+    }
+    changes_ = nullptr;
 }
 std::vector<std::shared_ptr<const ApplicationResult>>
 ApplicationIndex::results(std::uint64_t packet) const {

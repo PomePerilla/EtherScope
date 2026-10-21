@@ -1,6 +1,7 @@
 #include "core/application_index.h"
 #include "core/application_analyzer.h"
 #include "fixtures.h"
+#include "benchmark_metrics.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -144,6 +145,62 @@ void crossingConnections() {
     index.clear();
     check(index.estimatedBytes() == 0, "Crossing updates leave no residual accounting");
 }
+void incrementalDiagnostics() {
+    BoundedSamples samples;
+    check(samples.empty() && samples.percentile(99) == 0, "Empty latency samples are defined");
+    for (unsigned i = 0; i < 100; ++i)
+        samples.push_back(i);
+    check(samples.percentile(50) == 50 && samples.percentile(99) == 99,
+          "Bounded percentiles match the full sorted oracle");
+    samples.push_back(1000000);
+    check(samples.maximum() == 1000000 && samples.percentile(100) == 1000000,
+          "Overflow never understates observed latency");
+    SessionStore store(8);
+    ApplicationIndex index;
+    const std::vector<std::uint8_t> payload{'x'};
+    for (unsigned i = 0; i < 8; ++i)
+        store.append(decodeSummary(fixtures::tcp(24, 100 + i, 0, false, 50000, false, payload)));
+    auto delta = store.deltaAfter(0);
+    check(delta.added.size() == 8 && delta.first == 1 && delta.last == 8 && delta.through == 8,
+          "Session delta exposes only retained packets");
+    index.observe(delta);
+    check(index.diagnostics().eligible == 8 &&
+              index.diagnostics().count(AnalysisStatus::Pending) == 8,
+          "New payloads start pending");
+    for (unsigned state = 0; state < 7; ++state) {
+        ApplicationFacts facts;
+        facts.status = static_cast<AnalysisStatus>(state);
+        IndexDelta changes;
+        index.apply(state + 1, result(), {{state + 1, std::move(facts)}}, &changes, {1, 2});
+        check(changes.packets == std::set<std::uint64_t>{state + 1},
+              "Index delta identifies the affected packet");
+    }
+    auto diagnostics = index.diagnostics();
+    check(diagnostics.count(AnalysisStatus::Pending) == 2 && diagnostics.incomplete() == 5,
+          "All terminal reasons are counted separately");
+    IndexDelta stale;
+    index.apply(2, result(), {{2, limited()}}, &stale, {1, 1});
+    check(stale.packets.empty() && index.facts(2)->status == AnalysisStatus::Complete,
+          "Older connection revisions do not overwrite facts");
+    for (unsigned i = 0; i < 3; ++i)
+        store.append(decodeSummary(fixtures::tcp(24, 200 + i, 0, false, 50000, false, payload)));
+    auto next = store.deltaAfter(delta.through);
+    check(next.added.size() == 3 && next.first == 4, "Delta remains incremental after eviction");
+    index.observe(next);
+    diagnostics = index.diagnostics();
+    std::array<std::size_t, 7> expected{};
+    for (const auto &packet : store.packets()) {
+        const auto *facts = index.facts(packet->id);
+        ++expected[static_cast<std::size_t>(facts ? facts->status : AnalysisStatus::Pending)];
+    }
+    check(expected == diagnostics.states && diagnostics.eligible == 8,
+          "Incremental diagnostics equal a full recount after eviction");
+    index.clear();
+    check(index.diagnostics().eligible == 0 && index.estimatedBytes() == 0,
+          "Clearing releases tracked diagnostics");
+    check(store.find(11) && !store.find(1) && store.deltaAfter(11).added.empty(),
+          "Session lookups respect retention");
+}
 } // namespace
 int main() {
     try {
@@ -151,6 +208,7 @@ int main() {
         replacementAndPruning();
         namespacesAndAccounting();
         crossingConnections();
+        incrementalDiagnostics();
         std::cout << checks << " application index checks passed\n";
         return 0;
     } catch (const std::exception &error) {

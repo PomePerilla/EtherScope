@@ -23,6 +23,11 @@ bool ApplicationAnalysisService::busy() const {
     std::lock_guard lock(mutex_);
     return working_ || !pending_.empty();
 }
+bool ApplicationAnalysisService::accepts(const ApplicationUpdate &update) const {
+    std::lock_guard lock(mutex_);
+    return update.generation == generation_ &&
+           (!update.keySensitive || update.keyCommand == keyCommand_);
+}
 ApplicationServiceStats ApplicationAnalysisService::stats() const {
     std::lock_guard lock(mutex_);
     auto result = stats_;
@@ -102,6 +107,7 @@ std::vector<ApplicationUpdate> ApplicationAnalysisService::takeResults() {
         limited->status = AnalysisStatus::Limited;
         ApplicationUpdate update;
         update.generation = generation_;
+        update.keyCommand = keyCommand_;
         update.result = std::move(limited);
         update.facts = std::move(limited_);
         result.push_back(std::move(update));
@@ -429,6 +435,14 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
             }
             if (epoch == generation_ && !token.stop_requested())
                 for (auto &result : results) {
+                    result.keyCommand = command;
+                    result.keySensitive =
+                        result.result &&
+                        (result.result->status == AnalysisStatus::MissingKeys ||
+                         result.result->status == AnalysisStatus::AuthenticationFailed ||
+                         std::any_of(
+                             result.result->messages.begin(), result.result->messages.end(),
+                             [](const auto &message) { return message.protocol == "TLS"; }));
                     const auto size = sizeof(ApplicationUpdate) +
                                       estimateApplicationFacts(result.facts) +
                                       (result.result ? result.result->estimatedBytes : 0);

@@ -1,4 +1,4 @@
-# EtherScope v1.11.0
+# EtherScope v2.0.0
 
 English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
@@ -15,12 +15,12 @@ Windows x64 network protocol analyzer.
 
 ## Download
 
-[EtherScope v1.11.0](https://github.com/PomePerilla/EtherScope/releases/tag/v1.11.0)
+[EtherScope v2.0.0](https://github.com/PomePerilla/EtherScope/releases/tag/v2.0.0)
 
 | File | Use |
 |---|---|
-| `EtherScope-1.11.0-windows-x64.zip` | Install and run |
-| `EtherScope-1.11.0-sourcecode.zip` | Build from source |
+| `EtherScope-2.0.0-windows-x64.zip` | Install and run |
+| `EtherScope-2.0.0-sourcecode.zip` | Build from source |
 
 1. Install [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe).
 2. Extract the program package and run the installer.

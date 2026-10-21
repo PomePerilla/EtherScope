@@ -3,9 +3,9 @@
 
 namespace etherscope {
 // Compatibility entry point; both formats use the same detection path.
-class PcapReader:public CaptureReader {
-public:
+class PcapReader : public CaptureReader {
+  public:
     using CaptureReader::CaptureReader;
 };
-void writePcap(std::ostream& stream,std::span<const Packet* const> packets);
-}
+void writePcap(std::ostream &stream, std::span<const Packet *const> packets);
+} // namespace etherscope

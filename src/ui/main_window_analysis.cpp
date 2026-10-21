@@ -67,45 +67,47 @@ void MainWindow::resetApplications(int session) {
 }
 void MainWindow::submitApplications(int session) {
     auto &store = session == 0 ? live_ : file_;
-    std::vector<std::shared_ptr<const Packet>> packets;
+    auto delta = store.deltaAfter(applicationSubmitted_[session]);
+    IndexDelta indexDelta;
+    applicationIndex_[session].observe(delta, &indexDelta);
+    auto packets = std::move(delta.added);
     std::set<std::uint64_t> dirty;
-    for (const auto &p : store.packets())
-        if (p->id > applicationSubmitted_[session]) {
-            packets.push_back(p);
-            if (p->tcpConversationId)
-                dirty.insert(p->tcpConversationId);
-        }
+    for (const auto &p : packets) {
+        if (p->tcpConversationId)
+            dirty.insert(p->tcpConversationId);
+    }
     std::vector<TcpConversation> conversations;
     for (auto id : dirty)
         if (const auto *c = store.tcp().find(id))
             conversations.push_back(*c);
-    if (!packets.empty())
-        applicationSubmitted_[session] = packets.back()->id;
+    applicationSubmitted_[session] = delta.through;
     applications_[session]->submit(std::move(packets), std::move(conversations),
                                    store.packets().empty() ? 0 : store.packets().front()->id);
-    applicationIndex_[session].prune(store.packets().empty() ? 0 : store.packets().front()->id,
-                                     store.packets().empty() ? 0 : store.packets().back()->id);
+    if (session == view_)
+        model_->refreshApplications(indexDelta);
 }
 void MainWindow::collectApplications() {
     bool changed = false;
+    IndexDelta delta;
     for (int session = 0; session < 2; ++session) {
         const auto &store = session == 0 ? live_ : file_;
         auto updates = applications_[session]->takeResults();
         for (auto &update : updates)
-            if (update.generation == applications_[session]->generation()) {
+            if (applications_[session]->accepts(update)) {
                 const auto first = store.packets().empty() ? 0 : store.packets().front()->id,
                            last = store.packets().empty() ? 0 : store.packets().back()->id;
                 std::erase_if(update.facts, [&](const auto &pair) {
                     return !first || pair.first < first || pair.first > last;
                 });
-                applicationIndex_[session].apply(update.conversation, std::move(update.result),
-                                                 std::move(update.facts));
+                applicationIndex_[session].apply(
+                    update.conversation, std::move(update.result), std::move(update.facts),
+                    session == view_ ? &delta : nullptr, {update.keyRevision, update.revision});
                 changed |= session == view_;
             }
     }
     if (changed) {
         const auto id = selected_ ? selected_->id : 0;
-        model_->refreshApplications();
+        model_->refreshApplications(delta);
         if (id) {
             const auto row = model_->rowForId(id);
             if (row >= 0)
@@ -123,18 +125,11 @@ void MainWindow::collectApplications() {
         }
         updateStatus();
     }
-    std::size_t pending = 0, incomplete = 0;
-    for (const auto &p : currentStore().packets())
-        if ((p->tcp && p->tcp->payloadLength) ||
-            (p->udp && (p->udp->sourcePort == 53 || p->udp->destinationPort == 53))) {
-            const auto *facts = applicationIndex_[view_].facts(p->id);
-            if (!facts || facts->status == AnalysisStatus::Pending)
-                ++pending;
-            else if (facts->status != AnalysisStatus::Complete)
-                ++incomplete;
-        }
-    analysisPending_->setText(QString::number(pending));
-    analysisIncomplete_->setText(QString::number(incomplete));
+    const auto diagnostics = applicationIndex_[view_].diagnostics();
+    analysisPending_->setText(QString::number(diagnostics.count(AnalysisStatus::Pending)));
+    analysisIncomplete_->setText(QString::number(diagnostics.incomplete()));
+    for (unsigned i = 0; i < analysisStates_.size(); ++i)
+        analysisStates_[i]->setText(QString::number(diagnostics.states[i + 1]));
     tryClose();
 }
 bool MainWindow::applyExpression(const QString &text) {

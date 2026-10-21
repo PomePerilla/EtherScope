@@ -3208,5 +3208,20 @@
     "DNS 消息长度无效",
     "Invalid DNS message length",
     "DNS 訊息長度無效"
+  ],
+  [
+    "分析完成",
+    "Analysis complete",
+    "分析完成"
+  ],
+  [
+    "数据缺失",
+    "Data missing",
+    "資料缺失"
+  ],
+  [
+    "资源受限",
+    "Resource limited",
+    "資源受限"
   ]
 ]

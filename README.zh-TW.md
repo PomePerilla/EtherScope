@@ -1,4 +1,4 @@
-# EtherScope v1.11.0
+# EtherScope v2.0.0
 
 [English](README.md) | [简体中文](README.zh-CN.md) | 繁體中文
 
@@ -15,12 +15,12 @@ Windows x64 網路協定分析器。
 
 ## 下載
 
-[EtherScope v1.11.0](https://github.com/PomePerilla/EtherScope/releases/tag/v1.11.0)
+[EtherScope v2.0.0](https://github.com/PomePerilla/EtherScope/releases/tag/v2.0.0)
 
 | 檔案 | 用途 |
 |---|---|
-| `EtherScope-1.11.0-windows-x64.zip` | 安裝後使用 |
-| `EtherScope-1.11.0-sourcecode.zip` | 編譯後使用 |
+| `EtherScope-2.0.0-windows-x64.zip` | 安裝後使用 |
+| `EtherScope-2.0.0-sourcecode.zip` | 編譯後使用 |
 
 1. 安裝 [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe)。
 2. 解壓縮程式套件，執行安裝程式。

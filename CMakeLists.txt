@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(EtherScope VERSION 1.11.0 LANGUAGES CXX)
+project(EtherScope VERSION 2.0.0 LANGUAGES CXX)
 configure_file(src/version.h.in generated/version.h @ONLY)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -78,6 +78,7 @@ if(ETHERSCOPE_BUILD_GUI)
     src/ui/main_window_analysis.cpp
     src/ui/application_view.cpp
     src/ui/filter_chip.cpp
+    src/ui/main_window_status.cpp
     src/ui/main_window_settings.cpp
     src/ui/main_window_inspector.cpp
     src/ui/main_window_tcp.cpp

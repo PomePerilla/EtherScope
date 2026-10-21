@@ -6,16 +6,27 @@
 
 namespace etherscope {
 void MainWindow::setDarkTheme(bool dark) {
-    dark_=dark;QPalette palette;
-    const QString bg=dark?"#101010":"#f3f4f6",base=dark?"#151515":"#ffffff";
-    const QString text=dark?"#d0d0d0":"#24282e",muted=dark?"#929292":"#66717c";
-    const QString border=dark?"#303030":"#d6dbe1",bar=dark?"#1b1b1b":"#edf0f3";
-    const QString accent=style::warning(dark).name(),selection=dark?"#233448":"#dce9f6",hover=dark?"#242424":"#e7ecf1";
-    palette.setColor(QPalette::Window,QColor(bg));palette.setColor(QPalette::WindowText,QColor(text));palette.setColor(QPalette::Base,QColor(base));
-    palette.setColor(QPalette::AlternateBase,QColor(dark?"#181818":"#f7f8fa"));palette.setColor(QPalette::Text,QColor(text));
-    palette.setColor(QPalette::Button,QColor(bar));palette.setColor(QPalette::ButtonText,QColor(text));palette.setColor(QPalette::PlaceholderText,QColor(muted));
-    palette.setColor(QPalette::Highlight,QColor(selection));palette.setColor(QPalette::HighlightedText,QColor(text));palette.setColor(QPalette::Mid,QColor(border));
-    palette.setColor(QPalette::Disabled,QPalette::ButtonText,QColor(dark?"#646464":"#9da5af"));qApp->setPalette(palette);
+    dark_ = dark;
+    QPalette palette;
+    const QString bg = dark ? "#101010" : "#f3f4f6", base = dark ? "#151515" : "#ffffff";
+    const QString text = dark ? "#d0d0d0" : "#24282e", muted = dark ? "#929292" : "#66717c";
+    const QString border = dark ? "#303030" : "#d6dbe1", bar = dark ? "#1b1b1b" : "#edf0f3";
+    const QString accent = style::warning(dark).name(), selection = dark ? "#233448" : "#dce9f6",
+                  hover = dark ? "#242424" : "#e7ecf1";
+    palette.setColor(QPalette::Window, QColor(bg));
+    palette.setColor(QPalette::WindowText, QColor(text));
+    palette.setColor(QPalette::Base, QColor(base));
+    palette.setColor(QPalette::AlternateBase, QColor(dark ? "#181818" : "#f7f8fa"));
+    palette.setColor(QPalette::Text, QColor(text));
+    palette.setColor(QPalette::Button, QColor(bar));
+    palette.setColor(QPalette::ButtonText, QColor(text));
+    palette.setColor(QPalette::PlaceholderText, QColor(muted));
+    palette.setColor(QPalette::Highlight, QColor(selection));
+    palette.setColor(QPalette::HighlightedText, QColor(text));
+    palette.setColor(QPalette::Mid, QColor(border));
+    palette.setColor(QPalette::Disabled, QPalette::ButtonText,
+                     QColor(dark ? "#646464" : "#9da5af"));
+    qApp->setPalette(palette);
     qApp->setStyleSheet(QString(R"(
         QWidget { font-family: 'Segoe UI', 'Microsoft YaHei UI'; font-size: 12px; }
         QWidget#workspace { background: %1; }
@@ -70,7 +81,14 @@ void MainWindow::setDarkTheme(bool dark) {
         QMenu::item:disabled { color: %4; }
         QToolTip { color: %7; background: %2; border: 1px solid %3; padding: 4px; }
         QPlainTextEdit#hexView, QPlainTextEdit#streamBytes, QPlainTextEdit#applicationBytes { font-family: 'Consolas', 'Courier New'; font-size: 12px; padding: 6px; }
-    )").arg(bg,bar,border,muted,base,accent,text,hover,dark?"#646464":"#9da5af",selection,style::danger,QString::number(style::controlHeight-2)));
-    {QSignalBlocker block(theme_);theme_->setChecked(dark);}updateStatus();
+    )")
+                            .arg(bg, bar, border, muted, base, accent, text, hover,
+                                 dark ? "#646464" : "#9da5af", selection, style::danger,
+                                 QString::number(style::controlHeight - 2)));
+    {
+        QSignalBlocker block(theme_);
+        theme_->setChecked(dark);
+    }
+    updateStatus();
 }
-}
+} // namespace etherscope
