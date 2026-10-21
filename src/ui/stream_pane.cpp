@@ -1,5 +1,6 @@
 #include "ui/stream_pane.h"
 #include "ui/style.h"
+#include "ui/language.h"
 #include <QAbstractTableModel>
 #include <QComboBox>
 #include <QFontDatabase>
@@ -19,18 +20,18 @@ namespace etherscope {
 namespace {
 QString markText(StreamEventKind kind) {
     switch(kind) {
-        case StreamEventKind::Duplicate:return "重复数据";
-        case StreamEventKind::Overlap:return "重叠数据";
-        case StreamEventKind::GapAhead:return "顺序缺口";
-        case StreamEventKind::GapFilled:return "后到补齐";
-        case StreamEventKind::Conflict:return "数据冲突";
+        case StreamEventKind::Duplicate:return i18n::text("重复数据");
+        case StreamEventKind::Overlap:return i18n::text("重叠数据");
+        case StreamEventKind::GapAhead:return i18n::text("顺序缺口");
+        case StreamEventKind::GapFilled:return i18n::text("后到补齐");
+        case StreamEventKind::Conflict:return i18n::text("数据冲突");
     }
     return "-";
 }
 }
 class StreamTableModel final:public QAbstractTableModel {
 public:
-    StreamTableModel(bool events,QObject* parent):QAbstractTableModel(parent),events_(events) {}
+    StreamTableModel(bool events,QObject* parent):QAbstractTableModel(parent),events_(events) {connect(&i18n::language(),&i18n::Language::changed,this,[this]{emit headerDataChanged(Qt::Horizontal,0,columnCount()-1);if(rowCount())emit dataChanged(index(0,0),index(rowCount()-1,columnCount()-1));});}
     int rowCount(const QModelIndex& parent={}) const override {return parent.isValid() || !result_?0:static_cast<int>(events_?result_->events.size():result_->directions[direction_].blocks.size());}
     int columnCount(const QModelIndex& parent={}) const override {return parent.isValid()?0:(events_?6:4);}
     QVariant data(const QModelIndex& index,int role) const override {
@@ -46,13 +47,13 @@ public:
             const auto& block=result_->directions[direction_].blocks[index.row()];
             if(role==Qt::UserRole)return number(block.packetId);
             if(role!=Qt::DisplayRole && role!=Qt::ToolTipRole)return {};
-            switch(index.column()){case 0:return number(block.sequence);case 1:return number(block.length);case 2:return block.packetId?number(block.packetId):QVariant("-");case 3:return block.bytes.empty()?"缺口":"数据";}
+            switch(index.column()){case 0:return number(block.sequence);case 1:return number(block.length);case 2:return block.packetId?number(block.packetId):QVariant("-");case 3:return i18n::text(block.bytes.empty()?"缺口":"数据");}
         }
         return {};
     }
     QVariant headerData(int section,Qt::Orientation orientation,int role) const override {
         static const QStringList ranges={"SEQ","字节","包号","状态"},events={"包号","方向","标记","SEQ","字节","关联包号"};const auto& titles=events_?events:ranges;
-        return orientation==Qt::Horizontal && role==Qt::DisplayRole && section>=0 && section<titles.size()?titles[section]:QVariant{};
+        return orientation==Qt::Horizontal && role==Qt::DisplayRole && section>=0 && section<titles.size()?i18n::text(titles[section]):QVariant{};
     }
     void setResult(std::shared_ptr<const TcpStreamResult> result,unsigned direction){beginResetModel();result_=std::move(result);direction_=direction;endResetModel();}
 private:
@@ -87,29 +88,29 @@ StreamPane::StreamPane(QWidget* parent,StreamDecoder decoder):QWidget(parent),se
     connect(&service_,&StreamService::changed,this,[this]{
         auto result=service_.takeResult();
         if(result && result->request==request_) {
-            if(!result->error.isEmpty()){phase_->setText(result->error);emit analysisFinished(request_,false);}
-            else if(result->stream && !result->stream->cancelled && result->stream->conversationId==conversation_ && result->stream->generation==generation_){result_=std::move(result->stream);phase_->setText("已重组");display();emit analysisFinished(request_,true);}
-            else {phase_->setText(result->stream && result->stream->cancelled?"已取消":"结果已过期");emit analysisFinished(request_,false);}
+            if(!result->error.isEmpty()){i18n::setLabel(phase_,result->error);emit analysisFinished(request_,false);}
+            else if(result->stream && !result->stream->cancelled && result->stream->conversationId==conversation_ && result->stream->generation==generation_){result_=std::move(result->stream);i18n::setLabel(phase_,"已重组");display();emit analysisFinished(request_,true);}
+            else {i18n::setLabel(phase_,result->stream && result->stream->cancelled?"已取消":"结果已过期");emit analysisFinished(request_,false);}
         }
         cancel_->setEnabled(service_.busy());emit workChanged();
     },Qt::QueuedConnection);
-    clearResult();start_->setEnabled(false);cancel_->setEnabled(false);
+    clearResult();start_->setEnabled(false);cancel_->setEnabled(false);i18n::bind(this);
 }
 void StreamPane::setSelection(const SessionStore* store,std::uint64_t id) {
     const auto generation=store?store->tcp().generation():0;if(store_==store && generation_==generation && conversation_==id)return;
-    service_.cancel();request_=0;store_=store;generation_=generation;conversation_=id;clearResult();phase_->setText(id?"待重组":"");start_->setEnabled(id!=0);cancel_->setEnabled(service_.busy());
+    service_.cancel();request_=0;store_=store;generation_=generation;conversation_=id;clearResult();i18n::setLabel(phase_,id?"待重组":"");start_->setEnabled(id!=0);cancel_->setEnabled(service_.busy());
 }
 void StreamPane::start() {
     if(!store_ || !conversation_ || store_->tcp().generation()!=generation_)return;
-    auto snapshot=snapshotTcpStream(*store_,conversation_);if(!snapshot){phase_->setText("会话已覆盖");return;}
-    clearResult();request_=service_.request(std::move(*snapshot));phase_->setText(request_?"分析中":"任务已关闭");cancel_->setEnabled(request_!=0);emit workChanged();
+    auto snapshot=snapshotTcpStream(*store_,conversation_);if(!snapshot){i18n::setLabel(phase_,"会话已覆盖");return;}
+    clearResult();request_=service_.request(std::move(*snapshot));i18n::setLabel(phase_,request_?"分析中":"任务已关闭");cancel_->setEnabled(request_!=0);emit workChanged();
 }
-void StreamPane::cancel() {service_.cancel();request_=0;clearResult();phase_->setText("已取消");cancel_->setEnabled(service_.busy());emit workChanged();}
-void StreamPane::clearResult() {result_.reset();rangeModel_->setResult({},0);eventModel_->setResult({},0);bytes_->clear();page_->clear();scope_->clear();prefix_->clear();limit_->clear();for(auto* metric:metrics_)metric->setText("-");previous_->setEnabled(false);next_->setEnabled(false);locate_->setEnabled(false);}
+void StreamPane::cancel() {service_.cancel();request_=0;clearResult();i18n::setLabel(phase_,"已取消");cancel_->setEnabled(service_.busy());emit workChanged();}
+void StreamPane::clearResult() {result_.reset();rangeModel_->setResult({},0);eventModel_->setResult({},0);bytes_->clear();page_->clear();i18n::setLabel(scope_,{});i18n::setLabel(prefix_,{});i18n::setLabel(limit_,{});for(auto* metric:metrics_)metric->setText("-");previous_->setEnabled(false);next_->setEnabled(false);locate_->setEnabled(false);}
 void StreamPane::display() {
     const auto direction=static_cast<unsigned>(direction_->currentIndex());rangeModel_->setResult(result_,direction);eventModel_->setResult(result_,direction);if(!result_){displayRange();return;}
     const auto& output=result_->directions[direction];const std::array<QString,8> values={QString::number(result_->inputPackets),QString::number(output.uniqueBytes),QString::number(output.gaps),QString::number(output.duplicateSegments),QString::number(output.gapFilledSegments),QString::number(output.conflictBytes),QString::number(double(result_->estimatedBytes)/1024,'f',1),QString::number(result_->eventsOmitted)};
-    for(std::size_t i=0;i<values.size();++i)metrics_[i]->setText(values[i]);scope_->setText(result_->cachePartial?"缓存范围":"");prefix_->setText(output.boundaryConflict?"序号边界":(!output.startKnown?"起点未知":(output.prefixMissing?"起始缺口":(output.suffixMissing?"尾部缺口":""))));limit_->setText(result_->inputLimited || output.limited?"达到上限":"");
+    for(std::size_t i=0;i<values.size();++i)metrics_[i]->setText(values[i]);i18n::setLabel(scope_,result_->cachePartial?"缓存范围":"");i18n::setLabel(prefix_,output.boundaryConflict?"序号边界":(!output.startKnown?"起点未知":(output.prefixMissing?"起始缺口":(output.suffixMissing?"尾部缺口":""))));i18n::setLabel(limit_,result_->inputLimited || output.limited?"达到上限":"");
     if(rangeModel_->rowCount()){const auto first=std::find_if(output.blocks.begin(),output.blocks.end(),[](const auto& block){return !block.bytes.empty();});ranges_->setCurrentIndex(rangeModel_->index(first==output.blocks.end()?0:static_cast<int>(first-output.blocks.begin()),0));}displayRange();
 }
 void StreamPane::displayRange(){

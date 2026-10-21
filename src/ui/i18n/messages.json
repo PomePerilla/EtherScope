@@ -1,0 +1,2027 @@
+[
+  [
+    "%1\n未找到文件。\n请检查文件名。",
+    "%1\nFile not found.\nCheck the file name.",
+    "%1\n找不到檔案。\n請檢查檔案名稱。"
+  ],
+  [
+    "%1 已存在。\n是否替换?",
+    "%1 already exists.\nReplace it?",
+    "%1 已存在。\n是否取代?"
+  ],
+  [
+    "PCAP 文件 (*.pcap *.cap)",
+    "PCAP files (*.pcap *.cap)",
+    "PCAP 檔案 (*.pcap *.cap)"
+  ],
+  [
+    "PCAP 文件 (*.pcap)",
+    "PCAP files (*.pcap)",
+    "PCAP 檔案 (*.pcap)"
+  ],
+  [
+    "TCP 会话",
+    "TCP conversations",
+    "TCP 會話"
+  ],
+  [
+    "一致",
+    "Valid",
+    "一致"
+  ],
+  [
+    "上一页",
+    "Previous",
+    "上一頁"
+  ],
+  [
+    "上层协议",
+    "Upper-layer protocol",
+    "上層協定"
+  ],
+  [
+    "上级目录",
+    "Parent directory",
+    "上層目錄"
+  ],
+  [
+    "下一跳",
+    "Next hop",
+    "下一跳"
+  ],
+  [
+    "下一页",
+    "Next",
+    "下一頁"
+  ],
+  [
+    "下一首部",
+    "Next header",
+    "下一首部"
+  ],
+  [
+    "不一致",
+    "Invalid",
+    "不一致"
+  ],
+  [
+    "不作推断",
+    "Not inferred",
+    "不作推斷"
+  ],
+  [
+    "不可用",
+    "Unavailable",
+    "不可用"
+  ],
+  [
+    "不完整首部",
+    "Incomplete header",
+    "不完整首部"
+  ],
+  [
+    "不推断上层协议",
+    "Upper-layer protocol not inferred",
+    "不推斷上層協定"
+  ],
+  [
+    "不支持的",
+    "Unsupported",
+    "不支持的"
+  ],
+  [
+    "不支持的链路类型",
+    "Unsupported link type",
+    "不支持的鏈路類型"
+  ],
+  [
+    "不是",
+    "is not",
+    "不是"
+  ],
+  [
+    "不能作为以太网帧解析",
+    "Cannot decode as Ethernet",
+    "不能作為以太網幀解析"
+  ],
+  [
+    "不解析空载荷或",
+    "Empty payload not decoded",
+    "不解析空載荷或"
+  ],
+  [
+    "不进行重组",
+    "Reassembly unavailable",
+    "不進行重組"
+  ],
+  [
+    "不递归解析",
+    "Nested decoding unavailable",
+    "不遞歸解析"
+  ],
+  [
+    "丢弃",
+    "Dropped",
+    "丟棄"
+  ],
+  [
+    "个解析上限",
+    "Decode limit",
+    "個解析上限"
+  ],
+  [
+    "中途捕获",
+    "Midstream",
+    "中途擷取"
+  ],
+  [
+    "主机不可达",
+    "Host unreachable",
+    "主機不可達"
+  ],
+  [
+    "事件",
+    "Events",
+    "事件"
+  ],
+  [
+    "事件覆盖",
+    "Overwritten events",
+    "事件覆蓋"
+  ],
+  [
+    "仅支持经典",
+    "Only classic",
+    "僅支持經典"
+  ],
+  [
+    "仅支持经典 PCAP；PCAPNG 请先用 Wireshark 另存为 PCAP",
+    "Only classic PCAP is supported; convert PCAPNG to PCAP with Wireshark",
+    "僅支援傳統 PCAP；請先使用 Wireshark 將 PCAPNG 另存為 PCAP"
+  ],
+  [
+    "仅解析",
+    "Decodes only",
+    "僅解析"
+  ],
+  [
+    "代码",
+    "Code",
+    "代碼"
+  ],
+  [
+    "代码应为",
+    "Expected code",
+    "代碼應為"
+  ],
+  [
+    "以太网帧",
+    "Ethernet frame",
+    "以太網幀"
+  ],
+  [
+    "任一方向",
+    "Either",
+    "任一方向"
+  ],
+  [
+    "任务已关闭",
+    "Task closed",
+    "任務已關閉"
+  ],
+  [
+    "优先级",
+    "Priority",
+    "優先級"
+  ],
+  [
+    "会话",
+    "Conversation",
+    "會話"
+  ],
+  [
+    "会话 %1",
+    "Conversation %1",
+    "會話 %1"
+  ],
+  [
+    "会话已覆盖",
+    "Conversation overwritten",
+    "會話已覆蓋"
+  ],
+  [
+    "传输中",
+    "In transit",
+    "傳輸中"
+  ],
+  [
+    "传输控制协议",
+    "Transmission Control Protocol",
+    "傳輸控制協定"
+  ],
+  [
+    "使用指定的设置文件",
+    "Use a settings file",
+    "使用指定的設定檔案"
+  ],
+  [
+    "保存",
+    "Save",
+    "儲存"
+  ],
+  [
+    "保存位置:",
+    "Save in:",
+    "儲存位置:"
+  ],
+  [
+    "保存启动失败",
+    "Export could not start",
+    "儲存啟動失敗"
+  ],
+  [
+    "保存文件",
+    "Save file",
+    "儲存檔案"
+  ],
+  [
+    "保留",
+    "Retained",
+    "保留"
+  ],
+  [
+    "保留位",
+    "Reserved bits",
+    "保留位"
+  ],
+  [
+    "保留原始字节",
+    "Raw bytes retained",
+    "保留原始位元組"
+  ],
+  [
+    "保留原始数据",
+    "Raw data retained",
+    "保留原始資料"
+  ],
+  [
+    "保留字段",
+    "Reserved",
+    "保留欄位"
+  ],
+  [
+    "修改时间",
+    "Date modified",
+    "修改時間"
+  ],
+  [
+    "值",
+    "Value",
+    "值"
+  ],
+  [
+    "偏移",
+    "Offset",
+    "偏移"
+  ],
+  [
+    "停止",
+    "Stop",
+    "停止"
+  ],
+  [
+    "停止中",
+    "Stopping",
+    "停止中"
+  ],
+  [
+    "停止事件创建失败",
+    "Cannot create stop event",
+    "停止事件創建失敗"
+  ],
+  [
+    "元信息的",
+    "Metadata",
+    "元信息的"
+  ],
+  [
+    "全部",
+    "All",
+    "全部"
+  ],
+  [
+    "全部协议",
+    "All protocols",
+    "全部協定"
+  ],
+  [
+    "公共首部被截断",
+    "Common header truncated",
+    "公共首部被截斷"
+  ],
+  [
+    "关联包号",
+    "Related packet",
+    "關聯包號"
+  ],
+  [
+    "关闭",
+    "Close",
+    "關閉"
+  ],
+  [
+    "其他",
+    "Other",
+    "其他"
+  ],
+  [
+    "其他不可达原因",
+    "Other unreachable reason",
+    "其他不可達原因"
+  ],
+  [
+    "其他链路",
+    "Other link",
+    "其他鏈路"
+  ],
+  [
+    "冲突字节",
+    "Conflicting bytes",
+    "沖突位元組"
+  ],
+  [
+    "准备文件",
+    "Preparing file",
+    "準備檔案"
+  ],
+  [
+    "分析中",
+    "Analyzing",
+    "分析中"
+  ],
+  [
+    "分片",
+    "Fragment",
+    "分片"
+  ],
+  [
+    "分片重组超时",
+    "Fragment reassembly timeout",
+    "分片重組超時"
+  ],
+  [
+    "分片首部",
+    "Fragment header",
+    "分片首部"
+  ],
+  [
+    "列表",
+    "List",
+    "清單"
+  ],
+  [
+    "删除",
+    "Delete",
+    "刪除"
+  ],
+  [
+    "刷新接口",
+    "Refresh interfaces",
+    "刷新接口"
+  ],
+  [
+    "前缀",
+    "Prefix",
+    "前綴"
+  ],
+  [
+    "前缀信息选项长度异常",
+    "Invalid prefix information option length",
+    "前綴信息選項長度異常"
+  ],
+  [
+    "前缀长度",
+    "Prefix length",
+    "前綴長度"
+  ],
+  [
+    "前缀长度超过",
+    "Prefix length exceeds",
+    "前綴長度超過"
+  ],
+  [
+    "前进",
+    "Forward",
+    "下一頁"
+  ],
+  [
+    "剩余段数",
+    "Segments left",
+    "剩余段數"
+  ],
+  [
+    "加密数据不解密",
+    "Encrypted data",
+    "加密資料不解密"
+  ],
+  [
+    "加密载荷",
+    "Encrypted payload",
+    "加密載荷"
+  ],
+  [
+    "包",
+    "Packets",
+    "包"
+  ],
+  [
+    "包号",
+    "Packet",
+    "封包編號"
+  ],
+  [
+    "包速率",
+    "Packet rate",
+    "包速率"
+  ],
+  [
+    "区分服务",
+    "Differentiated services",
+    "區分服務"
+  ],
+  [
+    "协议",
+    "Protocol",
+    "協定"
+  ],
+  [
+    "协议不可达",
+    "Protocol unreachable",
+    "協定不可達"
+  ],
+  [
+    "协议分析器",
+    "Protocol analyzer",
+    "協定分析器"
+  ],
+  [
+    "协议地址长度",
+    "Protocol address length",
+    "協定位址長度"
+  ],
+  [
+    "协议类型",
+    "Protocol type",
+    "協定類型"
+  ],
+  [
+    "占用",
+    "Memory",
+    "占用"
+  ],
+  [
+    "原因",
+    "Reason",
+    "原因"
+  ],
+  [
+    "原始",
+    "Original",
+    "原始"
+  ],
+  [
+    "原始字节",
+    "Raw bytes",
+    "原始位元組"
+  ],
+  [
+    "原始长度",
+    "Original length",
+    "原始長度"
+  ],
+  [
+    "原始长度小于捕获长度",
+    "Original length below captured length",
+    "原始長度小于擷取長度"
+  ],
+  [
+    "参数问题",
+    "Parameter problem",
+    "參數問題"
+  ],
+  [
+    "发送者",
+    "Sender",
+    "發送者"
+  ],
+  [
+    "取消",
+    "Cancel",
+    "取消"
+  ],
+  [
+    "另存为",
+    "Save as",
+    "另存為"
+  ],
+  [
+    "只读",
+    "Read-only",
+    "唯讀"
+  ],
+  [
+    "可达时间",
+    "Reachable time",
+    "可達時間"
+  ],
+  [
+    "名称",
+    "Name",
+    "名稱"
+  ],
+  [
+    "后到补齐",
+    "Gap filled",
+    "后到補齊"
+  ],
+  [
+    "后退",
+    "Back",
+    "上一頁"
+  ],
+  [
+    "否",
+    "No",
+    "否"
+  ],
+  [
+    "回显应答",
+    "Echo reply",
+    "回顯應答"
+  ],
+  [
+    "回显请求",
+    "Echo request",
+    "回顯請求"
+  ],
+  [
+    "固定首部被截断",
+    "Fixed header truncated",
+    "固定首部被截斷"
+  ],
+  [
+    "地址",
+    "Address",
+    "位址"
+  ],
+  [
+    "地址字段被截断",
+    "Address field truncated",
+    "位址欄位被截斷"
+  ],
+  [
+    "地址无效",
+    "Invalid address",
+    "位址無效"
+  ],
+  [
+    "地址格式",
+    "Address format",
+    "位址格式"
+  ],
+  [
+    "地址筛选",
+    "Addresses",
+    "位址篩選"
+  ],
+  [
+    "地址解析协议",
+    "Address Resolution Protocol",
+    "位址解析協定"
+  ],
+  [
+    "基本首部",
+    "Base header",
+    "基本首部"
+  ],
+  [
+    "填充",
+    "Padding",
+    "填充"
+  ],
+  [
+    "大小",
+    "Size",
+    "大小"
+  ],
+  [
+    "字段",
+    "Fields",
+    "欄位"
+  ],
+  [
+    "字段上限",
+    "Field limit",
+    "欄位上限"
+  ],
+  [
+    "字节",
+    "Bytes",
+    "位元組"
+  ],
+  [
+    "字节 %1-%2 / %3",
+    "Bytes %1-%2 / %3",
+    "位元組 %1-%2 / %3"
+  ],
+  [
+    "完整性校验值",
+    "Integrity check value",
+    "完整性校驗值"
+  ],
+  [
+    "定位",
+    "Locate",
+    "定位"
+  ],
+  [
+    "实时",
+    "Live",
+    "即時"
+  ],
+  [
+    "实时抓包当前仅支持",
+    "Live capture requires",
+    "即時抓包當前僅支持"
+  ],
+  [
+    "导出引用",
+    "Export references",
+    "匯出引用"
+  ],
+  [
+    "封装安全载荷",
+    "Encapsulating Security Payload",
+    "封裝安全載荷"
+  ],
+  [
+    "封装类型",
+    "Encapsulated type",
+    "封裝類型"
+  ],
+  [
+    "就绪",
+    "Ready",
+    "就緒"
+  ],
+  [
+    "尾部缺口",
+    "Missing suffix",
+    "尾部缺口"
+  ],
+  [
+    "已保存",
+    "Saved",
+    "已儲存"
+  ],
+  [
+    "已保存 %1 包",
+    "Saved packets: %1",
+    "已儲存封包：%1"
+  ],
+  [
+    "已停止",
+    "Stopped",
+    "已停止"
+  ],
+  [
+    "已取消",
+    "Cancelled",
+    "已取消"
+  ],
+  [
+    "已确认",
+    "Acknowledged",
+    "已確認"
+  ],
+  [
+    "已结束",
+    "Finished",
+    "已結束"
+  ],
+  [
+    "已见",
+    "Observed",
+    "已見"
+  ],
+  [
+    "已设置",
+    "Set",
+    "已設定"
+  ],
+  [
+    "已重组",
+    "Reassembled",
+    "已重組"
+  ],
+  [
+    "序列号",
+    "Sequence number",
+    "序列號"
+  ],
+  [
+    "序号",
+    "Number",
+    "序號"
+  ],
+  [
+    "序号边界",
+    "Sequence boundary",
+    "序號邊界"
+  ],
+  [
+    "应用",
+    "Apply",
+    "套用"
+  ],
+  [
+    "应答",
+    "Response",
+    "應答"
+  ],
+  [
+    "开始",
+    "Start",
+    "開始"
+  ],
+  [
+    "异常",
+    "Malformed",
+    "異常"
+  ],
+  [
+    "异常选项",
+    "Invalid option",
+    "異常選項"
+  ],
+  [
+    "引用的",
+    "Quoted",
+    "引用的"
+  ],
+  [
+    "引用的原始",
+    "Quoted original",
+    "引用的原始"
+  ],
+  [
+    "当前跳数限制",
+    "Current hop limit",
+    "當前跳數限制"
+  ],
+  [
+    "待保存数据包的链路",
+    "Export packet link",
+    "待儲存封包的鏈路"
+  ],
+  [
+    "待重组",
+    "Not reassembled",
+    "待重組"
+  ],
+  [
+    "快照包数",
+    "Snapshot packets",
+    "快照封包數"
+  ],
+  [
+    "快照长度异常",
+    "Invalid snapshot length",
+    "快照長度異常"
+  ],
+  [
+    "总长度",
+    "Total length",
+    "總長度"
+  ],
+  [
+    "我的计算机",
+    "My Computer",
+    "我的電腦"
+  ],
+  [
+    "所有文件 (*)",
+    "All files (*)",
+    "所有檔案 (*)"
+  ],
+  [
+    "打开",
+    "Open",
+    "開啟"
+  ],
+  [
+    "打开文件",
+    "Open file",
+    "開啟檔案"
+  ],
+  [
+    "扩展首部",
+    "Extension header",
+    "擴展首部"
+  ],
+  [
+    "扩展首部被截断",
+    "Extension header truncated",
+    "擴展首部被截斷"
+  ],
+  [
+    "扩展首部超过",
+    "Extension headers exceed",
+    "擴展首部超過"
+  ],
+  [
+    "扩展首部长度异常或被截断",
+    "Invalid or truncated extension header",
+    "擴展首部長度異常或被截斷"
+  ],
+  [
+    "报文已被筛选",
+    "Packet hidden by filter",
+    "封包已被篩選"
+  ],
+  [
+    "报文已覆盖",
+    "Packet overwritten",
+    "封包已覆蓋"
+  ],
+  [
+    "持续",
+    "Duration",
+    "持續"
+  ],
+  [
+    "指针",
+    "Pointer",
+    "指針"
+  ],
+  [
+    "捕获",
+    "Captured",
+    "擷取"
+  ],
+  [
+    "捕获中",
+    "Capturing",
+    "擷取中"
+  ],
+  [
+    "捕获内容",
+    "Captured content",
+    "擷取內容"
+  ],
+  [
+    "捕获过滤",
+    "Capture filter",
+    "擷取過濾"
+  ],
+  [
+    "捕获过滤包含无效字符",
+    "Invalid character in capture filter",
+    "擷取過濾包含無效字符"
+  ],
+  [
+    "捕获过滤安装失败",
+    "Cannot install capture filter",
+    "擷取過濾安裝失敗"
+  ],
+  [
+    "捕获过滤无效",
+    "Invalid capture filter",
+    "擷取過濾無效"
+  ],
+  [
+    "捕获长度",
+    "Captured length",
+    "擷取長度"
+  ],
+  [
+    "捕获长度小于原始帧长",
+    "Captured length below original frame length",
+    "擷取長度小于原始幀長"
+  ],
+  [
+    "接口链路类型不支持",
+    "Unsupported interface link type",
+    "接口鏈路類型不支持"
+  ],
+  [
+    "提示",
+    "Warning",
+    "提示"
+  ],
+  [
+    "握手",
+    "Handshake",
+    "交握"
+  ],
+  [
+    "握手完成",
+    "Handshake complete",
+    "交握完成"
+  ],
+  [
+    "握手未完整",
+    "Handshake incomplete",
+    "交握未完成"
+  ],
+  [
+    "摘要",
+    "Summary",
+    "摘要"
+  ],
+  [
+    "操作",
+    "Operation",
+    "操作"
+  ],
+  [
+    "数据",
+    "Data",
+    "資料"
+  ],
+  [
+    "数据偏移异常",
+    "Invalid data offset",
+    "資料偏移異常"
+  ],
+  [
+    "数据冲突",
+    "Conflicting data",
+    "資料沖突"
+  ],
+  [
+    "数据包内容被截断",
+    "Packet data truncated",
+    "封包內容被截斷"
+  ],
+  [
+    "数据包记录头被截断",
+    "Packet record header truncated",
+    "封包記錄頭被截斷"
+  ],
+  [
+    "数据包超过队列预算",
+    "Packet exceeds queue budget",
+    "封包超過佇列預算"
+  ],
+  [
+    "数据包过大",
+    "Packet too large",
+    "封包過大"
+  ],
+  [
+    "数据包长度或时间戳异常",
+    "Invalid packet length or timestamp",
+    "封包長度或時間戳異常"
+  ],
+  [
+    "数据字段",
+    "Data field",
+    "資料欄位"
+  ],
+  [
+    "数据报被截断",
+    "Datagram truncated",
+    "資料報被截斷"
+  ],
+  [
+    "数据长度",
+    "Data length",
+    "資料長度"
+  ],
+  [
+    "文件",
+    "File",
+    "檔案"
+  ],
+  [
+    "文件保存失败",
+    "Cannot save file",
+    "檔案儲存失敗"
+  ],
+  [
+    "文件写入失败",
+    "Cannot write file",
+    "檔案寫入失敗"
+  ],
+  [
+    "文件准备失败",
+    "Cannot prepare file",
+    "檔案準備失敗"
+  ],
+  [
+    "文件名:",
+    "File name:",
+    "檔案名稱:"
+  ],
+  [
+    "文件头被截断",
+    "File header truncated",
+    "檔案頭被截斷"
+  ],
+  [
+    "文件夹",
+    "Folder",
+    "資料夾"
+  ],
+  [
+    "文件类型:",
+    "Files of type:",
+    "檔案類型:"
+  ],
+  [
+    "新建文件夹",
+    "New folder",
+    "新增資料夾"
+  ],
+  [
+    "方向",
+    "Direction",
+    "方向"
+  ],
+  [
+    "无下一首部",
+    "No next header",
+    "無下一首部"
+  ],
+  [
+    "无匹配报文",
+    "No matching packets",
+    "無匹配封包"
+  ],
+  [
+    "无可用接口",
+    "No interfaces",
+    "無可用接口"
+  ],
+  [
+    "无法定位系统目录",
+    "Cannot locate system directory",
+    "無法定位系統目錄"
+  ],
+  [
+    "无法打开",
+    "Cannot open",
+    "無法打開"
+  ],
+  [
+    "无法打开接口",
+    "Cannot open interface",
+    "無法打開接口"
+  ],
+  [
+    "时间",
+    "Time",
+    "時間"
+  ],
+  [
+    "时间戳",
+    "Timestamp",
+    "時間戳"
+  ],
+  [
+    "时间戳指针异常",
+    "Invalid timestamp pointer",
+    "時間戳指針異常"
+  ],
+  [
+    "时间戳格式异常",
+    "Invalid timestamp format",
+    "時間戳格式異常"
+  ],
+  [
+    "时间戳长度异常",
+    "Invalid timestamp length",
+    "時間戳長度異常"
+  ],
+  [
+    "时间超过",
+    "Time exceeded",
+    "時間超過"
+  ],
+  [
+    "是",
+    "Yes",
+    "是"
+  ],
+  [
+    "显示",
+    "Displayed",
+    "顯示"
+  ],
+  [
+    "显示详细信息",
+    "Show details",
+    "顯示詳細資料"
+  ],
+  [
+    "显示隐藏文件",
+    "Show hidden files",
+    "顯示隱藏檔案"
+  ],
+  [
+    "暂不支持声明了",
+    "Unsupported declared",
+    "暫不支持聲明了"
+  ],
+  [
+    "更多",
+    "More",
+    "更多"
+  ],
+  [
+    "更多分片",
+    "More fragments",
+    "更多分片"
+  ],
+  [
+    "最近位置",
+    "Recent places",
+    "最近位置"
+  ],
+  [
+    "有效寿命",
+    "Valid lifetime",
+    "有效壽命"
+  ],
+  [
+    "有效载荷被截断",
+    "Payload truncated",
+    "有效載荷被截斷"
+  ],
+  [
+    "有效载荷长度",
+    "Payload length",
+    "有效載荷長度"
+  ],
+  [
+    "有效载荷长度为",
+    "Payload length is",
+    "有效載荷長度為"
+  ],
+  [
+    "未安装",
+    "Not installed",
+    "未安裝"
+  ],
+  [
+    "未捕获或无法确认",
+    "Not captured or unknown",
+    "未擷取或無法確認"
+  ],
+  [
+    "未捕获或无法确认，不作推断",
+    "Not captured or unknown",
+    "未擷取或無法確認"
+  ],
+  [
+    "未校验",
+    "Not checked",
+    "未校驗"
+  ],
+  [
+    "未知",
+    "Unknown",
+    "未知"
+  ],
+  [
+    "未知代码",
+    "Unknown code",
+    "未知代碼"
+  ],
+  [
+    "未知协议",
+    "Unknown protocol",
+    "未知協定"
+  ],
+  [
+    "未知协议过滤条件",
+    "Unknown protocol filter",
+    "未知協定過濾條件"
+  ],
+  [
+    "未知选项",
+    "Unknown option",
+    "未知選項"
+  ],
+  [
+    "未解密",
+    "Encrypted",
+    "未解密"
+  ],
+  [
+    "未解析的下一首部",
+    "Undecoded next header",
+    "未解析的下一首部"
+  ],
+  [
+    "未验证",
+    "Not verified",
+    "未驗證"
+  ],
+  [
+    "查找范围:",
+    "Look in:",
+    "搜尋範圍:"
+  ],
+  [
+    "查看报文",
+    "View packets",
+    "檢視封包"
+  ],
+  [
+    "查询",
+    "Query",
+    "查詢"
+  ],
+  [
+    "查询网卡",
+    "Finding interfaces",
+    "查詢網路介面"
+  ],
+  [
+    "标志",
+    "Flags",
+    "標志"
+  ],
+  [
+    "标记",
+    "Markers",
+    "標記"
+  ],
+  [
+    "标记被截断",
+    "Tag truncated",
+    "標記被截斷"
+  ],
+  [
+    "标识",
+    "Identification",
+    "標識"
+  ],
+  [
+    "标识符",
+    "Identifier",
+    "標識符"
+  ],
+  [
+    "校验状态",
+    "Checksum status",
+    "驗證狀態"
+  ],
+  [
+    "格式",
+    "Format",
+    "格式"
+  ],
+  [
+    "检验和",
+    "Checksum",
+    "檢查碼"
+  ],
+  [
+    "正在保存",
+    "Saving",
+    "正在儲存"
+  ],
+  [
+    "正在保存 %1%",
+    "Saving %1%",
+    "儲存中 %1%"
+  ],
+  [
+    "正在保存 0%",
+    "Saving 0%",
+    "儲存中 0%"
+  ],
+  [
+    "流数据",
+    "Stream data",
+    "串流資料"
+  ],
+  [
+    "流标签",
+    "Flow label",
+    "流量標籤"
+  ],
+  [
+    "流量",
+    "Traffic",
+    "流量"
+  ],
+  [
+    "流量类别",
+    "Traffic class",
+    "流量類別"
+  ],
+  [
+    "测试中",
+    "Testing",
+    "測試中"
+  ],
+  [
+    "深色主题",
+    "Dark theme",
+    "深色主題"
+  ],
+  [
+    "清除",
+    "Clear",
+    "清除"
+  ],
+  [
+    "源",
+    "Source",
+    "來源"
+  ],
+  [
+    "源地址",
+    "Source",
+    "來源位址"
+  ],
+  [
+    "源端口",
+    "Source port",
+    "源連接埠"
+  ],
+  [
+    "源路由失败",
+    "Source route failed",
+    "源路由失敗"
+  ],
+  [
+    "源链路地址",
+    "Source link address",
+    "源鏈路位址"
+  ],
+  [
+    "溢出",
+    "Overflow",
+    "溢出"
+  ],
+  [
+    "片偏移",
+    "Fragment offset",
+    "片偏移"
+  ],
+  [
+    "版本",
+    "Version",
+    "版本"
+  ],
+  [
+    "版本字段异常",
+    "Invalid version field",
+    "版本欄位異常"
+  ],
+  [
+    "状态",
+    "Status",
+    "狀態"
+  ],
+  [
+    "生存时间",
+    "Time to live",
+    "生存時間"
+  ],
+  [
+    "用户数据报协议",
+    "User Datagram Protocol",
+    "用戶資料報協定"
+  ],
+  [
+    "目录:",
+    "Directory:",
+    "目錄:"
+  ],
+  [
+    "目标",
+    "Target",
+    "目標"
+  ],
+  [
+    "目标地址",
+    "Target address",
+    "目標位址"
+  ],
+  [
+    "目标链路地址",
+    "Target link address",
+    "目標鏈路位址"
+  ],
+  [
+    "目的",
+    "Destination",
+    "目的"
+  ],
+  [
+    "目的不可达",
+    "Destination unreachable",
+    "目的不可達"
+  ],
+  [
+    "目的地址",
+    "Destination",
+    "目的位址"
+  ],
+  [
+    "目的地址不可达",
+    "Destination unreachable",
+    "目的位址不可達"
+  ],
+  [
+    "目的端口",
+    "Destination port",
+    "目的連接埠"
+  ],
+  [
+    "省略标记",
+    "Omitted markers",
+    "省略標記"
+  ],
+  [
+    "硬件地址长度",
+    "Hardware address length",
+    "硬體位址長度"
+  ],
+  [
+    "硬件类型",
+    "Hardware type",
+    "硬體類型"
+  ],
+  [
+    "确定",
+    "OK",
+    "確定"
+  ],
+  [
+    "确认",
+    "Acknowledgment",
+    "確認"
+  ],
+  [
+    "确认号",
+    "Acknowledgment number",
+    "確認號"
+  ],
+  [
+    "移除",
+    "Remove",
+    "移除"
+  ],
+  [
+    "窗口",
+    "Window",
+    "視窗"
+  ],
+  [
+    "端口",
+    "Port",
+    "連接埠"
+  ],
+  [
+    "端口不可达",
+    "Port unreachable",
+    "連接埠不可達"
+  ],
+  [
+    "类型",
+    "Type",
+    "類型"
+  ],
+  [
+    "类型无效",
+    "Invalid type",
+    "類型無效"
+  ],
+  [
+    "类型相关字段",
+    "Type-specific fields",
+    "類型相關欄位"
+  ],
+  [
+    "类型相关数据",
+    "Type-specific data",
+    "類型相關資料"
+  ],
+  [
+    "类型相关首部被截断",
+    "Type-specific header truncated",
+    "類型相關首部被截斷"
+  ],
+  [
+    "紧急指针",
+    "Urgent pointer",
+    "緊急指針"
+  ],
+  [
+    "结果已过期",
+    "Stale result",
+    "結果已過期"
+  ],
+  [
+    "统计",
+    "Stats",
+    "統計"
+  ],
+  [
+    "缓存",
+    "Cache",
+    "快取"
+  ],
+  [
+    "缓存为空",
+    "Empty cache",
+    "快取為空"
+  ],
+  [
+    "缓存占用",
+    "Cache memory",
+    "快取占用"
+  ],
+  [
+    "缓存范围",
+    "Cached range",
+    "快取范圍"
+  ],
+  [
+    "缺口",
+    "Gaps",
+    "缺口"
+  ],
+  [
+    "网卡",
+    "Interface",
+    "網路介面"
+  ],
+  [
+    "网络不可达",
+    "Network unreachable",
+    "網路不可達"
+  ],
+  [
+    "网际协议版本",
+    "Internet Protocol version",
+    "網際協定版本"
+  ],
+  [
+    "耗尽",
+    "Expired",
+    "耗盡"
+  ],
+  [
+    "补齐段",
+    "Gap-filling segments",
+    "補齊區段"
+  ],
+  [
+    "覆盖",
+    "Overwritten",
+    "覆蓋"
+  ],
+  [
+    "解析",
+    "Parsed",
+    "解析"
+  ],
+  [
+    "计算值",
+    "Calculated value",
+    "計算值"
+  ],
+  [
+    "计算机",
+    "Computer",
+    "電腦"
+  ],
+  [
+    "记录路由",
+    "Record route",
+    "記錄路由"
+  ],
+  [
+    "记录路由指针异常",
+    "Invalid record route pointer",
+    "記錄路由指針異常"
+  ],
+  [
+    "记录路由长度异常",
+    "Invalid record route length",
+    "記錄路由長度異常"
+  ],
+  [
+    "诊断",
+    "Diagnostics",
+    "診斷"
+  ],
+  [
+    "该",
+    "This",
+    "該"
+  ],
+  [
+    "该 PCAP 不是 Ethernet 链路，不能作为以太网帧解析",
+    "PCAP link type is not Ethernet",
+    "PCAP 鏈結類型不是 Ethernet"
+  ],
+  [
+    "详情占用",
+    "Details memory",
+    "詳情占用"
+  ],
+  [
+    "详细信息",
+    "Details",
+    "詳細資料"
+  ],
+  [
+    "语言",
+    "Language",
+    "語言"
+  ],
+  [
+    "请先用",
+    "Convert with",
+    "請先用"
+  ],
+  [
+    "请先转换",
+    "Convert first",
+    "請先轉換"
+  ],
+  [
+    "读取中",
+    "Reading",
+    "讀取中"
+  ],
+  [
+    "读取完成",
+    "Read complete",
+    "讀取完成"
+  ],
+  [
+    "读取已停止",
+    "Read stopped",
+    "讀取已停止"
+  ],
+  [
+    "起始缺口",
+    "Missing prefix",
+    "起始缺口"
+  ],
+  [
+    "起点未知",
+    "Unknown start",
+    "起點未知"
+  ],
+  [
+    "跟随",
+    "Follow",
+    "跟隨"
+  ],
+  [
+    "路由器寿命",
+    "Router lifetime",
+    "路由器壽命"
+  ],
+  [
+    "路由器请求",
+    "Router solicitation",
+    "路由器請求"
+  ],
+  [
+    "路由器通告",
+    "Router advertisement",
+    "路由器通告"
+  ],
+  [
+    "路由类型",
+    "Routing type",
+    "路由類型"
+  ],
+  [
+    "跳数限制",
+    "Hop limit",
+    "跳數限制"
+  ],
+  [
+    "跳过",
+    "Skipped",
+    "跳過"
+  ],
+  [
+    "载荷字节",
+    "Payload bytes",
+    "載荷位元組"
+  ],
+  [
+    "达到上限",
+    "Limit reached",
+    "達到上限"
+  ],
+  [
+    "运行库不完整",
+    "Incomplete runtime",
+    "運行庫不完整"
+  ],
+  [
+    "连接中",
+    "Connecting",
+    "連接中"
+  ],
+  [
+    "退出中",
+    "Closing",
+    "退出中"
+  ],
+  [
+    "选择",
+    "Choose",
+    "選擇"
+  ],
+  [
+    "选择目录",
+    "Choose directory",
+    "選擇目錄"
+  ],
+  [
+    "选项",
+    "Options",
+    "選項"
+  ],
+  [
+    "选项与填充",
+    "Options and padding",
+    "選項與填充"
+  ],
+  [
+    "选项数据",
+    "Option data",
+    "選項資料"
+  ],
+  [
+    "选项被截断",
+    "Option truncated",
+    "選項被截斷"
+  ],
+  [
+    "选项长度异常",
+    "Invalid option length",
+    "選項長度異常"
+  ],
+  [
+    "选项长度超过扩展首部",
+    "Option exceeds extension header",
+    "選項長度超過擴展首部"
+  ],
+  [
+    "选项首部被截断",
+    "Option header truncated",
+    "選項首部被截斷"
+  ],
+  [
+    "邻居发现报文",
+    "Neighbor Discovery message",
+    "鄰居發現封包"
+  ],
+  [
+    "邻居发现报文的跳数限制应为",
+    "Expected Neighbor Discovery hop limit",
+    "鄰居發現封包的跳數限制應為"
+  ],
+  [
+    "邻居发现选项",
+    "Neighbor Discovery options",
+    "鄰居發現選項"
+  ],
+  [
+    "邻居发现选项被截断",
+    "Neighbor Discovery option truncated",
+    "鄰居發現選項被截斷"
+  ],
+  [
+    "邻居发现选项长度异常或被截断",
+    "Invalid or truncated Neighbor Discovery option",
+    "鄰居發現選項長度異常或被截斷"
+  ],
+  [
+    "邻居发现链路地址选项长度异常",
+    "Invalid Neighbor Discovery link address option length",
+    "鄰居發現鏈路位址選項長度異常"
+  ],
+  [
+    "邻居请求",
+    "Neighbor solicitation",
+    "鄰居請求"
+  ],
+  [
+    "邻居通告",
+    "Neighbor advertisement",
+    "鄰居通告"
+  ],
+  [
+    "重传计时器",
+    "Retransmit timer",
+    "重傳計時器"
+  ],
+  [
+    "重叠数据",
+    "Overlapping data",
+    "重疊資料"
+  ],
+  [
+    "重命名",
+    "Rename",
+    "重新命名"
+  ],
+  [
+    "重复",
+    "Repeated",
+    "重復"
+  ],
+  [
+    "重复数据",
+    "Duplicate data",
+    "重復資料"
+  ],
+  [
+    "重复段",
+    "Duplicate segments",
+    "重複區段"
+  ],
+  [
+    "重定向",
+    "Redirect",
+    "重定向"
+  ],
+  [
+    "重定向目的地址",
+    "Redirect destination",
+    "重定向目的位址"
+  ],
+  [
+    "重组",
+    "Reassemble",
+    "重組"
+  ],
+  [
+    "重组字节",
+    "Reassembled bytes",
+    "重組位元組"
+  ],
+  [
+    "链路",
+    "Link",
+    "鏈路"
+  ],
+  [
+    "错误报文内的原始数据",
+    "Quoted original data",
+    "錯誤封包內的原始資料"
+  ],
+  [
+    "错误报文引用",
+    "Error quotation",
+    "錯誤封包引用"
+  ],
+  [
+    "错误报文引用的数据不足",
+    "Insufficient quoted data",
+    "錯誤封包引用的資料不足"
+  ],
+  [
+    "错误报文缺少原始",
+    "Missing quoted original",
+    "錯誤封包缺少原始"
+  ],
+  [
+    "长度",
+    "Length",
+    "長度"
+  ],
+  [
+    "长度异常或数据被截断",
+    "Invalid length or truncated data",
+    "長度異常或資料被截斷"
+  ],
+  [
+    "长度或时间戳无效",
+    "Invalid length or timestamp",
+    "長度或時間戳無效"
+  ],
+  [
+    "队列丢弃",
+    "Queue dropped",
+    "佇列丟棄"
+  ],
+  [
+    "队列占用",
+    "Queue memory",
+    "佇列占用"
+  ],
+  [
+    "隐藏详细信息",
+    "Hide details",
+    "隱藏詳細資料"
+  ],
+  [
+    "零长度载荷",
+    "Zero-length payload",
+    "零長度載荷"
+  ],
+  [
+    "需要分片但",
+    "Fragmentation required but",
+    "需要分片但"
+  ],
+  [
+    "非",
+    "Not",
+    "非"
+  ],
+  [
+    "非首片",
+    "Non-initial fragment",
+    "非首片"
+  ],
+  [
+    "顺序缺口",
+    "Sequence gap",
+    "順序缺口"
+  ],
+  [
+    "首选寿命",
+    "Preferred lifetime",
+    "首選壽命"
+  ],
+  [
+    "首部",
+    "Header",
+    "首部"
+  ],
+  [
+    "首部异常",
+    "Invalid header",
+    "首部異常"
+  ],
+  [
+    "首部必须紧随",
+    "Header must immediately follow",
+    "首部必須緊隨"
+  ],
+  [
+    "首部必须紧随 IPv6 基本首部",
+    "Header must immediately follow the IPv6 base header",
+    "標頭必須緊隨 IPv6 基本標頭"
+  ],
+  [
+    "首部检验和",
+    "Header checksum",
+    "標頭檢查碼"
+  ],
+  [
+    "首部被截断",
+    "Header truncated",
+    "首部被截斷"
+  ],
+  [
+    "首部长度",
+    "Header length",
+    "首部長度"
+  ],
+  [
+    "首部长度异常或被截断",
+    "Invalid or truncated header length",
+    "首部長度異常或被截斷"
+  ],
+  [
+    "首部长度或总长度异常",
+    "Invalid header or total length",
+    "首部長度或總長度異常"
+  ],
+  [
+    "驱动丢包",
+    "Driver dropped",
+    "驅動丟包"
+  ],
+  [
+    "驱动返回了异常数据包长度",
+    "Driver returned an invalid packet length",
+    "驅動返回了異常封包長度"
+  ],
+  [
+    "，移除",
+    ", remove",
+    "，移除"
+  ]
+]

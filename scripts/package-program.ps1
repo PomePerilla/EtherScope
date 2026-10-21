@@ -44,7 +44,7 @@ Plugins=.
 $licenses=Join-Path $app 'licenses'
 New-Item -ItemType Directory -Path $licenses | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination (Join-Path $licenses 'EtherScope-MIT.txt')
-foreach ($name in @('GPL-3.0.txt','LGPL-3.0.txt')) {
+foreach ($name in @('GPL-3.0.txt','LGPL-3.0.txt','Inno-Setup.txt')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot ('docs\licenses\'+$name)) -Destination $licenses
 }
 Copy-Item -LiteralPath (Join-Path $QtRoot 'sbom\qtbase-6.8.3.spdx.json') -Destination (Join-Path $licenses 'Qt-6.8.3.spdx.json')

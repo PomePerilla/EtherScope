@@ -1,80 +1,54 @@
-# EtherScope v1.8.0
+# EtherScope v1.9.0
 
-Windows x64 协议分析器。支持实时抓包、IPv4 / IPv6 解析、BPF 捕获过滤、MAC / IP 显示过滤和 PCAP 读写。
+English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
-按需字段解析、IPv4 / ICMP 校验和、ICMP 类型筛选、TCP 会话分析与双向流重组。
+Windows x64 network protocol analyzer.
 
-## 运行
+- Ethernet, VLAN, IPv4, IPv6, ICMP, ICMPv6, ARP, TCP and UDP.
+- BPF capture filters, address and protocol display filters, PCAP files.
+- Linked packet list, fields and raw bytes, asynchronous export.
+- TCP conversations, handshakes, stream reassembly and packet-linked markers.
+- English, Simplified Chinese and Traditional Chinese.
 
-1. 下载并安装 [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe)。
-2. 解压程序包，运行其中的安装器。
-3. 打开 EtherScope。
+## Download
 
-TCP 分析：更多 > TCP 会话 > 流数据。
+[EtherScope v1.9.0](https://github.com/PomePerilla/EtherScope/releases/tag/v1.9.0)
 
-## 构建环境
+| File | Use |
+|---|---|
+| `EtherScope-1.9.0-windows-x64.zip` | Install and run |
+| `EtherScope-1.9.0-sourcecode.zip` | Build from source |
 
-| 组件 | 版本 | 用途 |
-|---|---|---|
-| C++ | 20 | 编译 |
-| MSVC | 2022 x64 | 编译 |
-| Qt Core / Gui / Widgets / Test | 6.8.3 msvc2022_64 | 界面与测试 |
-| CMake | 3.24+ | 构建 |
-| [Npcap SDK](https://npcap.com/dist/npcap-sdk-1.16.zip) | 1.16 | 抓包接口 |
-| Inno Setup | 6.7.3 | 安装包构建 |
+1. Install [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe).
+2. Extract the program package and run the installer.
+3. Open EtherScope, select an interface, then Start.
 
-## 编译
+## Use
+
+| Action | Entry |
+|---|---|
+| Language | More > Language |
+| Capture filter | More > Capture filter |
+| TCP analysis | More > TCP conversations > Stream data |
+| Open / Save | Ctrl+O / Ctrl+S |
+| Apply addresses | Ctrl+Enter |
+
+## Build
+
+C++20, MSVC 2022 x64, Qt 6.8.3, CMake 3.24+, Npcap SDK 1.16.
 
 ```powershell
 .\scripts\build.ps1 -Clean -Test -QtRoot 'C:\Qt\6.8.3\msvc2022_64' -NpcapSdkRoot 'C:\SDK\npcap-sdk-1.16'
 ```
 
-## 核心测试
-
-在 MSVC x64 开发者终端中运行：
+## Tests
 
 ```powershell
-cmake -S . -B build/core -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release -DETHERSCOPE_BUILD_GUI=OFF
-cmake --build build/core
-ctest --test-dir build/core --output-on-failure
+python tests/check_translations.py
 ```
 
-## 核心模糊测试
+The build script runs the core and desktop tests. GitHub Actions also runs ASan, UBSan, static analysis and fuzz tests.
 
-```sh
-cmake -S . -B build/fuzz -DETHERSCOPE_BUILD_GUI=OFF -DETHERSCOPE_BUILD_FUZZERS=ON -DCMAKE_CXX_COMPILER=clang++-18
-cmake --build build/fuzz
-build/fuzz/make_fuzz_corpus build/corpus
-build/fuzz/packet_fuzzer build/corpus -max_len=65540 -max_total_time=120
-build/fuzz/make_fuzz_corpus build/stream-corpus --stream
-build/fuzz/stream_fuzzer build/stream-corpus -max_len=65540 -max_total_time=120
-```
+## License
 
-## 打包
-
-```powershell
-.\scripts\package-source.ps1
-.\scripts\package-program.ps1 -QtRoot 'C:\Qt\6.8.3\msvc2022_64' -MsvcRuntimeRoot 'C:\VC143.CRT' -InnoCompiler 'C:\InnoSetup\ISCC.exe'
-```
-
-## 文件
-
-| 项目 | 路径 |
-|---|---|
-| 程序 | `build/msvc-release/EtherScope.exe` |
-| 源码 | `src` |
-| 测试 | `tests` |
-| 构造样本 | `samples` |
-
-## 发行
-
-Windows x64
-
-| 附件 | 类型 | 使用方式 |
-|---|---|---|
-| `EtherScope-1.8.0-windows-x64.zip` | 程序包 | 安装后使用 |
-| `EtherScope-1.8.0-sourcecode.zip` | 源码包 | 编译后使用 |
-
-## 许可
-
-[MIT](LICENSE)。第三方组件见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+[MIT](LICENSE). [Third-party notices](THIRD_PARTY_NOTICES.md).

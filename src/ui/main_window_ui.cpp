@@ -1,7 +1,9 @@
 #include "ui/main_window.h"
 #include "ui/filter_chip.h"
 #include "ui/style.h"
+#include "ui/language.h"
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -56,6 +58,12 @@ void MainWindow::buildUi() {
     auto* tcpAction=menu->addAction("TCP 会话");tcpAction->setObjectName("tcpConversationsAction");connect(tcpAction,&QAction::triggered,this,&MainWindow::showTcpConversations);
     bpfMarker_=new QLabel("BPF",toolbarBar);bpfMarker_->setObjectName("bpfMarker");bpfMarker_->hide();toolbar->addWidget(bpfMarker_);
     theme_=menu->addAction("深色主题");theme_->setObjectName("darkThemeAction");theme_->setCheckable(true);
+    auto* languages=menu->addMenu("语言");languages->setObjectName("languageMenu");auto* languageGroup=new QActionGroup(languages);
+    for(const auto& entry:std::array<std::pair<const char*,const char*>,3>{{{"en","English"},{"zh_CN","简体中文"},{"zh_TW","繁體中文"}}}) {
+        auto* action=languages->addAction(QString::fromUtf8(entry.second));action->setObjectName("language_"+QString(entry.first));action->setData(entry.first);action->setCheckable(true);languageGroup->addAction(action);
+        action->setProperty("_languageBound",true);
+        connect(action,&QAction::triggered,this,[code=QString(entry.first)]{i18n::language().set(code);});
+    }
     menu->addSeparator();menu->addAction("EtherScope "+QCoreApplication::applicationVersion())->setEnabled(false);more->setMenu(menu);
     toolbar->addWidget(devices_,1);for(auto* b:{start_,stop_,open_,save_,more})toolbar->addWidget(b);layout->addWidget(toolbarBar);
 
@@ -144,6 +152,7 @@ void MainWindow::buildUi() {
     connect(new QShortcut(QKeySequence::Open,this),&QShortcut::activated,open_,&QPushButton::click);connect(new QShortcut(QKeySequence::Save,this),&QShortcut::activated,save_,&QPushButton::click);
     connect(new QShortcut(QKeySequence(Qt::CTRL|Qt::Key_Return),this),&QShortcut::activated,this,[this]{if(!addressToggle_->isChecked())addressToggle_->setChecked(true);applyFilter();});
     open_->setToolTip("打开  Ctrl+O");save_->setToolTip("保存  Ctrl+S");apply_->setToolTip("应用  Ctrl+Enter");
+    i18n::bind(this);
 }
 void MainWindow::arrangeFilters() {
     if(!filterLayout_)return;compactFilters_=width()<1180;

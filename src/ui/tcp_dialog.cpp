@@ -1,6 +1,7 @@
 #include "ui/tcp_dialog.h"
 #include "ui/helpers.h"
 #include "ui/style.h"
+#include "ui/language.h"
 #include "ui/stream_pane.h"
 #include <QAbstractTableModel>
 #include <QDateTime>
@@ -24,12 +25,12 @@ namespace etherscope {
 namespace {
 QString stateText(TcpState state) {
     switch(state) {
-        case TcpState::Midstream:return "中途捕获";
-        case TcpState::Handshake:return "握手未完整";
-        case TcpState::Established:return "握手完成";
-        case TcpState::Closing:return "FIN 已见";
-        case TcpState::Closed:return "FIN 已确认";
-        case TcpState::Reset:return "RST 已见";
+        case TcpState::Midstream:return i18n::text("中途捕获");
+        case TcpState::Handshake:return i18n::text("握手未完整");
+        case TcpState::Established:return i18n::text("握手完成");
+        case TcpState::Closing:return i18n::text("FIN 已见");
+        case TcpState::Closed:return i18n::text("FIN 已确认");
+        case TcpState::Reset:return i18n::text("RST 已见");
     }
     return "-";
 }
@@ -37,10 +38,10 @@ QString eventText(TcpEventKind kind) {
     switch(kind) {
         case TcpEventKind::Syn:return "SYN";
         case TcpEventKind::SynAck:return "SYN ACK";
-        case TcpEventKind::Handshake:return "握手完成";
+        case TcpEventKind::Handshake:return i18n::text("握手完成");
         case TcpEventKind::Fin:return "FIN";
         case TcpEventKind::Reset:return "RST";
-        case TcpEventKind::FinAcknowledged:return "FIN 确认";
+        case TcpEventKind::FinAcknowledged:return i18n::text("FIN 确认");
     }
     return "-";
 }
@@ -52,7 +53,7 @@ struct Row {
 }
 class TcpTableModel final:public QAbstractTableModel {
 public:
-    explicit TcpTableModel(QObject* parent):QAbstractTableModel(parent) {}
+    explicit TcpTableModel(QObject* parent):QAbstractTableModel(parent) {connect(&i18n::language(),&i18n::Language::changed,this,[this]{emit headerDataChanged(Qt::Horizontal,0,11);});}
     int rowCount(const QModelIndex& parent={}) const override {return parent.isValid()?0:static_cast<int>(rows_.size());}
     int columnCount(const QModelIndex& parent={}) const override {return parent.isValid()?0:12;}
     QVariant data(const QModelIndex& index,int role) const override {
@@ -65,7 +66,7 @@ public:
     }
     QVariant headerData(int section,Qt::Orientation orientation,int role) const override {
         static const QStringList titles={"会话","地址 A","端口 A","地址 B","端口 B","状态","A -> B 包","B -> A 包","A -> B 字节","B -> A 字节","握手 ms","持续 s"};
-        return orientation==Qt::Horizontal && role==Qt::DisplayRole && section>=0 && section<titles.size()?titles[section]:QVariant{};
+        return orientation==Qt::Horizontal && role==Qt::DisplayRole && section>=0 && section<titles.size()?i18n::text(titles[section]):QVariant{};
     }
     void refresh(const TcpConversations& tracker) {
         std::vector<Row> next;next.reserve(tracker.items().size());
@@ -115,13 +116,14 @@ TcpDialog::TcpDialog(QWidget* parent,StreamDecoder decoder):QDialog(parent) {
     connect(streamButton_,&QPushButton::clicked,this,[this,splitter]{if(!streamExpanded_){splitter->setSizes({180,380});streamExpanded_=true;}tabs_->setCurrentIndex(1);stream_->start();});
     connect(stream_,&StreamPane::locateRequested,this,[this](quint64 id){if(store_ && !closing_)emit locateRequested(id,generation_,store_);});
     connect(stream_,&StreamPane::workChanged,this,[this]{emit workChanged();if(closing_ && !stream_->busy())QTimer::singleShot(0,this,&QWidget::close);});
+    i18n::bind(this);connect(&i18n::language(),&i18n::Language::changed,this,[this]{if(store_){revision_=0;refresh(*store_,mode_->property("_languageSource").toString());}});
 }
 std::uint64_t TcpDialog::selectedId() const {return table_->currentIndex().data(Qt::UserRole).toULongLong();}
 void TcpDialog::refresh(const SessionStore& store,const QString& mode) {
     if(store_==&store && generation_==store.tcp().generation() && revision_==store.tcp().revision())return;
     const bool same=store_==&store && generation_==store.tcp().generation();const auto selected=same?selectedId():0;
     if(!same){selectFirst_=true;stream_->setSelection(nullptr,0);}
-    store_=&store;generation_=store.tcp().generation();revision_=store.tcp().revision();mode_->setText(mode);refreshing_=true;
+    store_=&store;generation_=store.tcp().generation();revision_=store.tcp().revision();i18n::setLabel(mode_,mode);refreshing_=true;
     model_->refresh(store.tcp());table_->clearSelection();table_->setCurrentIndex({});selectConversation(selected);refreshing_=false;
     if(!selected && selectFirst_ && table_->model()->rowCount())table_->setCurrentIndex(table_->model()->index(0,0));
     count_->setText(QString::number(store.tcp().items().size()));overwritten_->setText(QString::number(store.tcp().overwritten()));skipped_->setText(QString::number(store.tcp().skipped()));
@@ -132,7 +134,7 @@ void TcpDialog::selectConversation(std::uint64_t id) {
     for(int row=0;row<table_->model()->rowCount();++row)if(table_->model()->index(row,0).data(Qt::UserRole).toULongLong()==id){table_->setCurrentIndex(table_->model()->index(row,0));return;}
 }
 void TcpDialog::renderSelection() {
-    error_->clear();
+    i18n::setLabel(error_,{});
     const auto* item=store_?store_->tcp().find(selectedId()):nullptr;const auto selectedEvent=events_->currentItem()?events_->currentItem()->data(0,Qt::UserRole).toULongLong():0;
     if(item)selectFirst_=false;stream_->setSelection(store_,item?item->id:0);streamButton_->setEnabled(item!=nullptr);
     events_->clear();filter_->setEnabled(item!=nullptr);locate_->setEnabled(false);
@@ -148,7 +150,7 @@ void TcpDialog::renderSelection() {
     if(!events_->currentItem() && events_->topLevelItemCount())events_->setCurrentItem(events_->topLevelItem(0));
 }
 void TcpDialog::locate() {if(store_ && events_->currentItem())emit locateRequested(events_->currentItem()->data(0,Qt::UserRole).toULongLong(),generation_,store_);}
-void TcpDialog::showError(const QString& error) {error_->setText(error);}
+void TcpDialog::showError(const QString& error) {i18n::setLabel(error_,error);}
 bool TcpDialog::streamBusy() const {return stream_->busy();}
 void TcpDialog::reject(){close();}
 void TcpDialog::closeEvent(QCloseEvent* event) {

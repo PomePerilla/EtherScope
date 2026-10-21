@@ -34,10 +34,20 @@ AppMutex=EtherScope.Desktop
 SetupLogging=yes
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "en"; MessagesFile: "compiler:Default.isl"
+Name: "zh_CN"; MessagesFile: "languages\ChineseSimplified.isl"
+Name: "zh_TW"; MessagesFile: "languages\ChineseTraditional.isl"
+
+[CustomMessages]
+en.DesktopShortcut=Create a desktop shortcut
+zh_CN.DesktopShortcut=创建桌面快捷方式
+zh_TW.DesktopShortcut=建立桌面捷徑
+en.LaunchProgram=Open EtherScope
+zh_CN.LaunchProgram=打开 EtherScope
+zh_TW.LaunchProgram=開啟 EtherScope
 
 [Tasks]
-Name: "desktopicon"; Description: "创建桌面快捷方式"; Flags: checkedonce
+Name: "desktopicon"; Description: "{cm:DesktopShortcut}"; Flags: checkedonce
 
 [Files]
 Source: "{#PayloadDirectory}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -47,4 +57,4 @@ Name: "{group}\EtherScope"; Filename: "{app}\EtherScope.exe"; WorkingDir: "{app}
 Name: "{autodesktop}\EtherScope"; Filename: "{app}\EtherScope.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\EtherScope.exe"; Description: "运行 EtherScope"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\EtherScope.exe"; Parameters: "--language {language}"; Description: "{cm:LaunchProgram}"; Flags: nowait postinstall skipifsilent

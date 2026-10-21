@@ -35,6 +35,7 @@ class FilterChip;
 class TcpDialog;
 struct MainWindowOptions {
     QString settingsFile;
+    QString language;
     CaptureHooks capture;
     ExportWriter exportWriter;
     FilePreparer prepareFile;
@@ -173,6 +174,7 @@ private:
     void startSnapshotExport();
     void buildUi();
     void arrangeFilters();
+    void retranslate();
     void switchMode(int index);
     void showMode(int index);
     void restoreSettings();

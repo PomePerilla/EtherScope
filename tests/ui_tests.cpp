@@ -1,6 +1,7 @@
 #include "ui/main_window.h"
 #include "ui/tcp_dialog.h"
 #include "ui/stream_pane.h"
+#include "ui/language.h"
 #include <QCheckBox>
 #include <QAction>
 #include <QDialog>
@@ -31,6 +32,9 @@
 #include <QAbstractItemModelTester>
 #include <QPersistentModelIndex>
 #include <QSettings>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QRegularExpression>
 #include <QScreen>
 #include <QScrollBar>
 #include <QSplitter>
@@ -96,6 +100,56 @@ TcpDialog* startStream(MainWindow& window) {window.findChild<QAction*>("tcpConve
 class DesktopTests:public QObject {
     Q_OBJECT
 private slots:
+    void init(){i18n::language().set("zh_CN");}
+    void languageSwitchPreservesAnalysis() {
+        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();ingestStream(window);window.selectPacket(8);QVERIFY(waitForDetails(window));
+        auto* tree=window.findChild<QTreeWidget*>("fieldTree");const auto selected=window.packetModel()->packetAt(8);auto* input=window.findChild<QLineEdit*>("ipInput");input->setText("invalid IPv6 draft");
+        auto* dialog=startStream(window);auto* pane=dialog->findChild<StreamPane*>();QTRY_VERIFY(pane->ready());const auto bytes=pane->findChild<QPlainTextEdit*>("streamBytes")->toPlainText();
+        auto* table=window.findChild<QTableView*>("packetTable");QPersistentModelIndex index(table->currentIndex());QSignalSpy resets(window.packetModel(),&QAbstractItemModel::modelReset);
+        for(const auto& code:{"en","zh_TW","zh_CN"}) {
+            window.findChild<QAction*>("language_"+QString(code))->trigger();QCOMPARE(i18n::language().current(),QString(code));
+            QCOMPARE(window.findChild<QPushButton*>("startButton")->text(),code==QString("en")?QString("Start"):QString("开始").replace("开",code==QString("zh_TW")?"開":"开"));
+            QCOMPARE(input->text(),QString("invalid IPv6 draft"));QCOMPARE(window.packetModel()->packetAt(8),selected);QVERIFY(index.isValid());QCOMPARE(resets.count(),0);QVERIFY(pane->ready());QCOMPARE(pane->findChild<QPlainTextEdit*>("streamBytes")->toPlainText(),bytes);
+            QCOMPARE(window.packetModel()->headerData(2,Qt::Horizontal,Qt::DisplayRole).toString(),code==QString("en")?QString("Source"):(code==QString("zh_TW")?QString("來源位址"):QString("源地址")));
+            QCOMPARE(tree->topLevelItem(0)->text(0),QString("Ethernet II"));
+            if(code==QString("en")){for(QTreeWidgetItemIterator item(tree);*item;++item){QVERIFY(!(*item)->text(0).contains(QRegularExpression("[\\x{4e00}-\\x{9fff}]")));QVERIFY(!(*item)->text(1).contains(QRegularExpression("[\\x{4e00}-\\x{9fff}]")));}QCOMPARE(pane->findChild<QLabel*>("streamPhase")->text(),QString("Reassembled"));}
+        }
+    }
+    void languageSettingsAndExternalValues() {
+        QTemporaryDir dir;auto options=testOptions();options.settingsFile=dir.filePath("language.ini");
+        options.capture.interfaces=[](QString& error){error.clear();return std::vector<CaptureInterface>{{"adapter-id","保存 网卡 原名","192.0.2.1"}};};
+        {MainWindow window(nullptr,options);QVERIFY(waitForInterfaces(window));window.show();window.findChild<QAction*>("language_zh_TW")->trigger();QCOMPARE(window.findChild<QComboBox*>("deviceSelector")->currentText(),QString("保存 网卡 原名"));}
+        {MainWindow window(nullptr,options);QCOMPARE(i18n::language().current(),QString("zh_TW"));QCOMPARE(window.findChild<QPushButton*>("saveButton")->text(),QString("儲存"));}
+        {QSettings settings(options.settingsFile,QSettings::IniFormat);settings.setValue("ui/language","invalid");settings.setValue("filter/protocol","TCP");}
+        {MainWindow window(nullptr,options);QCOMPARE(i18n::language().current(),QString("en"));QCOMPARE(window.packetModel()->filter().protocol,std::string("TCP"));}
+        options.language="zh-CN";{MainWindow window(nullptr,options);QCOMPARE(i18n::language().current(),QString("zh_CN"));}
+        i18n::language().set("en");QCOMPARE(i18n::errorText("无法打开接口: 保存 网卡.pcap"),QString("Cannot open interface: 保存 网卡.pcap"));
+        QCOMPARE(i18n::normalize("zh-Hant-TW"),QString("zh_TW"));QCOMPARE(i18n::normalize("en-US"),QString("en"));QVERIFY(!i18n::language().set("unsupported"));QCOMPARE(i18n::language().current(),QString("en"));
+    }
+    void languageDuringCaptureAndSave() {
+        auto gate=std::make_shared<Gate>();auto options=testOptions();options.capture=fakeCapture();options.exportWriter=gatedWriter(gate);
+        MainWindow window(nullptr,options);ReleaseGate release{gate};QVERIFY(waitForInterfaces(window));window.show();window.findChild<QPushButton*>("startButton")->click();QTRY_VERIFY(window.captureCounters().received>25);
+        QTemporaryDir dir;QSignalSpy saved(&window,&MainWindow::saveFinished);QVERIFY(window.saveFile(dir.filePath("网卡 保存.pcap")));QTRY_VERIFY(gate->entered.load());const auto before=window.captureCounters().received;
+        i18n::language().set("en");QVERIFY(window.findChild<QLabel*>("exportProgress")->text().startsWith("Saving"));QTRY_VERIFY(window.captureCounters().received>before+25);QCOMPARE(window.captureState(),MainWindow::CaptureState::Running);
+        i18n::language().set("zh_TW");QVERIFY(window.findChild<QLabel*>("exportProgress")->text().startsWith("儲存中"));gate->release();QTRY_COMPARE(saved.count(),1);QVERIFY(saved[0][0].toBool());QCOMPARE(saved[0][1].toString(),dir.filePath("网卡 保存.pcap"));
+        window.stopCapture();QTRY_VERIFY(!window.busy());QCOMPARE(window.captureCounters().queueDropped,std::uint64_t(0));i18n::language().set("en");QCOMPARE(window.findChild<QLabel*>("captureStatus")->text(),QString("Stopped"));
+    }
+    void languageCatalogAndFileDialog() {
+        QFile file(":/i18n/messages.json");QVERIFY(file.open(QIODevice::ReadOnly));const auto rows=QJsonDocument::fromJson(file.readAll()).array();QVERIFY(rows.size()>360);
+        for(const auto& code:{"en","zh_TW"}){QVERIFY(i18n::language().set(code));for(const auto& value:rows){const auto row=value.toArray();QCOMPARE(i18n::text(row[0].toString()),row[code==QString("en")?1:2].toString());}}
+        for(const auto& code:{"en","zh_CN","zh_TW"}){i18n::language().set(code);QFileDialog dialog;dialog.setOption(QFileDialog::DontUseNativeDialog);dialog.setAcceptMode(QFileDialog::AcceptOpen);dialog.show();QTest::qWait(5);QStringList labels;for(auto* label:dialog.findChildren<QLabel*>())labels<<label->text();QVERIFY(labels.contains(code==QString("en")?QString("File &name:"):(code==QString("zh_CN")?QString("文件名:"):QString("檔案名稱:"))));}
+    }
+    void languageLayoutsAndExport() {
+        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();QTemporaryDir dir;std::vector<Packet> packets;for(auto raw:fixtures::ipv6Samples())packets.push_back(decodeSummary(std::move(raw)));window.ingestBenchmark(std::move(packets));
+        auto* protocol=window.findChild<QComboBox*>("protocolFilter");protocol->setCurrentText("ICMP");window.findChild<QLineEdit*>("ipInput")->setText("2001:db8:1234:5678:abcd:ef01:2345:6789");window.findChild<QPushButton*>("applyFilterButton")->click();
+        for(const auto& code:{"en","zh_CN","zh_TW"}){i18n::language().set(code);for(bool dark:{false,true})for(const auto size:{QSize(1024,768),QSize(1440,900)}){
+            window.setDarkTheme(dark);window.resize(size);QTest::qWait(10);QCOMPARE(window.size(),size);
+            for(const auto& name:{"startButton","stopButton","openButton","saveButton","moreButton","addressFilterToggle","statisticsToggle","followLatest"}){auto* control=window.findChild<QWidget*>(name);QVERIFY(window.rect().contains(QRect(control->mapTo(&window,QPoint{}),control->size())));}
+            const auto screenshots=qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");if(!screenshots.isEmpty()){QDir().mkpath(screenshots);QVERIFY(window.grab().save(screenshots+QString("/language-%1-%2-%3.png").arg(code).arg(dark?"dark":"light").arg(size.width())));}
+        }}
+        QSignalSpy saved(&window,&MainWindow::saveFinished);QVERIFY(window.saveFile(dir.filePath("原始 保存.pcap")));QTRY_COMPARE(saved.count(),1);QVERIFY(saved[0][0].toBool());i18n::language().set("en");QCOMPARE(window.findChild<QLabel*>("exportProgress")->text(),QString("Saved packets: 21"));
+        PcapReader reader(std::filesystem::path(dir.filePath("原始 保存.pcap").toStdWString()));for(const auto& raw:fixtures::ipv6Samples()){auto actual=reader.next();QVERIFY(actual);QVERIFY(actual->bytes==raw.bytes);}QVERIFY(!reader.next());
+    }
     void streamBytesAndMarks() {
         MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();ingestStream(window);auto* dialog=startStream(window);
         auto* pane=dialog->findChild<StreamPane*>();QTRY_VERIFY(pane->ready());QCOMPARE(pane->findChild<QLabel*>("streamMetric1")->text(),QString("13"));

@@ -1,4 +1,5 @@
 #include "ui/filter_chip.h"
+#include "ui/language.h"
 #include <QResizeEvent>
 #include <algorithm>
 
@@ -8,7 +9,7 @@ FilterChip::FilterChip(QWidget* parent):QPushButton(parent) {
     setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Fixed);
 }
 void FilterChip::setCondition(const QString& text) {
-    condition_=text;setToolTip(text);setAccessibleName(text+"，移除");
+    condition_=text;setToolTip(text);setAccessibleName(text+i18n::text("，移除"));
     setVisible(!text.isEmpty());updateText();updateGeometry();
 }
 QSize FilterChip::sizeHint() const {return {std::min(260,fontMetrics().horizontalAdvance(condition_)+36),28};}

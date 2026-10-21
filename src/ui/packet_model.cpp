@@ -6,15 +6,20 @@
 #include <QIcon>
 #include <QGuiApplication>
 #include "ui/style.h"
+#include "ui/language.h"
 #include <algorithm>
 
 namespace etherscope {
 PacketModel::Row::Row(std::shared_ptr<const Packet> value):packet(std::move(value)),
     time(QDateTime::fromMSecsSinceEpoch(packet->raw.timestampNs/1000000).toString("HH:mm:ss.zzz")),
     source(QString::fromStdString(packet->source)),destination(QString::fromStdString(packet->destination)),
-    protocol(QString::fromStdString(packet->protocol)),
-    summary(QString::fromStdString(packet->summary).replace("  保留原始数据","")) {}
-PacketModel::PacketModel(SessionStore* s,QObject* p):QAbstractTableModel(p),store_(s) {}
+    protocol(i18n::text(QString::fromStdString(packet->protocol))),
+    summary(i18n::text(QString::fromStdString(packet->summary).replace("  保留原始数据",""))) {}
+PacketModel::PacketModel(SessionStore* s,QObject* p):QAbstractTableModel(p),store_(s) {connect(&i18n::language(),&i18n::Language::changed,this,&PacketModel::retranslate);}
+void PacketModel::retranslate() {
+    for(auto& row:visible_){row.protocol=i18n::text(QString::fromStdString(row.packet->protocol));row.summary=i18n::text(QString::fromStdString(row.packet->summary).replace("  保留原始数据",""));}
+    emit headerDataChanged(Qt::Horizontal,0,7);if(!visible_.empty())emit dataChanged(index(0,0),index(rowCount()-1,7));
+}
 int PacketModel::rowCount(const QModelIndex& p) const { return p.isValid()?0:static_cast<int>(visible_.size()); }
 int PacketModel::columnCount(const QModelIndex& p) const { return p.isValid()?0:8; }
 QVariant PacketModel::data(const QModelIndex& i,int role) const {
@@ -23,11 +28,11 @@ QVariant PacketModel::data(const QModelIndex& i,int role) const {
     if(role==Qt::ToolTipRole) {
         QString result=row.summary;
         if(i.column()==2)result=row.source;else if(i.column()==3)result=row.destination;
-        if(!p.error.empty()) result+="\n"+QString::fromStdString(p.error);
-        for(const auto& warning:p.warnings)result+="\n"+QString::fromStdString(warning);
+        if(!p.error.empty()) result+="\n"+i18n::text(QString::fromStdString(p.error));
+        for(const auto& warning:p.warnings)result+="\n"+i18n::text(QString::fromStdString(warning));
         return result;
     }
-    if(role==Qt::AccessibleTextRole && i.column()==0)return QString::number(p.id)+(!p.error.empty()?QString("，异常"):(p.warnings.empty()?QString{}:QString("，提示")));
+    if(role==Qt::AccessibleTextRole && i.column()==0)return QString::number(p.id)+(!p.error.empty()?", "+i18n::text("异常"):(p.warnings.empty()?QString{}:", "+i18n::text("提示")));
     if(role==Qt::FontRole && i.column()!=4 && i.column()!=6 && i.column()!=7){static const auto mono=QFontDatabase::systemFont(QFontDatabase::FixedFont);return mono;}
     if(role==Qt::DecorationRole && i.column()==0 && (!p.error.empty() || !p.warnings.empty())) {
         auto marker=[](const char* color){QPixmap dot(10,10);dot.fill(Qt::transparent);QPainter painter(&dot);painter.setRenderHint(QPainter::Antialiasing);
@@ -43,14 +48,14 @@ QVariant PacketModel::data(const QModelIndex& i,int role) const {
         case 3:return row.destination;
         case 4:return row.protocol;
         case 5:return static_cast<qulonglong>(p.raw.bytes.size());
-        case 6:return !p.error.empty()?QString("异常"):(p.warnings.empty()?QString{}:QString("提示"));
+        case 6:return !p.error.empty()?i18n::text("异常"):(p.warnings.empty()?QString{}:i18n::text("提示"));
         case 7:return row.summary;
     }
     return {};
 }
 QVariant PacketModel::headerData(int n,Qt::Orientation o,int role) const {
     static const QStringList names={"序号","时间","源地址","目的地址","协议","字节","状态","摘要"};
-    return o==Qt::Horizontal && role==Qt::DisplayRole && n>=0 && n<names.size()?names[n]:QVariant{};
+    return o==Qt::Horizontal && role==Qt::DisplayRole && n>=0 && n<names.size()?i18n::text(names[n]):QVariant{};
 }
 void PacketModel::rebuild() {
     visible_.clear();

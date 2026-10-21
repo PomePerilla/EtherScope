@@ -4,14 +4,14 @@ $version = [regex]::Match((Get-Content -LiteralPath (Join-Path $projectRoot 'CMa
     'project\(EtherScope VERSION ([0-9.]+)').Groups[1].Value
 if (-not $version) { throw 'Version missing.' }
 
-$paths = @('.github/workflows/ci.yml', '.gitattributes', '.gitignore', 'CMakeLists.txt', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
-    'docs/licenses/GPL-3.0.txt', 'docs/licenses/LGPL-3.0.txt', 'samples/README.md',
+$paths = @('.github/workflows/ci.yml', '.gitattributes', '.gitignore', 'CMakeLists.txt', 'README.md', 'README.zh-CN.md', 'README.zh-TW.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
+    'docs/licenses/GPL-3.0.txt', 'docs/licenses/LGPL-3.0.txt', 'docs/licenses/Inno-Setup.txt', 'samples/README.md',
     'samples/synthetic-protocols.pcap', 'samples/synthetic-ipv6.pcap')
 foreach ($folder in @('src', 'tests', 'scripts')) {
     foreach ($item in Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -Recurse -Force) {
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Linked path: $($item.FullName)" }
         if ($item.PSIsContainer) { continue }
-        if ($item.Extension -notin @('.cpp', '.h', '.in', '.xpm', '.ps1', '.py', '.iss', '.json')) {
+        if ($item.Extension -notin @('.cpp', '.h', '.in', '.xpm', '.ps1', '.py', '.iss', '.isl', '.json')) {
             throw "Unexpected source file: $($item.FullName)"
         }
         $paths += $item.FullName.Substring($projectRoot.Length + 1).Replace('\', '/')

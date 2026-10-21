@@ -16,6 +16,7 @@ public:
     void append(std::vector<Packet> packets);
     void clear();
     void setFilter(FilterSpec filter);
+    void retranslate();
     std::shared_ptr<const Packet> packetAt(int row) const;
     int rowForId(std::uint64_t id) const;
     const FilterSpec& filter() const { return filter_; }

@@ -13,6 +13,7 @@
 #include "ui/filter_chip.h"
 #include "ui/tcp_dialog.h"
 #include "ui/style.h"
+#include "ui/language.h"
 #include <QAction>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -52,7 +53,10 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
     streamDecoder_=std::move(options.streamDecoder);
     const auto config=options.settingsFile.isEmpty()?QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)+"/settings.ini":options.settingsFile;
     QDir().mkpath(QFileInfo(config).absolutePath());settings_=std::make_unique<QSettings>(config,QSettings::IniFormat);
+    auto selectedLanguage=options.language=="auto"?settings_->value("ui/language",i18n::systemLanguage()).toString():(options.language.isEmpty()?settings_->value("ui/language","zh_CN").toString():options.language);
+    if(!i18n::language().set(selectedLanguage))i18n::language().set("en");
     buildUi();
+    connect(&i18n::language(),&i18n::Language::changed,this,&MainWindow::retranslate);
     connect(theme_,&QAction::toggled,this,&MainWindow::setDarkTheme);
     connect(refresh_,&QAction::triggered,this,&MainWindow::refreshInterfaces);
     connect(devices_,&QComboBox::currentIndexChanged,this,[this](int index){
@@ -60,8 +64,8 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
     });
     connect(start_,&QPushButton::clicked,this,&MainWindow::startCapture);
     connect(stop_,&QPushButton::clicked,this,&MainWindow::stopCapture);
-    connect(open_,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getOpenFileName(this,"打开文件",usableDirectory(openDirectory_),"PCAP 文件 (*.pcap *.cap)"); if(!path.isEmpty()) openFile(path);});
-    connect(save_,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getSaveFileName(this,"保存文件",QDir(usableDirectory(saveDirectory_)).filePath("capture.pcap"),"PCAP 文件 (*.pcap)"); if(!path.isEmpty()) saveFile(path);});
+    connect(open_,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getOpenFileName(this,i18n::text("打开文件"),usableDirectory(openDirectory_),i18n::text("PCAP 文件 (*.pcap *.cap)"),nullptr,QFileDialog::DontUseNativeDialog); if(!path.isEmpty()) openFile(path);});
+    connect(save_,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getSaveFileName(this,i18n::text("保存文件"),QDir(usableDirectory(saveDirectory_)).filePath("capture.pcap"),i18n::text("PCAP 文件 (*.pcap)"),nullptr,QFileDialog::DontUseNativeDialog); if(!path.isEmpty()) saveFile(path);});
     connect(apply_,&QPushButton::clicked,this,&MainWindow::applyFilter); connect(mac_,&QLineEdit::returnPressed,this,&MainWindow::applyFilter); connect(ip_,&QLineEdit::returnPressed,this,&MainWindow::applyFilter);
     connect(protocol_,&QComboBox::currentIndexChanged,this,[this](int index){auto filter=model_->filter();filter.protocol=index==0?"":protocol_->itemText(index).toStdString();filter.icmpType.reset();filter.tcpConversationId.reset();commitFilter(std::move(filter));});
     connect(icmpType_,&QComboBox::currentIndexChanged,this,[this]{
@@ -118,7 +122,7 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
     connect(&details_,&DetailService::changed,this,[this]{
         auto result=details_.takeResult();
         if(result && !closing_ && result->request==detailRequest_ && result->packet==selected_) {
-            if(!result->error.isEmpty()){detailsPending_=false;detailIssues_->setText(result->error);emit detailsFinished(detailRequest_);}
+            if(!result->error.isEmpty()){detailsPending_=false;i18n::setLabel(detailIssues_,result->error);emit detailsFinished(detailRequest_);}
             else {
                 selectedDetails_=std::move(result->details);
                 for(auto field=selectedDetails_->fields.rbegin();field!=selectedDetails_->fields.rend();++field)fieldItems_.push_back({nullptr,&*field});
@@ -149,13 +153,13 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
         flush();
     });
     connect(&exporter_,&ExportEngine::progress,this,[this](quint64 job,quint64 bytes,quint64 total){
-        if(saving_ && job==exporter_.generation()) exportLabel_->setText(QString("正在保存 %1%").arg(total?bytes*100/total:0));
+        if(saving_ && job==exporter_.generation()) i18n::setLabel(exportLabel_,"正在保存 %1%",{QString::number(total?bytes*100/total:0)});
     });
     connect(&exporter_,&ExportEngine::finished,this,[this](quint64 job,bool success,const QString& path,quint64 count,const QString& error){
-        if(job!=exporter_.generation() || !saving_) return;saving_=false;exportLabel_->clear();
+        if(job!=exporter_.generation() || !saving_) return;saving_=false;i18n::setLabel(exportLabel_,{});
         if(success) {
-            saveDirectory_=QFileInfo(path).absolutePath();const auto message=QString("已保存 %1 包").arg(count);exportLabel_->setText(message);
-            QTimer::singleShot(12000,this,[this,message]{if(!saving_ && exportLabel_->text()==message)exportLabel_->clear();});
+            saveDirectory_=QFileInfo(path).absolutePath();i18n::setLabel(exportLabel_,"已保存 %1 包",{QString::number(count)});
+            QTimer::singleShot(12000,this,[this,job]{if(!saving_ && exporter_.generation()==job)i18n::setLabel(exportLabel_,{});});
         }
         else {const bool restore=closing_;closing_=false;if(restore){selected_.reset();showDetails();}reportError(error);}
         updateStatus();updateButtons();emit saveFinished(success,path,count,error);tryClose();
@@ -166,7 +170,7 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
         const auto count=c.received>=lastCount_?c.received-lastCount_:0, bytes=c.bytes>=lastBytes_?c.bytes-lastBytes_:0;
         chart_->addSample(count/seconds,bytes/seconds);chart_->setProtocols(currentStore().stats().protocols);lastCount_=c.received;lastBytes_=c.bytes;refreshTcpConversations();
     }); rateClock_.start(); rateTimer_.start(1000);
-    setDarkTheme(true);restoreSettings();refreshInterfaces();updateStatus();updateButtons();
+    setDarkTheme(true);restoreSettings();retranslate();refreshInterfaces();updateStatus();updateButtons();
 }
 MainWindow::~MainWindow() {details_.requestStop();engine_.stop();saveSettings();}
 void MainWindow::refreshInterfaces() {
@@ -182,7 +186,7 @@ void MainWindow::configureCaptureFilter() {
     auto* buttons=new QDialogButtonBox(dialog);auto* apply=buttons->addButton("应用",QDialogButtonBox::AcceptRole);bpfApply_=apply;apply->setObjectName("applyBpfButton");apply->setEnabled(!busy());
     buttons->addButton("关闭",QDialogButtonBox::RejectRole);layout->addWidget(buttons);
     connect(buttons,&QDialogButtonBox::accepted,dialog,[this,input,dialog]{if(!busy() && !closing_){bpfDraft_=input->text().trimmed();bpfError_.clear();dialog->accept();}});
-    connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);dialog->show();
+    connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);error->setText({});i18n::bind(dialog);i18n::setLabel(error,bpfError_);dialog->show();
 }
 void MainWindow::startCapture() {
     if(discovering() || openingFile_ || devices_->currentData().toString().isEmpty())return;
@@ -292,7 +296,7 @@ bool MainWindow::saveFile(const QString& path) {
     const auto boundary=active_==view_ && !liveStarting_?engine_.counters().enqueued:store.stats().received;
     if(store.packets().empty() && boundary<=store.stats().received) {reportError("缓存为空");return false;}
     saving_=true;snapshotPending_=true;snapshotPath_=path;snapshotSession_=view_;snapshotBoundary_=boundary;
-    actionError_.clear();exportLabel_->setText("正在保存 0%");updateStatus();updateButtons();
+    actionError_.clear();i18n::setLabel(exportLabel_,"正在保存 0%");updateStatus();updateButtons();
     if(store.stats().received>=snapshotBoundary_)startSnapshotExport();
     else if(!drainScheduled_) {
         drainScheduled_=true;QTimer::singleShot(0,this,[this]{drainScheduled_=false;flush();});
@@ -304,7 +308,7 @@ void MainWindow::startSnapshotExport() {
     PacketSnapshot snapshot(store.packets().begin(),store.packets().end());if(snapshotObserver_)snapshotObserver_(snapshot);
     snapshotPending_=false;
     if(!exporter_.start(snapshotPath_,std::move(snapshot))) {
-        saving_=false;closing_=false;exportLabel_->clear();reportError("保存启动失败");updateButtons();
+        saving_=false;closing_=false;i18n::setLabel(exportLabel_,{});reportError("保存启动失败");updateButtons();
         emit saveFinished(false,snapshotPath_,0,"保存启动失败");
     }
     updateStatus();
@@ -312,11 +316,11 @@ void MainWindow::startSnapshotExport() {
 void MainWindow::updateStatus() {
     if(!status_)return;
     bpfMarker_->setVisible(view_==0 && !sessionBpf_.isEmpty());bpfMarker_->setToolTip(sessionBpf_);
-    const auto statusText=closing_?QString("退出中"):(!actionError_.isEmpty()?actionError_:(preparingFile_?QString("准备文件"):q(sourceStatus_[view_])));
+    const auto statusText=i18n::errorText(closing_?QString("退出中"):(!actionError_.isEmpty()?actionError_:(preparingFile_?QString("准备文件"):q(sourceStatus_[view_]))));
     const bool error=failed_[view_] || !actionError_.isEmpty();
     if(statusText!=lastStatusText_){lastStatusText_=statusText;status_->setText(statusText);status_->setToolTip(statusText);}
     if(error!=lastStatusError_){lastStatusError_=error;style::setFlag(status_,"error",error);}
-    const auto& s=currentStore();const auto& c=counters_[view_];const auto drops=c.driverDropped?QString::number(*c.driverDropped):QString("未知");
+    const auto& s=currentStore();const auto& c=counters_[view_];const auto drops=c.driverDropped?QString::number(*c.driverDropped):i18n::text("未知");
     const QStringList values={QString::number(c.received),QString::number(s.stats().received),QString::number(s.packets().size()),QString::number(model_->rowCount()),
         QString::number(s.stats().overwritten),QString::number(c.queueDropped),drops,QString::number(s.stats().malformed),
         QString::number(double(s.estimatedBytes())/1048576,'f',1)+" MiB",QString::number(double(c.queuedEstimatedBytes)/1048576,'f',1)+" MiB",QString::number(double(exporter_.referencedBytes())/1048576,'f',1)+" MiB",QString::number(double(selectedDetails_?selectedDetails_->estimatedBytes:0)/1048576,'f',1)+" MiB"};

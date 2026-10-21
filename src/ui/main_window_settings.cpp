@@ -5,6 +5,7 @@
 #include <QPushButton>
 #include <QTableView>
 #include "ui/helpers.h"
+#include "ui/language.h"
 #include <QSettings>
 #include <QScreen>
 #include <QSplitter>
@@ -45,6 +46,7 @@ void MainWindow::restoreSettings() {
 void MainWindow::saveSettings() {
     settings_->setValue("ui/dark",dark_);settings_->setValue("ui/geometry",saveGeometry());settings_->setValue("ui/columns/v2",table_->horizontalHeader()->saveState());
     settings_->setValue("ui/statistics",statistics_->isChecked());
+    settings_->setValue("ui/language",i18n::language().current());
     settings_->setValue("ui/addressExpanded",addressToggle_->isChecked());
     for(auto* splitter:centralWidget()->findChildren<QSplitter*>()) settings_->setValue("ui/"+splitter->objectName(),splitter->saveState());
     const auto device=devices_->currentData().toString();settings_->setValue("capture/device",device.isEmpty()?preferredDevice_:device);

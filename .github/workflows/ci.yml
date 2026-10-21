@@ -33,7 +33,10 @@ jobs:
           Expand-Archive .tools/sdk.zip .tools/npcap-sdk
       - name: Build and test
         shell: pwsh
-        run: ./scripts/build.ps1 -Test -QtRoot C:/Qt/6.8.3/msvc2022_64
+        run: |
+          python tests/check_translations.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./scripts/build.ps1 -Test -QtRoot C:/Qt/6.8.3/msvc2022_64
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -54,6 +57,7 @@ jobs:
           '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer'
           '-DCMAKE_CXX_CLANG_TIDY=clang-tidy-18;--checks=-*,clang-analyzer-*;--warnings-as-errors=*'
       - run: cmake --build build/core
+      - run: python3 tests/check_translations.py
       - run: ctest --test-dir build/core --output-on-failure --output-junit tests.xml
       - name: Fuzz
         env:

@@ -1,27 +1,26 @@
-# 第三方组件
+# Third-party notices
 
-EtherScope 源码使用 [MIT](LICENSE) 许可证。
+EtherScope source code is licensed under [MIT](LICENSE).
 
-| 组件 | 版本 | 用途 | 许可 |
+| Component | Version | Use | License |
 |---|---|---|---|
-| Qt Core / Gui / Widgets | 6.8.3 | 动态链接 | [LGPL v3](https://doc.qt.io/qt-6.8/licensing.html) |
-| Qt Test | 6.8.3 | 自动测试 | [LGPL v3](https://doc.qt.io/qt-6.8/qttest-index.html#licenses-and-attributions) |
-| Npcap SDK | 1.16 | 构建头文件 | SDK 各文件所附许可 |
-| Npcap | 1.89 | 实时抓包 | [Npcap EULA](https://github.com/nmap/npcap/blob/master/LICENSE) |
-| MSVC 运行库 | v143 x64 | C++ 运行依赖 | Microsoft 随附许可 |
-| Inno Setup | 6.7.3 | 安装包构建 | [Inno Setup License](https://jrsoftware.org/files/is/license.txt) |
+| Qt Core / Gui / Widgets / Test | 6.8.3 | UI and tests | [LGPL v3](docs/licenses/LGPL-3.0.txt) |
+| Npcap SDK | 1.16 | Build headers | Notices in the SDK |
+| Npcap | 1.89 | Separate capture driver | [Npcap EULA](https://github.com/nmap/npcap/blob/master/LICENSE) |
+| MSVC runtime | v143 x64 | C++ runtime | Microsoft license |
+| Inno Setup | 6.7.3 | Installer | [Inno Setup License](docs/licenses/Inno-Setup.txt) |
 
 ## Qt
 
-- [LGPL v3 许可文本](docs/licenses/LGPL-3.0.txt)
-- [GPL v3 许可文本](docs/licenses/GPL-3.0.txt)
-- [Qt Base 6.8.3 源码](https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtbase-everywhere-src-6.8.3.tar.xz)
-- 安装包内的 Qt 组件清单位于 `licenses/Qt-6.8.3.spdx.json`。
+- [GPL v3](docs/licenses/GPL-3.0.txt)
+- [Qt Base 6.8.3 source](https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtbase-everywhere-src-6.8.3.tar.xz)
+- Installed component inventory: `licenses/Qt-6.8.3.spdx.json`.
 
 ## Npcap
 
-Npcap 使用独立许可，不属于 EtherScope 的 MIT 授权范围。
+- [Npcap 1.89 download](https://npcap.com/dist/npcap-1.89.exe)
+- [Npcap SDK 1.16](https://npcap.com/dist/npcap-sdk-1.16.zip)
 
-- [驱动下载](https://npcap.com/#download)
-- [SDK 下载](https://npcap.com/dist/npcap-sdk-1.16.zip)
-- 对外分发驱动安装器须取得 Nmap 的书面授权。
+## Installer translations
+
+Chinese translation files retain their authors' notices. Source: [jrsoftware/issrc](https://github.com/jrsoftware/issrc/tree/6ef32198ef1f7b7b375cd4b6b90896c2a58eb4c2/Files/Languages), commit `6ef32198ef1f7b7b375cd4b6b90896c2a58eb4c2`. License: [Inno Setup](docs/licenses/Inno-Setup.txt).
