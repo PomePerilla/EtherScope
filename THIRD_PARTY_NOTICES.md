@@ -1,5 +1,15 @@
 # Third-party notices
 
+## OpenSSL 3.5.9
+
+Static libcrypto. Apache License 2.0. [License](docs/licenses/OpenSSL.txt).
+Source: https://github.com/openssl/openssl/releases/tag/openssl-3.5.9
+
+## nghttp2 1.70.0
+
+Static HPACK decoder. MIT License. [License](docs/licenses/nghttp2.txt).
+Source: https://github.com/nghttp2/nghttp2/releases/tag/v1.70.0
+
 EtherScope source code is licensed under [MIT](LICENSE).
 
 | Component | Version | Use | License |

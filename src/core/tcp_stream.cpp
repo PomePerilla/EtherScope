@@ -25,7 +25,7 @@ bool sameEndpoint(const Packet& packet,const TcpEndpoint& expected,bool source) 
     return address && std::equal(address->begin(),address->end(),expected.address.begin());
 }
 std::optional<unsigned> directionOf(const Packet& packet,const TcpStreamRequest& request) {
-    if(packet.vlanId!=request.key.vlan)return {};
+    if(packet.vlanId!=request.key.vlan || packet.raw.interfaceId!=request.key.interfaceId)return {};
     if(sameEndpoint(packet,request.key.a,true) && sameEndpoint(packet,request.key.b,false))return 0;
     if(sameEndpoint(packet,request.key.b,true) && sameEndpoint(packet,request.key.a,false))return 1;
     return {};

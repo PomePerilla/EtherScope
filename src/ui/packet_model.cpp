@@ -11,7 +11,7 @@
 
 namespace etherscope {
 PacketModel::Row::Row(std::shared_ptr<const Packet> value):packet(std::move(value)),
-    time(QDateTime::fromMSecsSinceEpoch(packet->raw.timestampNs/1000000).toString("HH:mm:ss.zzz")),
+    time(packet->raw.timestampValid?QDateTime::fromMSecsSinceEpoch(packet->raw.timestampNs/1000000).toString("HH:mm:ss.zzz"):QString("-")),
     source(QString::fromStdString(packet->source)),destination(QString::fromStdString(packet->destination)),
     protocol(i18n::text(QString::fromStdString(packet->protocol))),
     summary(i18n::text(QString::fromStdString(packet->summary).replace("  保留原始数据",""))) {}
@@ -59,7 +59,7 @@ QVariant PacketModel::headerData(int n,Qt::Orientation o,int role) const {
 }
 void PacketModel::rebuild() {
     visible_.clear();
-    for(const auto& p:store_->packets())if(filter_.matches(*p))visible_.emplace_back(p);
+    for(const auto& p:store_->packets())if(matches(*p))visible_.emplace_back(p);
 }
 void PacketModel::setStore(SessionStore* store) { beginResetModel(); store_=store;filter_.tcpConversationId.reset(); rebuild(); endResetModel(); }
 void PacketModel::append(std::vector<Packet> packets) {
@@ -79,7 +79,7 @@ void PacketModel::append(std::vector<Packet> packets) {
         [](std::uint64_t id,const auto& packet){return id<packet->id;});
     std::vector<std::shared_ptr<const Packet>> added;
     added.reserve(static_cast<std::size_t>(std::distance(next,retained.end())));
-    for(auto it=next;it!=retained.end();++it) if(filter_.matches(**it)) added.push_back(*it);
+    for(auto it=next;it!=retained.end();++it) if(matches(**it)) added.push_back(*it);
     if(!added.empty()) {
         const int start=rowCount();beginInsertRows({},start,start+static_cast<int>(added.size())-1);
         for(auto& packet:added)visible_.emplace_back(std::move(packet));endInsertRows();
@@ -95,5 +95,24 @@ int PacketModel::rowForId(std::uint64_t id) const {
     const auto it=std::lower_bound(visible_.begin(),visible_.end(),id,
         [](const auto& row,std::uint64_t value){return row.packet->id<value;});
     return it!=visible_.end() && it->packet->id==id?static_cast<int>(it-visible_.begin()):-1;
+}
+bool PacketModel::matches(const Packet& packet) const {return filter_.matches(packet) && (!expression_ || expression_->evaluate(packet,applications_?applications_->facts(packet.id):nullptr)==FilterTruth::True);}
+void PacketModel::setExpression(std::shared_ptr<const DisplayExpression> expression){beginResetModel();expression_=std::move(expression);rebuild();endResetModel();}
+void PacketModel::setApplicationIndex(const ApplicationIndex* index){applications_=index;}
+void PacketModel::refreshApplications(){
+    if(!expression_ || !expression_->requiresApplications())return;
+    std::vector<std::shared_ptr<const Packet>> desired;for(const auto& p:store_->packets())if(matches(*p))desired.push_back(p);
+    // Reconcile sorted packet IDs so surviving selection and scrolling stay stable.
+    std::size_t row=0,next=0;
+    while(row<visible_.size() || next<desired.size()) {
+        if(row<visible_.size() && next<desired.size() && visible_[row].packet==desired[next]){++row;++next;continue;}
+        if(row<visible_.size() && (next==desired.size() || visible_[row].packet->id<desired[next]->id)){
+            auto end=row+1;while(end<visible_.size() && (next==desired.size() || visible_[end].packet->id<desired[next]->id))++end;
+            beginRemoveRows({},static_cast<int>(row),static_cast<int>(end-1));visible_.erase(visible_.begin()+static_cast<std::ptrdiff_t>(row),visible_.begin()+static_cast<std::ptrdiff_t>(end));endRemoveRows();
+        }else{
+            auto end=next+1;while(end<desired.size() && (row==visible_.size() || desired[end]->id<visible_[row].packet->id))++end;
+            beginInsertRows({},static_cast<int>(row),static_cast<int>(row+end-next-1));for(auto at=next;at<end;++at)visible_.emplace(visible_.begin()+static_cast<std::ptrdiff_t>(row+at-next),desired[at]);endInsertRows();row+=end-next;next=end;
+        }
+    }
 }
 }

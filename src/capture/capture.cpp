@@ -93,6 +93,7 @@ void CaptureEngine::reset() {
     enqueued_=0;peakQueuedPackets_=0;peakQueuedBytes_=0;++generation_;
 }
 void CaptureEngine::enqueue(RawPacket raw,bool file,std::stop_token stop) {
+    if(!file && hooks_.rawObserver)hooks_.rawObserver(raw);
     const auto n=raw.bytes.size();constexpr std::size_t estimatedLimit=32*1024*1024;
     if(file) {
         std::unique_lock lock(mutex_);

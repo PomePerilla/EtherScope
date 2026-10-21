@@ -100,6 +100,23 @@ TcpDialog* startStream(MainWindow& window) {window.findChild<QAction*>("tcpConve
 class DesktopTests:public QObject {
     Q_OBJECT
 private slots:
+    void expressionUsesApplicationIndexAndKeepsDraft() {
+        MainWindow window(nullptr,testOptions());window.show();const std::string request="GET /index HTTP/1.1\r\nHost: example.com\r\n\r\n";std::vector<Packet> packets;
+        for(auto raw:{fixtures::tcp(2,99),fixtures::tcp(18,499,100,true),fixtures::tcp(16,100,500),fixtures::tcp(24,100,500,false,50000,false,{request.begin(),request.end()})})packets.push_back(decodeSummary(std::move(raw)));
+        QVERIFY(window.applyExpression("http.host == \"example.com\""));window.ingestBenchmark(std::move(packets));QTRY_COMPARE_WITH_TIMEOUT(window.packetModel()->rowCount(),1,5000);QCOMPARE(window.packetModel()->packetAt(0)->id,4ULL);
+        auto* input=window.findChild<QLineEdit*>("expressionInput");input->setText("tcp &&");QVERIFY(!window.applyExpression(input->text()));QCOMPARE(window.packetModel()->rowCount(),1);QCOMPARE(input->text(),QString("tcp &&"));
+        window.findChild<QPushButton*>("expressionCondition")->click();QCOMPARE(window.packetModel()->rowCount(),4);
+        window.selectPacket(3);window.findChild<QAction*>("applicationAnalysisAction")->trigger();QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QTreeWidget*>("applicationMessages")->topLevelItemCount()>0,5000);QVERIFY(window.findChild<QPlainTextEdit*>("applicationBytes")->toPlainText().contains("GET"));
+    }
+    void expressionRestoresOnlyValidCondition() {
+        const auto options=testOptions();{
+            MainWindow first(nullptr,options);QVERIFY(first.applyExpression("frame.len > 40"));first.findChild<QLineEdit*>("expressionInput")->setText("invalid_field");QVERIFY(!first.applyExpression("invalid_field"));first.setTlsKeyLog("C:/missing/key.log");
+        }
+        MainWindow second(nullptr,options);QVERIFY(second.packetModel()->expression());QCOMPARE(second.packetModel()->expression()->source(),std::string("frame.len > 40"));QSettings settings(options.settingsFile,QSettings::IniFormat);for(const auto& key:settings.allKeys())QVERIFY(!settings.value(key).toString().contains("C:/missing/key.log"));
+    }
+    void pcapngExportReopensWithoutChangingBytes() {
+        MainWindow window(nullptr,testOptions());std::vector<Packet> packets;for(auto raw:fixtures::samples())packets.push_back(decodeSummary(std::move(raw)));window.ingestBenchmark(std::move(packets));QTemporaryDir directory;const auto path=directory.filePath("capture.pcapng");QSignalSpy saved(&window,&MainWindow::saveFinished);QVERIFY(window.saveFile(path));QTRY_COMPARE_WITH_TIMEOUT(saved.size(),1,5000);QVERIFY(saved.front()[0].toBool());CaptureReader reader(std::filesystem::path(path.toStdWString()));const auto original=fixtures::samples();for(const auto& raw:original){const auto actual=reader.next();QVERIFY(actual);QCOMPARE(actual->bytes,raw.bytes);QCOMPARE(actual->timestampNs,raw.timestampNs);}QVERIFY(!reader.next());
+    }
     void init(){i18n::language().set("zh_CN");}
     void languageSwitchPreservesAnalysis() {
         MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();ingestStream(window);window.selectPacket(8);QVERIFY(waitForDetails(window));

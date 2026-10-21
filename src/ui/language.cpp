@@ -23,7 +23,7 @@
 static void initLanguageResources(){Q_INIT_RESOURCE(localization);}
 namespace etherscope::i18n {
 namespace {
-struct Message {QString en,traditional;};
+struct Message {QString simplified,en,traditional;};
 const QHash<QString,Message>& messages() {
     static const auto catalog=[] {
         initLanguageResources();QFile file(":/i18n/messages.json");
@@ -31,7 +31,8 @@ const QHash<QString,Message>& messages() {
         const auto document=QJsonDocument::fromJson(file.readAll());
         if(!document.isArray())throw std::runtime_error("Invalid translation catalog");
         QHash<QString,Message> result;
-        for(const auto& value:document.array()){const auto row=value.toArray();if(row.size()!=3 || row[0].toString().isEmpty() || row[1].toString().isEmpty() || row[2].toString().isEmpty())throw std::runtime_error("Invalid translation entry");result.insert(row[0].toString(),{row[1].toString(),row[2].toString()});}
+        for(const auto& value:document.array()){const auto row=value.toArray();if(row.size()!=3 || row[0].toString().isEmpty() || row[1].toString().isEmpty() || row[2].toString().isEmpty())throw std::runtime_error("Invalid translation entry");result.insert(row[0].toString(),{row[0].toString(),row[1].toString(),row[2].toString()});}
+        for(const auto& value:document.array()){const auto row=value.toArray();if(!result.contains(row[1].toString()))result.insert(row[1].toString(),{row[0].toString(),row[1].toString(),row[2].toString()});}
         return result;
     }();return catalog;
 }
@@ -76,9 +77,10 @@ bool Language::set(const QString& code) {
     QCoreApplication::removeTranslator(dialogs);QCoreApplication::installTranslator(dialogs);emit changed();return true;
 }
 QString text(const QString& source) {
-    const auto code=language().current();if(code=="zh_CN" || !translatable(source))return source;
-    const auto& catalog=messages();auto translation=[&](const Message& m)->const QString&{return code=="en"?m.en:m.traditional;};
+    const auto code=language().current();
+    const auto& catalog=messages();auto translation=[&](const Message& m)->const QString&{return code=="en"?m.en:(code=="zh_CN"?m.simplified:m.traditional);};
     if(const auto found=catalog.constFind(source);found!=catalog.cend())return translation(*found);
+    if(code=="zh_CN" || !translatable(source))return source;
     QString output;output.reserve(source.size()*2);
     for(qsizetype at=0;at<source.size();) {
         if(!han(source[at])){auto ch=source[at++];if(code=="en"){if(ch==QChar(0xff0c))ch=',';else if(ch==QChar(0xff1a))ch=':';else if(ch==QChar(0xff1b))ch=';';else if(ch==QChar(0xff08))ch='(';else if(ch==QChar(0xff09))ch=')';else if(ch==QChar(0x3002))ch='.';}output+=ch;continue;}

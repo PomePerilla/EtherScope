@@ -2,11 +2,13 @@
 #include "ui/filter_chip.h"
 #include "ui/style.h"
 #include "ui/language.h"
+#include "ui/helpers.h"
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFileDialog>
 #include <QFontDatabase>
 #include <QGridLayout>
 #include <QHeaderView>
@@ -56,6 +58,13 @@ void MainWindow::buildUi() {
     captureFilterAction_=menu->addAction("捕获过滤");captureFilterAction_->setObjectName("captureFilterAction");
     connect(captureFilterAction_,&QAction::triggered,this,&MainWindow::configureCaptureFilter);
     auto* tcpAction=menu->addAction("TCP 会话");tcpAction->setObjectName("tcpConversationsAction");connect(tcpAction,&QAction::triggered,this,&MainWindow::showTcpConversations);
+    auto* appAction=menu->addAction("Application analysis");appAction->setObjectName("applicationAnalysisAction");connect(appAction,&QAction::triggered,this,&MainWindow::showApplicationAnalysis);
+    expressionAction_=menu->addAction("Display expression");expressionAction_->setObjectName("expressionAction");expressionAction_->setCheckable(true);
+    auto* keysMenu=menu->addMenu("TLS key log");
+    auto* loadKey=keysMenu->addAction("打开");loadKey->setObjectName("tlsKeyLogOpen");connect(loadKey,&QAction::triggered,this,[this]{const auto path=QFileDialog::getOpenFileName(this,i18n::text("TLS key log"),usableDirectory(keyDirectory_),"Key log (*.log *.txt);;All files (*)",nullptr,QFileDialog::DontUseNativeDialog);if(!path.isEmpty())setTlsKeyLog(path);});
+    connect(keysMenu->addAction("Reload"),&QAction::triggered,this,[this]{for(auto& service:applications_)service->reloadKeyLog();});connect(keysMenu->addAction("移除"),&QAction::triggered,this,[this]{setTlsKeyLog({});});
+    recordingAction_=menu->addAction("Record to disk");recordingAction_->setObjectName("recordingAction");recordingAction_->setCheckable(true);connect(recordingAction_,&QAction::toggled,this,[this](bool checked){recordingOptions_.enabled=checked;});
+    recordingSettingsAction_=menu->addAction("Recording settings");recordingSettingsAction_->setObjectName("recordingSettingsAction");connect(recordingSettingsAction_,&QAction::triggered,this,&MainWindow::configureRecording);
     bpfMarker_=new QLabel("BPF",toolbarBar);bpfMarker_->setObjectName("bpfMarker");bpfMarker_->hide();toolbar->addWidget(bpfMarker_);
     theme_=menu->addAction("深色主题");theme_->setObjectName("darkThemeAction");theme_->setCheckable(true);
     auto* languages=menu->addMenu("语言");languages->setObjectName("languageMenu");auto* languageGroup=new QActionGroup(languages);
@@ -82,9 +91,11 @@ void MainWindow::buildUi() {
     macChip_=new FilterChip(sessionStrip);macChip_->setObjectName("macCondition");
     ipChip_=new FilterChip(sessionStrip);ipChip_->setObjectName("ipCondition");
     conversationChip_=new FilterChip(sessionStrip);conversationChip_->setObjectName("tcpConversationCondition");
-    for(auto* chip:{protocolChip_,icmpChip_,macChip_,ipChip_,conversationChip_}){sessionBar->addWidget(chip);chip->hide();}sessionBar->addStretch();
+    expressionChip_=new FilterChip(sessionStrip);expressionChip_->setObjectName("expressionCondition");expressionChip_->setMaximumWidth(180);
+    for(auto* chip:{protocolChip_,icmpChip_,macChip_,ipChip_,conversationChip_,expressionChip_}){sessionBar->addWidget(chip);chip->hide();}sessionBar->addStretch();
     follow_=new QCheckBox("跟随",sessionStrip);follow_->setObjectName("followLatest");follow_->setChecked(true);sessionBar->addWidget(follow_);
     statistics_=new QCheckBox("统计",sessionStrip);statistics_->setObjectName("statisticsToggle");sessionBar->addWidget(statistics_);layout->addWidget(sessionStrip);
+    expressionPanel_=new QWidget(root);expressionPanel_->setObjectName("expressionPanel");auto* expressionLayout=new QVBoxLayout(expressionPanel_);expressionLayout->setContentsMargins(style::margin,4,style::margin,4);expressionInput_=new QLineEdit(expressionPanel_);expressionInput_->setObjectName("expressionInput");expressionInput_->setPlaceholderText("tcp.port == 443 and tls.sni contains \"example\"");expressionLayout->addWidget(expressionInput_);expressionError_=new QLabel(expressionPanel_);expressionError_->setObjectName("expressionError");expressionError_->setProperty("error",true);expressionLayout->addWidget(expressionError_);expressionError_->hide();layout->addWidget(expressionPanel_);expressionPanel_->hide();connect(expressionAction_,&QAction::toggled,expressionPanel_,&QWidget::setVisible);expressionInput_->installEventFilter(this);
 
     addressPanel_=new QWidget(root);addressPanel_->setObjectName("addressFilterPanel");
     filterLayout_=new QGridLayout(addressPanel_);filterLayout_->setContentsMargins(style::margin,6,style::margin,6);filterLayout_->setSpacing(style::gap);
@@ -142,9 +153,12 @@ void MainWindow::buildUi() {
         auto* caption=new QLabel(captions[i],diagnosticPanel_);auto* value=new QLabel("0",diagnosticPanel_);value->setObjectName("diagnostic"+keys[i]);value->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));diagnosticValues_.append(value);
         diagnosticLayout->addWidget(caption,static_cast<int>(i/3),static_cast<int>(i%3)*2);diagnosticLayout->addWidget(value,static_cast<int>(i/3),static_cast<int>(i%3)*2+1);
     }layout->addWidget(diagnosticPanel_);diagnosticPanel_->hide();
+    auto* pendingCaption=new QLabel("Pending analysis",diagnosticPanel_);analysisPending_=new QLabel("0",diagnosticPanel_);analysisPending_->setObjectName("analysisPending");diagnosticLayout->addWidget(pendingCaption,4,0);diagnosticLayout->addWidget(analysisPending_,4,1);
+    auto* incompleteCaption=new QLabel("Incomplete analysis",diagnosticPanel_);analysisIncomplete_=new QLabel("0",diagnosticPanel_);analysisIncomplete_->setObjectName("analysisIncomplete");diagnosticLayout->addWidget(incompleteCaption,4,2);diagnosticLayout->addWidget(analysisIncomplete_,4,3);
     setCentralWidget(root);statusBar()->setSizeGripEnabled(false);statusBar()->setMinimumHeight(30);
     status_=new QLabel(this);status_->setObjectName("captureStatus");status_->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);statusBar()->addWidget(status_,1);
     exportLabel_=new QLabel(this);exportLabel_->setObjectName("exportProgress");statusBar()->addPermanentWidget(exportLabel_);
+    recordingLabel_=new QLabel(this);recordingLabel_->setObjectName("recordingStatus");statusBar()->addPermanentWidget(recordingLabel_);
     auto counter=[&](const QString& caption,const QString& key){statusBar()->addPermanentWidget(new QLabel(caption,this));auto* value=new QLabel("0",this);value->setObjectName(key);value->setMinimumWidth(28);statusBar()->addPermanentWidget(value);return value;};
     capturedLabel_=counter("捕获","capturedCount");displayedLabel_=counter("显示","displayedCount");droppedLabel_=counter("丢弃","droppedCount");
     diagnostics_=new QPushButton("诊断",this);diagnostics_->setObjectName("diagnosticsToggle");diagnostics_->setCheckable(true);statusBar()->addPermanentWidget(diagnostics_);connect(diagnostics_,&QPushButton::toggled,diagnosticPanel_,&QWidget::setVisible);

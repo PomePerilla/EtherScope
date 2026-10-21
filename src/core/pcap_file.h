@@ -1,21 +1,11 @@
 #pragma once
-#include "core/packet.h"
-#include <filesystem>
-#include <fstream>
-#include <ostream>
-#include <span>
+#include "core/capture_file.h"
 
 namespace etherscope {
-class PcapReader {
+// Compatibility entry point; both formats use the same detection path.
+class PcapReader:public CaptureReader {
 public:
-    explicit PcapReader(const std::filesystem::path& path);
-    std::optional<RawPacket> next();
-    std::uint32_t linkType() const { return linkType_; }
-private:
-    std::ifstream stream_;
-    bool little_{true},nano_{};
-    std::uint32_t snapLength_{},linkType_{};
-    std::uint32_t number(const std::uint8_t* p) const;
+    using CaptureReader::CaptureReader;
 };
 void writePcap(std::ostream& stream,std::span<const Packet* const> packets);
 }

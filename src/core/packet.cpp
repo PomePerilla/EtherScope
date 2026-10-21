@@ -1,4 +1,5 @@
 #include "core/packet.h"
+#include "core/bytes.h"
 #include <algorithm>
 #include <charconv>
 #include <span>
@@ -22,10 +23,11 @@ struct Decoder {
     std::span<const std::uint8_t> b;
     explicit Decoder(const RawPacket& raw,bool full):b(raw.bytes),full_(full) {
         p.raw.timestampNs=raw.timestampNs;p.raw.linkType=raw.linkType;p.raw.originalLength=raw.originalLength;
+        p.raw.interfaceId=raw.interfaceId;p.raw.timestampValid=raw.timestampValid;p.raw.interfaceInfo=raw.interfaceInfo;
         if(full_)root_.field.emplace();
     }
     bool has(std::size_t offset, std::size_t n, std::size_t end) const {
-        return offset <= end && n <= end - offset && end <= b.size();
+        return end<=b.size() && containsBytes(end,offset,n);
     }
     std::uint16_t u16(std::size_t o) const { return std::uint16_t((b[o] << 8) | b[o+1]); }
     std::uint32_t u32(std::size_t o) const { return (std::uint32_t(b[o]) << 24) | (std::uint32_t(b[o+1]) << 16) | (std::uint32_t(b[o+2]) << 8) | b[o+3]; }
@@ -187,6 +189,7 @@ struct Decoder {
         emitField(g,[&]{return Field{"源端口",std::to_string(u16(o)),o,2,{}};}); emitField(g,[&]{return Field{"目的端口",std::to_string(u16(o+2)),o+2,2,{}};});
         emitField(g,[&]{return Field{"长度",std::to_string(n),o+4,2,{}};}); emitField(g,[&]{return Field{"检验和",hex(u16(o+6),4),o+6,2,{}};});
         if(n<8 || (!fragmented && n>end-o)) fail("UDP 长度异常或数据被截断");
+        if(n>=8)p.udp=UdpInfo{u16(o),u16(o+2),static_cast<std::uint32_t>(o+8),static_cast<std::uint32_t>(std::min<std::size_t>(n,end-o)-8),!fragmented && n<=end-o};
         append(root_,std::move(g)); p.summary=std::to_string(u16(o))+" -> "+std::to_string(u16(o+2))+"  "+std::to_string(n)+" 字节";
     }
     void ipv4(std::size_t o) {
@@ -371,7 +374,7 @@ struct Decoder {
     }
     Packet run() {
         if(p.raw.originalLength<b.size()) fail("原始长度小于捕获长度");
-        if(p.raw.linkType!=1) { p.protocol="其他链路"; fail("不支持的链路类型 "+std::to_string(p.raw.linkType)+"; 仅解析 Ethernet"); return std::move(p); }
+        if(p.raw.linkType!=1) { p.protocol="其他链路";p.summary="Link type "+std::to_string(p.raw.linkType);p.warnings.push_back("Unsupported link type");return std::move(p); }
         if(!has(0,14,b.size())) { fail("Ethernet 首部被截断"); return std::move(p); }
         p.destinationMac=address<6>(0); p.sourceMac=address<6>(6);
         p.source=formatMac(*p.sourceMac); p.destination=formatMac(*p.destinationMac);

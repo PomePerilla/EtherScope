@@ -28,6 +28,7 @@ struct CaptureHooks {
     std::function<std::vector<CaptureInterface>(QString&)> interfaces;
     std::function<void(const QString&,bool,std::stop_token,const Sink&,const Opened&,const LiveCaptureOptions&)> run;
     bool disableDataEvent{};
+    std::function<void(const RawPacket&)> rawObserver;
 };
 class CaptureEngine final:public QObject {
     Q_OBJECT

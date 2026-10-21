@@ -17,6 +17,7 @@
 #include <QPushButton>
 #include <QTemporaryDir>
 #include <QStyleFactory>
+#include <QSettings>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -101,14 +102,17 @@ int main(int argc,char** argv) {
     std::size_t expectedRetained=0,expectedRaw=0,expectedBytes=0;
     for(auto id=target;id>0 && expectedRetained<10000;--id){const auto index=static_cast<std::size_t>((id-1)%raws.size()),rawBytes=raws[index].bytes.size(),cost=footprints[index];
         if(expectedRaw+rawBytes>64*1024*1024 || expectedBytes+cost>64*1024*1024)break;++expectedRetained;expectedRaw+=rawBytes;expectedBytes+=cost;}
+    const bool recordingLoad=args.contains("--recording");
+    if(recordingLoad){QSettings settings(options.settingsFile,QSettings::IniFormat);settings.setValue("recording/directory",temporary.filePath("recordings"));settings.setValue("recording/fileMiB",16);settings.setValue("recording/diskMiB",64);settings.sync();}
     MainWindow window(nullptr,options);window.resize(1280,820);window.show();
+    if(recordingLoad)window.findChild<QAction*>("recordingAction")->setChecked(true);
     if(args.contains("--tcp-panel") || streamLoad)window.findChild<QAction*>("tcpConversationsAction")->trigger();
     StreamPane* streamPane=nullptr;int streamRequests=0,streamCompleted=0;bool streamValid=true;qint64 nextStream=2000;
     if(streamLoad){streamPane=window.findChild<StreamPane*>();QObject::connect(streamPane,&StreamPane::analysisFinished,&app,[&](quint64,bool success){streamValid=streamValid && success;++streamCompleted;});}
     QElapsedTimer clock,stopClock;clock.start();const auto cpuStart=cpuSeconds();
     std::vector<qint64> delays,appendTimes,filterTimes;QJsonArray memorySamples;QJsonArray exports;QJsonArray stalls;
     QTimer poll;poll.setTimerType(Qt::PreciseTimer);qint64 lastBeat=0,lastMemory=-1000,nextProgress=60000;
-    bool stopping=false,selected=false,theme=false,filtered=false,cleared=false,intentionalReset=false;
+    bool stopping=false,selected=false,theme=false,filtered=false,cleared=false,intentionalReset=false;qint64 captureStopMs=-1;
     int resets=0,saveRequests=0,languageChanges=0;qint64 nextLanguage=10000;bool saveValid=true;
     qint64 themeUs=0;std::vector<std::future<QJsonObject>> validations;
     QObject::connect(window.packetModel(),&QAbstractItemModel::modelReset,&app,[&]{if(!intentionalReset && window.captureState()!=MainWindow::CaptureState::Starting)++resets;});
@@ -169,8 +173,9 @@ int main(int argc,char** argv) {
             else saveValid=false;
         }
         if(!stopping && now>=seconds*1000 && c.enqueued>=target) {stopping=true;stopClock.start();window.stopCapture();}
-        if(stopping && !window.busy() && !window.saving() && validations.empty() && (!streamPane || !streamPane->busy())) {
-            poll.stop();const auto stopMs=stopClock.elapsed();const auto final=window.captureCounters();
+        if(stopping && !window.busy() && captureStopMs<0)captureStopMs=stopClock.elapsed();
+        if(stopping && !window.busy() && !window.saving() && !window.recordingBusy() && validations.empty() && (!streamPane || !streamPane->busy())) {
+            poll.stop();const auto stopMs=captureStopMs;const auto final=window.captureCounters();const auto recording=window.recordingStats();
             double warm=0,tail=0;int wn=0,tn=0;std::uint64_t peak=0;
             const auto warmBegin=std::min(60000,seconds*250),warmEnd=std::min(120000,seconds*500);
             for(const auto& value:memorySamples) {
@@ -190,7 +195,8 @@ int main(int argc,char** argv) {
             const auto maximum=delays.empty()?0:*std::max_element(delays.begin(),delays.end());
             const auto p99=percentile(delays,99),appendP99=percentile(appendTimes,99),filterMax=filterTimes.empty()?0:*std::max_element(filterTimes.begin(),filterTimes.end());
             const bool counts=final.received==target && window.sessionStats().received+final.queueDropped==final.received && final.queuedPackets==0;
-            const bool passed=counts && final.queueDropped==0 && (seconds>=7200 || (p99<=10 && maximum<=250 && appendP99<=8000 && filterMax<=100000))
+            const bool recordingValid=!recordingLoad || (!recording.failed && recording.unwritten==0 && recording.written==final.received && recording.queued==0);
+            const bool passed=counts && recordingValid && final.queueDropped==0 && (seconds>=7200 || (p99<=10 && maximum<=250 && appendP99<=8000 && filterMax<=100000))
                 && stopMs<=1000 && peak<=256*1024*1024 && (seconds>=7200?(!warmMemory.empty() && !tailMemory.empty() && medianGrowth<=8*1024*1024):growth<=16*1024*1024) && window.packetModel()->rowCount()==static_cast<int>(expectedRetained)
                 && window.retainedRawBytes()==expectedRaw && window.retainedEstimatedBytes()<=64*1024*1024 && resets==0 && saveRequests==2 && exports.size()==2 && saveValid && streamValid && (!streamLoad || streamCompleted==streamRequests) && (!languageCycle || languageChanges>=(seconds-1)/10);
             QJsonObject report{{"kind","synthetic_source_capture_decode_queue_store_ui"},{"version",ETHERSCOPE_VERSION},
@@ -207,6 +213,7 @@ int main(int argc,char** argv) {
                 {"heartbeat_p99_delay_ms",double(p99)},{"heartbeat_max_delay_ms",double(maximum)},
                 {"theme_change_us",double(themeUs)},{"batch_p99_us",double(appendP99)},{"batch_max_us",double(appendTimes.empty()?0:*std::max_element(appendTimes.begin(),appendTimes.end()))},{"heartbeat_stalls",stalls},{"filter_max_us",double(filterMax)},{"model_resets_during_feed",resets},
                 {"stop_completed_ms",double(stopMs)},{"peak_private_bytes",double(peak)},{"tail_growth_bytes",growth},{"warm_tail_median_growth_bytes",double(medianGrowth)},
+                {"recording_enabled",recordingLoad},{"recording_written",double(recording.written)},{"recording_unwritten",double(recording.unwritten)},{"recording_finalize_ms",double(stopClock.elapsed())},{"recording_valid",recordingValid},{"application_index_bytes",double(window.applicationIndex().estimatedBytes())},
                 {"cpu_single_core_average_percent",(cpuSeconds()-cpuStart)*100000.0/now},
                 {"exports",exports},{"memory_samples",memorySamples},{"counts_reconciled",counts},{"passed",passed}};
             QFile file(output);if(!file.open(QIODevice::WriteOnly)){app.exit(3);return;}file.write(QJsonDocument(report).toJson());

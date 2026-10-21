@@ -1,5 +1,6 @@
 #pragma once
 #include "core/packet.h"
+#include "core/capture_file.h"
 #include <QObject>
 #include <QString>
 #include <atomic>
@@ -17,7 +18,7 @@ class ExportEngine final:public QObject {
 public:
     explicit ExportEngine(QObject* parent=nullptr,ExportWriter writer={});
     ~ExportEngine() override;
-    bool start(const QString& path,PacketSnapshot snapshot);
+    bool start(const QString& path,PacketSnapshot snapshot,CaptureFormat format=CaptureFormat::Pcap);
     bool running() const {return running_.load();}
     quint64 generation() const {return generation_;}
     std::size_t referencedBytes() const {return referencedBytes_;}

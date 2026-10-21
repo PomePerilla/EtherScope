@@ -15,6 +15,7 @@ struct TcpKey {
     auto operator<=>(const TcpKey&) const=default;
     TcpEndpoint a,b;
     std::optional<std::uint16_t> vlan;
+    std::uint32_t interfaceId{};
 };
 std::string formatEndpointAddress(const TcpEndpoint& endpoint);
 enum class TcpState { Midstream, Handshake, Established, Closing, Closed, Reset };
@@ -25,12 +26,14 @@ struct TcpEvent {
     std::uint32_t sequence{},acknowledgment{};
     TcpEventKind kind{};
     unsigned direction{};
+    bool timestampValid{true};
 };
 struct TcpConversation {
     std::uint64_t id{};
     TcpKey key;
     std::array<std::uint64_t,2> packets{},wireBytes{},payloadBytes{};
     std::int64_t firstNs{},lastNs{};
+    bool hasTimestamps{};
     TcpState state{TcpState::Midstream};
     std::optional<std::uint64_t> synAckNs,handshakeNs;
     std::uint64_t synRepeats{},resets{},eventsOverwritten{};
@@ -42,6 +45,7 @@ struct TcpConversation {
         std::uint32_t sequence{},next{};
         std::int64_t timestampNs{};
         bool seen{};
+        bool timestampValid{true};
     };
     std::array<Syn,2> syn{};
     Syn synAck;

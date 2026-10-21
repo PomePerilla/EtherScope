@@ -75,7 +75,7 @@ public:
             Row row;row.id=c.id;row.values={QVariant::fromValue<qulonglong>(c.id),q(formatEndpointAddress(c.key.a)),c.key.a.port,
                 q(formatEndpointAddress(c.key.b)),c.key.b.port,stateText(c.state),QVariant::fromValue<qulonglong>(c.packets[0]),QVariant::fromValue<qulonglong>(c.packets[1]),
                 QVariant::fromValue<qulonglong>(c.wireBytes[0]),QVariant::fromValue<qulonglong>(c.wireBytes[1]),
-                c.handshakeNs?QVariant(double(*c.handshakeNs)/1000000):QVariant("-"),double(duration)/1000000000};next.push_back(std::move(row));
+                c.handshakeNs?QVariant(double(*c.handshakeNs)/1000000):QVariant("-"),c.hasTimestamps?QVariant(double(duration)/1000000000):QVariant("-")};next.push_back(std::move(row));
         }
         std::sort(next.begin(),next.end(),[](const auto& a,const auto& b){return a.id<b.id;});
         const bool same=rows_.size()==next.size() && std::equal(rows_.begin(),rows_.end(),next.begin(),[](const auto& a,const auto& b){return a.id==b.id;});
@@ -119,6 +119,7 @@ TcpDialog::TcpDialog(QWidget* parent,StreamDecoder decoder):QDialog(parent) {
     i18n::bind(this);connect(&i18n::language(),&i18n::Language::changed,this,[this]{if(store_){revision_=0;refresh(*store_,mode_->property("_languageSource").toString());}});
 }
 std::uint64_t TcpDialog::selectedId() const {return table_->currentIndex().data(Qt::UserRole).toULongLong();}
+void TcpDialog::setApplicationIndex(const ApplicationIndex* index){stream_->setApplicationIndex(index);}
 void TcpDialog::refresh(const SessionStore& store,const QString& mode) {
     if(store_==&store && generation_==store.tcp().generation() && revision_==store.tcp().revision())return;
     const bool same=store_==&store && generation_==store.tcp().generation();const auto selected=same?selectedId():0;
@@ -144,7 +145,7 @@ void TcpDialog::renderSelection() {
     for(std::size_t i=0;i<values.size();++i)metrics_[i]->setText(values[i]);
     for(std::size_t i=0;i<item->eventCount;++i) {
         const auto& event=item->events[(item->eventStart+i)%item->eventLimit];auto* row=new QTreeWidgetItem(events_,{QString::number(event.packetId),
-            QDateTime::fromMSecsSinceEpoch(event.timestampNs/1000000).toString("HH:mm:ss.zzz"),event.direction==0?"A -> B":"B -> A",eventText(event.kind),QString::number(event.sequence),QString::number(event.acknowledgment)});
+            event.timestampValid?QDateTime::fromMSecsSinceEpoch(event.timestampNs/1000000).toString("HH:mm:ss.zzz"):QString("-"),event.direction==0?"A -> B":"B -> A",eventText(event.kind),QString::number(event.sequence),QString::number(event.acknowledgment)});
         row->setData(0,Qt::UserRole,QVariant::fromValue<qulonglong>(event.packetId));if(event.packetId==selectedEvent)events_->setCurrentItem(row);
     }
     if(!events_->currentItem() && events_->topLevelItemCount())events_->setCurrentItem(events_->topLevelItem(0));

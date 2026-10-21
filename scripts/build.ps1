@@ -26,6 +26,10 @@ try {
         else { throw 'Pass -QtRoot with the Qt 6.8.3 msvc2022_64 directory.' }
     }
     if (-not $NpcapSdkRoot) { $NpcapSdkRoot = Join-Path $buildRoot '.tools\npcap-sdk' }
+    if (-not (Test-Path -LiteralPath (Join-Path $buildRoot '.tools/dependencies/install/lib/libcrypto.lib')) -or -not (Test-Path -LiteralPath (Join-Path $buildRoot '.tools/dependencies/install/lib/cmake/nghttp2/nghttp2Targets.cmake'))) {
+        & (Join-Path $PSScriptRoot 'build-dependencies.ps1') -MsvcSetup $MsvcSetup
+        if ($LASTEXITCODE) { throw 'Dependency build failed.' }
+    }
     $cmake = Join-Path $buildRoot '.tools\cmake\bin\cmake.exe'
     if (-not (Test-Path -LiteralPath $cmake)) { $cmake = (Get-Command cmake -ErrorAction Stop).Source }
     $buildDir = Join-Path $buildRoot 'build\msvc-release'

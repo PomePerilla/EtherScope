@@ -1,5 +1,6 @@
 #pragma once
 #include "core/packet.h"
+#include "capture/latest_task.h"
 #include <QObject>
 #include <condition_variable>
 #include <functional>
@@ -28,13 +29,6 @@ public:
 signals:
     void changed();
 private:
-    DetailDecoder decoder_;
-    mutable std::mutex mutex_;
-    std::condition_variable_any wake_;
-    std::optional<Result> pending_,completed_;
-    bool working_{};
-    quint64 generation_{};
-    std::stop_source activeStop_;
-    std::jthread worker_;
+    std::unique_ptr<LatestTask<std::shared_ptr<const Packet>,Result>> task_;
 };
 }

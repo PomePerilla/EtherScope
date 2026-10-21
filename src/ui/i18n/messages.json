@@ -2113,5 +2113,495 @@
     "，移除",
     ", remove",
     "，移除"
+  ],
+  [
+    "捕获文件 (*.pcapng *.pcap *.cap)",
+    "Capture files (*.pcapng *.pcap *.cap)",
+    "擷取檔案 (*.pcapng *.pcap *.cap)"
+  ],
+  [
+    "文件被截断",
+    "Capture file is truncated",
+    "檔案遭截斷"
+  ],
+  [
+    "不支持的捕获文件格式",
+    "Unsupported capture file format",
+    "不支援的擷取檔案格式"
+  ],
+  [
+    "PCAPNG 字节序无效",
+    "Invalid PCAPNG byte order",
+    "PCAPNG 位元組順序無效"
+  ],
+  [
+    "PCAPNG 段长度无效",
+    "Invalid PCAPNG section length",
+    "PCAPNG 區段長度無效"
+  ],
+  [
+    "PCAPNG 块长度不一致",
+    "PCAPNG block lengths differ",
+    "PCAPNG 區塊長度不一致"
+  ],
+  [
+    "不支持的 PCAPNG 段版本",
+    "Unsupported PCAPNG section version",
+    "不支援的 PCAPNG 區段版本"
+  ],
+  [
+    "PCAPNG 块长度无效",
+    "Invalid PCAPNG block length",
+    "PCAPNG 區塊長度無效"
+  ],
+  [
+    "PCAPNG 块超过上限",
+    "PCAPNG block exceeds limit",
+    "PCAPNG 區塊超過上限"
+  ],
+  [
+    "接口数量达到上限",
+    "Capture interface limit reached",
+    "介面數量達到上限"
+  ],
+  [
+    "接口快照长度无效",
+    "Invalid interface snapshot length",
+    "介面快照長度無效"
+  ],
+  [
+    "元数据达到上限",
+    "Capture metadata limit reached",
+    "中繼資料達到上限"
+  ],
+  [
+    "时间分辨率无效",
+    "Invalid timestamp resolution",
+    "時間解析度無效"
+  ],
+  [
+    "时间偏移无效",
+    "Invalid timestamp offset",
+    "時間偏移無效"
+  ],
+  [
+    "FCS 长度无效",
+    "Invalid FCS length",
+    "FCS 長度無效"
+  ],
+  [
+    "接口引用无效",
+    "Invalid PCAPNG interface reference",
+    "介面參照無效"
+  ],
+  [
+    "捕获记录长度无效",
+    "Invalid capture record length",
+    "擷取記錄長度無效"
+  ],
+  [
+    "简单报文块长度无效",
+    "Invalid simple packet length",
+    "簡單封包區塊長度無效"
+  ],
+  [
+    "捕获报文无效",
+    "Invalid capture packet",
+    "擷取封包無效"
+  ],
+  [
+    "接口链路类型不一致",
+    "Capture interface link types differ",
+    "介面鏈路類型不一致"
+  ],
+  [
+    "PCAP 要求单一 Ethernet 接口",
+    "PCAP requires one Ethernet interface",
+    "PCAP 要求單一 Ethernet 介面"
+  ],
+  [
+    "PCAP 时间戳超出范围",
+    "PCAP timestamp is out of range",
+    "PCAP 時間戳記超出範圍"
+  ],
+  [
+    "PCAPNG 时间戳超出范围",
+    "PCAPNG timestamp is out of range",
+    "PCAPNG 時間戳記超出範圍"
+  ],
+  [
+    "缺失时间戳无法无损保存",
+    "Missing timestamp cannot be represented losslessly",
+    "缺失時間戳記無法無損儲存"
+  ],
+  [
+    "链路类型无效",
+    "Invalid link type",
+    "鏈路類型無效"
+  ],
+  [
+    "捕获接口无效",
+    "Invalid capture interface",
+    "擷取介面無效"
+  ],
+  [
+    "时间戳超出范围",
+    "Capture timestamp is out of range",
+    "時間戳記超出範圍"
+  ],
+  [
+    "时间戳偏移超出范围",
+    "Capture timestamp offset is out of range",
+    "時間戳記偏移超出範圍"
+  ],
+  [
+    "捕获选项过长",
+    "Capture option is too long",
+    "擷取選項過長"
+  ],
+  [
+    "选项结束标记无效",
+    "Invalid capture option terminator",
+    "選項結束標記無效"
+  ],
+  [
+    "数据被截断",
+    "Truncated data",
+    "資料遭截斷"
+  ],
+  [
+    "整数宽度无效",
+    "Invalid integer width",
+    "整數寬度無效"
+  ],
+  [
+    "应用层分析",
+    "Application analysis",
+    "應用層分析"
+  ],
+  [
+    "显示表达式",
+    "Display expression",
+    "顯示運算式"
+  ],
+  [
+    "TLS 密钥日志",
+    "TLS key log",
+    "TLS 金鑰記錄"
+  ],
+  [
+    "重新载入",
+    "Reload",
+    "重新載入"
+  ],
+  [
+    "录制到磁盘",
+    "Record to disk",
+    "錄製至磁碟"
+  ],
+  [
+    "录制设置",
+    "Recording settings",
+    "錄製設定"
+  ],
+  [
+    "目录",
+    "Directory",
+    "目錄"
+  ],
+  [
+    "浏览",
+    "Browse",
+    "瀏覽"
+  ],
+  [
+    "单文件 MiB",
+    "File MiB",
+    "單檔案 MiB"
+  ],
+  [
+    "秒",
+    "Seconds",
+    "秒"
+  ],
+  [
+    "磁盘 MiB",
+    "Disk MiB",
+    "磁碟 MiB"
+  ],
+  [
+    "磁盘预算需容纳两个文件",
+    "Disk budget must fit two files",
+    "磁碟預算須容納兩個檔案"
+  ],
+  [
+    "录制无法启动",
+    "Recording could not start",
+    "無法開始錄製"
+  ],
+  [
+    "录制失败",
+    "Recording failed",
+    "錄製失敗"
+  ],
+  [
+    "录制中",
+    "Recording",
+    "錄製中"
+  ],
+  [
+    "已录制",
+    "Recorded",
+    "已錄製"
+  ],
+  [
+    "已写",
+    "Written",
+    "已寫入"
+  ],
+  [
+    "排队",
+    "Queued",
+    "佇列中"
+  ],
+  [
+    "未写",
+    "Unwritten",
+    "未寫入"
+  ],
+  [
+    "待分析",
+    "Pending analysis",
+    "待分析"
+  ],
+  [
+    "分析未完成",
+    "Incomplete analysis",
+    "分析未完成"
+  ],
+  [
+    "全部来源",
+    "All sources",
+    "全部來源"
+  ],
+  [
+    "解密",
+    "Decrypted",
+    "解密"
+  ],
+  [
+    "未完整",
+    "Incomplete",
+    "不完整"
+  ],
+  [
+    "消息",
+    "Messages",
+    "訊息"
+  ],
+  [
+    "事务 ID",
+    "Transaction ID",
+    "交易 ID"
+  ],
+  [
+    "应答码",
+    "Response code",
+    "回應碼"
+  ],
+  [
+    "邮箱",
+    "Mailbox",
+    "信箱"
+  ],
+  [
+    "服务器名称",
+    "Server name",
+    "伺服器名稱"
+  ],
+  [
+    "密码套件",
+    "Cipher suite",
+    "加密套件"
+  ],
+  [
+    "握手类型",
+    "Handshake type",
+    "交握類型"
+  ],
+  [
+    "帧类型",
+    "Frame type",
+    "影格類型"
+  ],
+  [
+    "流",
+    "Stream",
+    "串流"
+  ],
+  [
+    "错误码",
+    "Error code",
+    "錯誤碼"
+  ],
+  [
+    "TLS 密钥日志无法读取",
+    "TLS key log cannot be read",
+    "無法讀取 TLS 金鑰記錄"
+  ],
+  [
+    "表达式过长",
+    "Expression length limit reached",
+    "運算式過長"
+  ],
+  [
+    "表达式节点达到上限",
+    "Expression node limit reached",
+    "運算式節點達到上限"
+  ],
+  [
+    "表达式嵌套达到上限",
+    "Expression nesting limit reached",
+    "運算式巢狀層數達到上限"
+  ],
+  [
+    "未知字段",
+    "Unknown field",
+    "未知欄位"
+  ],
+  [
+    "字符串未闭合",
+    "Unterminated string",
+    "字串未閉合"
+  ],
+  [
+    "字符串转义无效",
+    "Invalid string escape",
+    "字串跳脫無效"
+  ],
+  [
+    "布尔值无效",
+    "Boolean value expected",
+    "需要布林值"
+  ],
+  [
+    "需要无符号整数",
+    "Unsigned number expected",
+    "需要無號整數"
+  ],
+  [
+    "CIDR 需要 IP 地址",
+    "CIDR requires an IP address",
+    "CIDR 需要 IP 位址"
+  ],
+  [
+    "CIDR 前缀无效",
+    "Invalid CIDR prefix",
+    "CIDR 前綴無效"
+  ],
+  [
+    "地址族不匹配",
+    "Address family differs",
+    "位址類型不符"
+  ],
+  [
+    "语法标记无效",
+    "Unexpected token",
+    "非預期語法標記"
+  ],
+  [
+    "缺少右括号",
+    "Closing parenthesis expected",
+    "缺少右括號"
+  ],
+  [
+    "contains 需要文本字段",
+    "contains requires a text field",
+    "contains 需要文字欄位"
+  ],
+  [
+    "缺少值集合",
+    "Value set expected",
+    "需要值集合"
+  ],
+  [
+    "缺少值",
+    "Value expected",
+    "需要值"
+  ],
+  [
+    "值集合达到上限",
+    "Value set limit reached",
+    "值集合達到上限"
+  ],
+  [
+    "缺少右花括号",
+    "Closing brace expected",
+    "缺少右大括號"
+  ],
+  [
+    "布尔比较无效",
+    "Invalid boolean comparison",
+    "布林比較無效"
+  ],
+  [
+    "地址比较无效",
+    "Invalid address comparison",
+    "位址比較無效"
+  ],
+  [
+    "表达式无效",
+    "Invalid expression",
+    "運算式無效"
+  ],
+  [
+    "录制队列达到上限",
+    "Recording queue limit reached",
+    "錄製佇列達到上限"
+  ],
+  [
+    "录制清单写入失败",
+    "Recording manifest write failed",
+    "錄製清單寫入失敗"
+  ],
+  [
+    "录制写入失败",
+    "Recording write failed",
+    "錄製寫入失敗"
+  ],
+  [
+    "录制收尾失败",
+    "Recording finalization failed",
+    "錄製收尾失敗"
+  ],
+  [
+    "录制达到磁盘上限",
+    "Recording disk limit reached",
+    "錄製達到磁碟上限"
+  ],
+  [
+    "录制文件删除失败",
+    "Recording file removal failed",
+    "錄製檔案刪除失敗"
+  ],
+  [
+    "报文超过录制文件上限",
+    "Recording packet exceeds file limit",
+    "封包超過錄製檔案上限"
+  ],
+  [
+    "录制目录创建失败",
+    "Recording directory creation failed",
+    "錄製目錄建立失敗"
+  ],
+  [
+    "录制文件打开失败",
+    "Recording file open failed",
+    "錄製檔案開啟失敗"
+  ],
+  [
+    "报文已覆盖或被筛选",
+    "Packet is no longer visible",
+    "封包已被覆蓋或篩選"
   ]
 ]

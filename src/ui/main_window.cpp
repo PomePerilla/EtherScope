@@ -48,7 +48,10 @@
 
 static void initDesktopResources() {Q_INIT_RESOURCE(desktop_icons);}
 namespace etherscope {
-MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(parent),preparation_(this,options.capture.interfaces,std::move(options.prepareFile)),engine_(this,std::move(options.capture)),exporter_(this,std::move(options.exportWriter)),details_(this,std::move(options.detailDecoder)),snapshotObserver_(std::move(options.snapshotObserver)) {
+namespace {
+CaptureHooks observeRaw(CaptureHooks hooks,std::function<void(const RawPacket&)> observe){auto previous=std::move(hooks.rawObserver);hooks.rawObserver=[observe=std::move(observe),previous=std::move(previous)](const RawPacket& raw){if(previous)previous(raw);observe(raw);};return hooks;}
+}
+MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(parent),preparation_(this,options.capture.interfaces,std::move(options.prepareFile)),engine_(this,observeRaw(std::move(options.capture),[this](const RawPacket& raw){if(recordingSession_)recording_.submit(raw);})),exporter_(this,std::move(options.exportWriter)),details_(this,std::move(options.detailDecoder)),recording_(this,std::move(options.recording)),snapshotObserver_(std::move(options.snapshotObserver)) {
     initDesktopResources();
     streamDecoder_=std::move(options.streamDecoder);
     const auto config=options.settingsFile.isEmpty()?QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)+"/settings.ini":options.settingsFile;
@@ -56,6 +59,7 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
     auto selectedLanguage=options.language=="auto"?settings_->value("ui/language",i18n::systemLanguage()).toString():(options.language.isEmpty()?settings_->value("ui/language","zh_CN").toString():options.language);
     if(!i18n::language().set(selectedLanguage))i18n::language().set("en");
     buildUi();
+    initializeAnalysis(options);
     connect(&i18n::language(),&i18n::Language::changed,this,&MainWindow::retranslate);
     connect(theme_,&QAction::toggled,this,&MainWindow::setDarkTheme);
     connect(refresh_,&QAction::triggered,this,&MainWindow::refreshInterfaces);
@@ -64,8 +68,8 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
     });
     connect(start_,&QPushButton::clicked,this,&MainWindow::startCapture);
     connect(stop_,&QPushButton::clicked,this,&MainWindow::stopCapture);
-    connect(open_,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getOpenFileName(this,i18n::text("打开文件"),usableDirectory(openDirectory_),i18n::text("PCAP 文件 (*.pcap *.cap)"),nullptr,QFileDialog::DontUseNativeDialog); if(!path.isEmpty()) openFile(path);});
-    connect(save_,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getSaveFileName(this,i18n::text("保存文件"),QDir(usableDirectory(saveDirectory_)).filePath("capture.pcap"),i18n::text("PCAP 文件 (*.pcap)"),nullptr,QFileDialog::DontUseNativeDialog); if(!path.isEmpty()) saveFile(path);});
+    connect(open_,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getOpenFileName(this,i18n::text("打开文件"),usableDirectory(openDirectory_),i18n::text("Capture files (*.pcapng *.pcap *.cap)"),nullptr,QFileDialog::DontUseNativeDialog); if(!path.isEmpty()) openFile(path);});
+    connect(save_,&QPushButton::clicked,this,[this]{QString format;auto path=QFileDialog::getSaveFileName(this,i18n::text("保存文件"),QDir(usableDirectory(saveDirectory_)).filePath("capture.pcapng"),"PCAPNG (*.pcapng);;PCAP (*.pcap)",&format,QFileDialog::DontUseNativeDialog); if(!path.isEmpty()) saveFile(path,format.startsWith("PCAPNG")?CaptureFormat::Pcapng:CaptureFormat::Pcap);});
     connect(apply_,&QPushButton::clicked,this,&MainWindow::applyFilter); connect(mac_,&QLineEdit::returnPressed,this,&MainWindow::applyFilter); connect(ip_,&QLineEdit::returnPressed,this,&MainWindow::applyFilter);
     connect(protocol_,&QComboBox::currentIndexChanged,this,[this](int index){auto filter=model_->filter();filter.protocol=index==0?"":protocol_->itemText(index).toStdString();filter.icmpType.reset();filter.tcpConversationId.reset();commitFilter(std::move(filter));});
     connect(icmpType_,&QComboBox::currentIndexChanged,this,[this]{
@@ -125,6 +129,7 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
             if(!result->error.isEmpty()){detailsPending_=false;i18n::setLabel(detailIssues_,result->error);emit detailsFinished(detailRequest_);}
             else {
                 selectedDetails_=std::move(result->details);
+                appendDnsFields();
                 for(auto field=selectedDetails_->fields.rbegin();field!=selectedDetails_->fields.rend();++field)fieldItems_.push_back({nullptr,&*field});
                 detailTimer_.start(0);fillDetails();
             }
@@ -137,7 +142,7 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
         if(epoch!=engine_.generation() || active_<0) return;
         if(active_==0 && liveStarting_) {
             if(state_==CaptureState::Stopping)return;
-            liveStarting_=false;model_->clear();updateFilterStatus();selected_.reset();showDetails();counters_[0]={};resetRates();refreshTcpConversations();
+            liveStarting_=false;model_->clear();resetApplications(0);updateFilterStatus();selected_.reset();showDetails();counters_[0]={};resetRates();refreshTcpConversations();
             successfulBpf_=startingOptions_.bpf;sessionBpf_=successfulBpf_;bpfError_.clear();
         }
         if(active_==1) openDirectory_=QFileInfo(filePath_).absolutePath();
@@ -172,7 +177,7 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
     }); rateClock_.start(); rateTimer_.start(1000);
     setDarkTheme(true);restoreSettings();retranslate();refreshInterfaces();updateStatus();updateButtons();
 }
-MainWindow::~MainWindow() {details_.requestStop();engine_.stop();saveSettings();}
+MainWindow::~MainWindow() {details_.requestStop();engine_.stop();for(auto& service:applications_)service->requestStop();recording_.finish();saveSettings();}
 void MainWindow::refreshInterfaces() {
     if(closing_ || preparation_.discovering() || state_!=CaptureState::Idle || openingFile_)return;
     actionError_.clear();sourceStatus_[0]="查询网卡";queryingInterfaces_=true;preparation_.requestInterfaces();updateStatus();updateButtons();
@@ -197,6 +202,8 @@ bool MainWindow::scheduleAction(std::function<void()> action) {
     if(state_!=CaptureState::Idle){pendingAction_=std::move(action);requestCaptureStop();}else action();return true;
 }
 void MainWindow::beginLive(const QString& device,LiveCaptureOptions options) {
+    recordingSession_=recordingOptions_.enabled;
+    if(recordingSession_ && !recording_.start(recordingOptions_)){recordingSession_=false;reportError("Recording could not start");return;}
     actionError_.clear();showMode(0);liveStarting_=true;startingOptions_=std::move(options);failed_[0]=false;sourceStatus_[0]="连接中";
     preferredDevice_=device;state_=CaptureState::Starting;
     active_=0;producerFinished_=false;resetRates();engine_.startLive(device,startingOptions_);updateStatus();updateButtons();
@@ -237,6 +244,7 @@ void MainWindow::flush() {
             auto& store=active_==0?live_:file_;
             for(auto& packet:batch)store.append(std::move(packet));
         }
+        submitApplications(active_);
     }
     counters_[active_]=engine_.counters();
     if(snapshotPending_) {
@@ -254,6 +262,7 @@ void MainWindow::flush() {
     }
 }
 void MainWindow::finishCapture() {
+    if(active_==0 && recordingSession_)recording_.finish();
     const bool stopped=state_==CaptureState::Stopping;const int finishedSession=active_;
     if(!failed_[active_])sourceStatus_[active_]=active_==1?(stopped?"读取已停止":"读取完成"):(stopped?"已停止":"已结束");
     active_=-1;liveStarting_=false;state_=CaptureState::Idle;producerFinished_=false;
@@ -271,7 +280,7 @@ void MainWindow::switchMode(int index) {
 void MainWindow::showMode(int index) {
     {QSignalBlocker block(modes_);modes_->setCurrentIndex(index);}
     if(view_==index) return;
-    actionError_.clear();view_=index;selected_.reset();model_->setStore(&currentStore());updateFilterStatus();showDetails();resetRates();updateStatus();updateButtons();refreshTcpConversations();
+    actionError_.clear();view_=index;selected_.reset();model_->setApplicationIndex(&applicationIndex_[view_]);model_->setStore(&currentStore());updateFilterStatus();showDetails();resetRates();updateStatus();updateButtons();refreshTcpConversations();
     if(model_->rowCount()>0) table_->setCurrentIndex(model_->index(0,0));
 }
 bool MainWindow::openFile(const QString& path) {
@@ -286,16 +295,17 @@ void MainWindow::completeFileOpen(FileOpenResult result,const QString& error) {
 }
 void MainWindow::beginFile(const QString& path,PreparedFile reader) {
     activeFileRequest_=fileRequest_;
-    actionError_.clear();showMode(1);model_->clear();updateFilterStatus();refreshTcpConversations();selected_.reset();failed_[1]=false;counters_[1]={};
+    actionError_.clear();showMode(1);model_->clear();resetApplications(1);updateFilterStatus();refreshTcpConversations();selected_.reset();failed_[1]=false;counters_[1]={};
     sourceStatus_[1]="读取中";fileName_=QFileInfo(path).fileName();filePath_=path;
     active_=1;producerFinished_=false;state_=CaptureState::Starting;resetRates();engine_.startFile(path,std::move(reader));updateStatus();updateButtons();
 }
-bool MainWindow::saveFile(const QString& path) {
+bool MainWindow::saveFile(const QString& path,std::optional<CaptureFormat> format) {
     if(saving_ || closing_ || path.isEmpty())return false;
     const auto& store=currentStore();
     const auto boundary=active_==view_ && !liveStarting_?engine_.counters().enqueued:store.stats().received;
     if(store.packets().empty() && boundary<=store.stats().received) {reportError("缓存为空");return false;}
     saving_=true;snapshotPending_=true;snapshotPath_=path;snapshotSession_=view_;snapshotBoundary_=boundary;
+    snapshotFormat_=format.value_or(path.endsWith(".pcap",Qt::CaseInsensitive) || path.endsWith(".cap",Qt::CaseInsensitive)?CaptureFormat::Pcap:CaptureFormat::Pcapng);
     actionError_.clear();i18n::setLabel(exportLabel_,"正在保存 0%");updateStatus();updateButtons();
     if(store.stats().received>=snapshotBoundary_)startSnapshotExport();
     else if(!drainScheduled_) {
@@ -307,7 +317,7 @@ void MainWindow::startSnapshotExport() {
     const auto& store=snapshotSession_==0?live_:file_;
     PacketSnapshot snapshot(store.packets().begin(),store.packets().end());if(snapshotObserver_)snapshotObserver_(snapshot);
     snapshotPending_=false;
-    if(!exporter_.start(snapshotPath_,std::move(snapshot))) {
+    if(!exporter_.start(snapshotPath_,std::move(snapshot),snapshotFormat_)) {
         saving_=false;closing_=false;i18n::setLabel(exportLabel_,{});reportError("保存启动失败");updateButtons();
         emit saveFinished(false,snapshotPath_,0,"保存启动失败");
     }
@@ -327,27 +337,30 @@ void MainWindow::updateStatus() {
     for(qsizetype i=0;i<values.size();++i)if(diagnosticValues_[i]->text()!=values[i])diagnosticValues_[i]->setText(values[i]);
     capturedLabel_->setText(QString::number(c.received));displayedLabel_->setText(QString::number(model_->rowCount()));
     const auto discarded=c.queueDropped+c.driverDropped.value_or(0);droppedLabel_->setText(QString::number(discarded));style::setFlag(droppedLabel_,"warning",discarded>0);
+    const auto recording=recording_.stats();recordingLabel_->setVisible(recordingSession_);recordingLabel_->setText(recording.failed?i18n::text("Recording failed"):(recording_.running()?i18n::text("Recording"):i18n::text("Recorded")));recordingLabel_->setToolTip(QString("%1 %2\n%3 %4\n%5 %6\n%7").arg(i18n::text("Written")).arg(recording.written).arg(i18n::text("Queued")).arg(recording.queued).arg(i18n::text("Unwritten")).arg(recording.unwritten).arg(recording.error));
     style::setFlag(diagnostics_,"warning",discarded>0);setWindowTitle("EtherScope");modes_->setTabToolTip(1,filePath_);
 
 }
 void MainWindow::updateButtons() {
+    recordingAction_->setEnabled(!busy() && !recording_.running() && !closing_);recordingSettingsAction_->setEnabled(recordingAction_->isEnabled());
     if(bpfInput_)bpfInput_->setReadOnly(busy() || closing_);
     if(bpfApply_)bpfApply_->setEnabled(!busy() && !closing_);
-    start_->setEnabled(!busy() && !discovering() && !closing_ && devices_->currentIndex()>=0);stop_->setEnabled(!closing_ && (preparingFile_ || state_==CaptureState::Starting || state_==CaptureState::Running));
+    start_->setEnabled(!busy() && !recording_.running() && !discovering() && !closing_ && devices_->currentIndex()>=0);stop_->setEnabled(!closing_ && (preparingFile_ || state_==CaptureState::Starting || state_==CaptureState::Running));
     refresh_->setEnabled(!busy() && !discovering() && !closing_);devices_->setEnabled(!busy() && !discovering() && !closing_);modes_->setEnabled(!openingFile_ && state_!=CaptureState::Stopping && !closing_);
     open_->setEnabled(!openingFile_ && state_!=CaptureState::Stopping && !closing_);save_->setEnabled(!saving_ && !closing_ && !currentStore().packets().empty());follow_->setEnabled(view_==0);
 }
 void MainWindow::resetRates() {chart_->reset();chart_->setProtocols(currentStore().stats().protocols);lastCount_=counters_[view_].received;lastBytes_=counters_[view_].bytes;rateClock_.restart();}
 void MainWindow::reportError(const QString& message) {actionError_=message;updateStatus();}
 void MainWindow::closeEvent(QCloseEvent* event) {
-    if(!busy() && !preparation_.busy() && !details_.busy() && !saving_ && (!tcpDialog_ || !tcpDialog_->streamBusy())){if(tcpDialog_)tcpDialog_->close();saveSettings();event->accept();return;}
-    event->ignore();closing_=true;if(tcpDialog_)tcpDialog_->close();detailTimer_.stop();fieldItems_.clear();detailsPending_=false;details_.cancel();pendingAction_={};preparation_.requestStop();stopCapture();updateStatus();updateButtons();tryClose();
+    if(!busy() && !preparation_.busy() && !details_.busy() && !saving_ && !recording_.running() && !applications_[0]->busy() && !applications_[1]->busy() && (!tcpDialog_ || !tcpDialog_->streamBusy())){if(tcpDialog_)tcpDialog_->close();saveSettings();event->accept();return;}
+    event->ignore();closing_=true;if(tcpDialog_)tcpDialog_->close();detailTimer_.stop();fieldItems_.clear();detailsPending_=false;details_.cancel();pendingAction_={};preparation_.requestStop();for(int session=0;session<2;++session){applications_[session]->reset();applicationSubmitted_[session]=0;}stopCapture();if(!busy())recording_.finish();updateStatus();updateButtons();tryClose();
 }
 void MainWindow::tryClose() {
-    if(!closing_ || busy() || preparation_.busy() || details_.busy() || saving_ || (tcpDialog_ && tcpDialog_->streamBusy()) || closeScheduled_)return;
+    if(!closing_ || busy() || preparation_.busy() || details_.busy() || saving_ || recording_.running() || applications_[0]->busy() || applications_[1]->busy() || (tcpDialog_ && tcpDialog_->streamBusy()) || closeScheduled_)return;
     closeScheduled_=true;QTimer::singleShot(0,this,[this]{closeScheduled_=false;if(closing_ && !busy() && !preparation_.busy() && !details_.busy() && !saving_ && (!tcpDialog_ || !tcpDialog_->streamBusy()))close();});
 }
 bool MainWindow::eventFilter(QObject* watched,QEvent* event) {
+    if(watched==expressionInput_ && event->type()==QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key()==Qt::Key_Escape){expressionAction_->setChecked(false);return true;}
     if(event->type()==QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key()==Qt::Key_Escape && addressPanel_->isVisible()) {
         auto* widget=qobject_cast<QWidget*>(watched);
         if(widget && addressPanel_->isAncestorOf(widget)){addressToggle_->setChecked(false);addressToggle_->setFocus();return true;}
@@ -372,6 +385,6 @@ void MainWindow::ingestBenchmark(std::vector<Packet> packets) {
     if(busy() || closing_) return;
     if(view_!=1) showMode(1);sourceStatus_[1]="测试中";
     for(const auto& p:packets) {++counters_[1].received;counters_[1].bytes+=p.raw.originalLength;}
-    model_->append(std::move(packets));showDetails();updateStatus();updateButtons();
+    model_->append(std::move(packets));submitApplications(view_);showDetails();updateStatus();updateButtons();
 }
 }

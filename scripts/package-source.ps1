@@ -5,7 +5,7 @@ $version = [regex]::Match((Get-Content -LiteralPath (Join-Path $projectRoot 'CMa
 if (-not $version) { throw 'Version missing.' }
 
 $paths = @('.github/workflows/ci.yml', '.gitattributes', '.gitignore', 'CMakeLists.txt', 'README.md', 'README.zh-CN.md', 'README.zh-TW.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
-    'docs/licenses/GPL-3.0.txt', 'docs/licenses/LGPL-3.0.txt', 'docs/licenses/Inno-Setup.txt', 'samples/README.md',
+    'docs/licenses/GPL-3.0.txt', 'docs/licenses/LGPL-3.0.txt', 'docs/licenses/Inno-Setup.txt', 'docs/licenses/OpenSSL.txt', 'docs/licenses/nghttp2.txt', 'samples/README.md',
     'samples/synthetic-protocols.pcap', 'samples/synthetic-ipv6.pcap')
 foreach ($folder in @('src', 'tests', 'scripts')) {
     foreach ($item in Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -Recurse -Force) {

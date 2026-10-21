@@ -10,6 +10,7 @@ class QTabWidget;
 namespace etherscope {
 class TcpTableModel;
 class StreamPane;
+class ApplicationIndex;
 class TcpDialog final:public QDialog {
     Q_OBJECT
 public:
@@ -18,6 +19,7 @@ public:
     void selectConversation(std::uint64_t id);
     void showError(const QString& error);
     bool streamBusy() const;
+    void setApplicationIndex(const ApplicationIndex* index);
     void reject() override;
 signals:
     void workChanged();

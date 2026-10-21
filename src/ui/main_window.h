@@ -4,6 +4,8 @@
 #include "capture/preparation.h"
 #include "capture/details.h"
 #include "capture/stream.h"
+#include "capture/application_service.h"
+#include "capture/recording.h"
 #include "ui/packet_model.h"
 #include "ui/traffic_chart.h"
 #include <QMainWindow>
@@ -42,6 +44,8 @@ struct MainWindowOptions {
     std::function<void(const PacketSnapshot&)> snapshotObserver;
     DetailDecoder detailDecoder;
     StreamDecoder streamDecoder;
+    ApplicationHooks application;
+    RecordingHooks recording;
 };
 class MainWindow final:public QMainWindow {
     Q_OBJECT
@@ -52,7 +56,7 @@ public:
     explicit MainWindow(QWidget* parent=nullptr,MainWindowOptions options={});
     ~MainWindow() override;
     bool openFile(const QString& path);
-    bool saveFile(const QString& path);
+    bool saveFile(const QString& path,std::optional<CaptureFormat> format={});
     PacketModel* packetModel() const { return model_; }
     bool busy() const { return state_!=CaptureState::Idle || openingFile_; }
     bool discovering() const {return queryingInterfaces_;}
@@ -68,6 +72,11 @@ public:
     void selectPacket(int row);
     void setDarkTheme(bool dark);
     void ingestBenchmark(std::vector<Packet> packets);
+    bool applyExpression(const QString& expression);
+    void setTlsKeyLog(const QString& path);
+    const ApplicationIndex& applicationIndex() const {return applicationIndex_[view_];}
+    RecordingStats recordingStats() const {return recording_.stats();}
+    bool recordingBusy() const {return recording_.running();}
 signals:
     void saveFinished(bool success,const QString& path,quint64 count,const QString& error);
     void batchProcessed(qint64 microseconds);
@@ -84,6 +93,20 @@ private:
     CaptureEngine engine_;
     ExportEngine exporter_;
     DetailService details_;
+    RecordingService recording_;
+    RecordingOptions recordingOptions_;
+    ApplicationIndex applicationIndex_[2];
+    std::array<std::unique_ptr<ApplicationAnalysisService>,2> applications_;
+    std::uint64_t applicationSubmitted_[2]{};
+    QTimer applicationTimer_;
+    QLineEdit* expressionInput_{};
+    QLabel* expressionError_{};
+    QWidget* expressionPanel_{};
+    QAction *expressionAction_{},*recordingAction_{},*recordingSettingsAction_{};
+    QLabel *recordingLabel_{},*analysisPending_{},*analysisIncomplete_{};
+    FilterChip* expressionChip_{};
+    QString keyDirectory_;
+    std::atomic<bool> recordingSession_{};
     std::unique_ptr<QSettings> settings_;
     PacketModel* model_{};
     QComboBox *devices_{},*macDirection_{},*ipDirection_{},*protocol_{},*icmpType_{};
@@ -141,6 +164,7 @@ private:
     int snapshotSession_{};
     std::uint64_t snapshotBoundary_{};
     QString snapshotPath_;
+    CaptureFormat snapshotFormat_{CaptureFormat::Pcapng};
     QString lastStatusText_;
     bool lastStatusError_{};
     QSet<QString> collapsedFields_;
@@ -162,6 +186,13 @@ private:
     void startCapture();
     void beginLive(const QString& device,LiveCaptureOptions options);
     void configureCaptureFilter();
+    void initializeAnalysis(const MainWindowOptions& options);
+    void submitApplications(int session);
+    void collectApplications();
+    void resetApplications(int session);
+    void configureRecording();
+    void showApplicationAnalysis();
+    void appendDnsFields();
     void showTcpConversations();
     void refreshTcpConversations();
     void beginFile(const QString& path,PreparedFile reader);

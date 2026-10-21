@@ -1,6 +1,7 @@
 #pragma once
 #include "core/session.h"
 #include "core/filter.h"
+#include "core/application_index.h"
 #include <QAbstractTableModel>
 #include <deque>
 
@@ -17,12 +18,19 @@ public:
     void clear();
     void setFilter(FilterSpec filter);
     void retranslate();
+    void setApplicationIndex(const ApplicationIndex* index);
+    void setExpression(std::shared_ptr<const DisplayExpression> expression);
+    const std::shared_ptr<const DisplayExpression>& expression() const {return expression_;}
+    bool matches(const Packet& packet) const;
+    void refreshApplications();
     std::shared_ptr<const Packet> packetAt(int row) const;
     int rowForId(std::uint64_t id) const;
     const FilterSpec& filter() const { return filter_; }
 private:
     SessionStore* store_;
     FilterSpec filter_;
+    const ApplicationIndex* applications_{};
+    std::shared_ptr<const DisplayExpression> expression_;
     struct Row {
         std::shared_ptr<const Packet> packet;
         QString time,source,destination,protocol,summary;

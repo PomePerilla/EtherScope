@@ -1,6 +1,7 @@
 #pragma once
 #include "capture/stream.h"
 #include "core/session.h"
+#include "core/application_index.h"
 #include <QWidget>
 class QLabel;
 class QComboBox;
@@ -10,6 +11,7 @@ class QPushButton;
 class QTabWidget;
 namespace etherscope {
 class StreamTableModel;
+class ApplicationView;
 class StreamPane final:public QWidget {
     Q_OBJECT
 public:
@@ -19,12 +21,15 @@ public:
     void cancel();
     bool busy() const {return service_.busy();}
     bool ready() const {return result_!=nullptr;}
+    void setApplicationIndex(const ApplicationIndex* index);
 signals:
     void workChanged();
     void analysisFinished(quint64 request,bool success);
     void locateRequested(quint64 packetId);
 private:
     StreamService service_;
+    const ApplicationIndex* applicationIndex_{};
+    ApplicationView* applicationView_{};
     const SessionStore* store_{};
     std::uint64_t conversation_{},generation_{};
     quint64 request_{};

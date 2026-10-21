@@ -16,7 +16,7 @@ concurrency:
 jobs:
   windows:
     runs-on: windows-2022
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -45,11 +45,13 @@ jobs:
           retention-days: 7
   core:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Dependencies
-        run: sudo apt-get update && sudo apt-get install -y clang-18 clang-tidy-18 ninja-build
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang-18 clang-tidy-18 ninja-build
+          python3 scripts/build-dependencies.py
       - name: Configure
         run: >-
           cmake -S . -B build/core -G Ninja -DETHERSCOPE_BUILD_GUI=OFF
@@ -67,15 +69,24 @@ jobs:
           test "$FUZZ_SECONDS" -ge 1 && test "$FUZZ_SECONDS" -le 1800
           build/core/make_fuzz_corpus build/corpus
           build/core/make_fuzz_corpus build/stream-corpus --stream
+          mkdir -p build/application-corpus build/file-corpus
+          python3 tests/make_application_corpus.py build/application-corpus
+          cp samples/*.pcap build/file-corpus/
           mkdir -p build/fuzz-failures
           build/core/packet_fuzzer build/corpus -max_len=65540 -timeout=5 -rss_limit_mb=512 -max_total_time="$FUZZ_SECONDS" -artifact_prefix=build/fuzz-failures/packet- > build/packet-fuzz.log 2>&1 &
           packet_pid=$!
           build/core/stream_fuzzer build/stream-corpus -max_len=65540 -timeout=5 -rss_limit_mb=512 -max_total_time="$FUZZ_SECONDS" -artifact_prefix=build/fuzz-failures/stream- > build/stream-fuzz.log 2>&1 &
           stream_pid=$!
+          build/core/application_fuzzer build/application-corpus -max_len=65535 -timeout=5 -rss_limit_mb=512 -max_total_time="$FUZZ_SECONDS" -artifact_prefix=build/fuzz-failures/application- > build/application-fuzz.log 2>&1 &
+          application_pid=$!
+          build/core/file_fuzzer build/file-corpus -max_len=65535 -timeout=5 -rss_limit_mb=512 -max_total_time="$FUZZ_SECONDS" -artifact_prefix=build/fuzz-failures/file- > build/file-fuzz.log 2>&1 &
+          file_pid=$!
           failure=0
           wait "$packet_pid" || failure=1
           wait "$stream_pid" || failure=1
-          tail -n 15 build/packet-fuzz.log build/stream-fuzz.log
+          wait "$application_pid" || failure=1
+          wait "$file_pid" || failure=1
+          tail -n 15 build/*-fuzz.log
           exit "$failure"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

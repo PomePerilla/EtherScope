@@ -1,4 +1,5 @@
 #include "ui/stream_pane.h"
+#include "ui/application_view.h"
 #include "ui/style.h"
 #include "ui/language.h"
 #include <QAbstractTableModel>
@@ -76,6 +77,7 @@ StreamPane::StreamPane(QWidget* parent,StreamDecoder decoder):QWidget(parent),se
     auto* pager=new QHBoxLayout;previous_=new QPushButton("上一页",dataPage);previous_->setObjectName("streamPrevious");next_=new QPushButton("下一页",dataPage);next_->setObjectName("streamNext");page_=new QLabel(dataPage);page_->setObjectName("streamPage");locate_=new QPushButton("定位",dataPage);locate_->setObjectName("streamLocate");
     pager->addWidget(previous_);pager->addWidget(next_);pager->addWidget(page_,1);pager->addWidget(locate_);dataLayout->addLayout(pager);tabs_->addTab(dataPage,"字节");
     events_=new QTableView(tabs_);events_->setObjectName("streamEvents");tabs_->addTab(events_,"标记");
+    applicationView_=new ApplicationView(tabs_);tabs_->addTab(applicationView_,"Messages");connect(applicationView_,&ApplicationView::locateRequested,this,&StreamPane::locateRequested);
     rangeModel_=new StreamTableModel(false,this);eventModel_=new StreamTableModel(true,this);ranges_->setModel(rangeModel_);events_->setModel(eventModel_);
     for(auto* table:{ranges_,events_}){table->setShowGrid(false);table->setAlternatingRowColors(true);table->verticalHeader()->hide();table->verticalHeader()->setDefaultSectionSize(24);table->setSelectionBehavior(QAbstractItemView::SelectRows);table->setSelectionMode(QAbstractItemView::SingleSelection);table->setEditTriggers(QAbstractItemView::NoEditTriggers);table->horizontalHeader()->setStretchLastSection(true);}
     ranges_->setColumnWidth(0,96);ranges_->setColumnWidth(1,74);ranges_->setColumnWidth(2,74);events_->setColumnWidth(0,76);events_->setColumnWidth(1,90);events_->setColumnWidth(2,110);
@@ -99,7 +101,9 @@ StreamPane::StreamPane(QWidget* parent,StreamDecoder decoder):QWidget(parent),se
 void StreamPane::setSelection(const SessionStore* store,std::uint64_t id) {
     const auto generation=store?store->tcp().generation():0;if(store_==store && generation_==generation && conversation_==id)return;
     service_.cancel();request_=0;store_=store;generation_=generation;conversation_=id;clearResult();i18n::setLabel(phase_,id?"待重组":"");start_->setEnabled(id!=0);cancel_->setEnabled(service_.busy());
+    applicationView_->setResults(applicationIndex_?applicationIndex_->conversation(id):std::vector<std::shared_ptr<const ApplicationResult>>{});
 }
+void StreamPane::setApplicationIndex(const ApplicationIndex* index){applicationIndex_=index;applicationView_->setResults(index?index->conversation(conversation_):std::vector<std::shared_ptr<const ApplicationResult>>{});}
 void StreamPane::start() {
     if(!store_ || !conversation_ || store_->tcp().generation()!=generation_)return;
     auto snapshot=snapshotTcpStream(*store_,conversation_);if(!snapshot){i18n::setLabel(phase_,"会话已覆盖");return;}

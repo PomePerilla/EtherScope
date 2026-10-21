@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <memory>
 
 namespace etherscope {
 struct Field {
@@ -14,11 +15,19 @@ struct Field {
     std::size_t length{};
     std::vector<Field> children;
 };
+struct CaptureInterfaceInfo {
+    std::string name,description;
+    std::uint32_t snapLength{65535};
+    std::optional<std::uint8_t> fcsLength;
+};
 struct RawPacket {
     std::int64_t timestampNs{};
     std::uint32_t linkType{1};
     std::uint32_t originalLength{};
     std::vector<std::uint8_t> bytes;
+    std::uint32_t interfaceId{};
+    bool timestampValid{true};
+    std::shared_ptr<const CaptureInterfaceInfo> interfaceInfo;
 };
 enum class ChecksumStatus { NotChecked, Match, Mismatch };
 struct ChecksumResult {
@@ -34,6 +43,12 @@ struct TcpInfo {
     bool completeSegment{};
     std::uint32_t payloadOffset{};
 };
+struct UdpInfo {
+    bool operator==(const UdpInfo&) const=default;
+    std::uint16_t sourcePort{},destinationPort{};
+    std::uint32_t payloadOffset{},payloadLength{};
+    bool completeDatagram{};
+};
 struct Packet {
     std::uint64_t id{};
     RawPacket raw;
@@ -45,6 +60,7 @@ struct Packet {
     std::optional<std::array<std::uint8_t, 16>> sourceIpv6, destinationIpv6;
     std::optional<std::uint8_t> icmpType;
     std::optional<TcpInfo> tcp;
+    std::optional<UdpInfo> udp;
     std::optional<std::uint16_t> vlanId;
     std::uint64_t tcpConversationId{};
     ChecksumResult ipv4Checksum, icmpChecksum;

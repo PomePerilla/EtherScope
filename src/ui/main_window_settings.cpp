@@ -1,5 +1,6 @@
 #include "ui/main_window.h"
 #include <QCheckBox>
+#include <QAction>
 #include <QComboBox>
 #include <QLineEdit>
 #include <QPushButton>
@@ -28,6 +29,13 @@ void MainWindow::restoreSettings() {
     table_->horizontalHeader()->restoreState(settings_->value("ui/columns/v2").toByteArray());
     statistics_->setChecked(settings_->value("ui/statistics",false).toBool());chartPanel_->setVisible(statistics_->isChecked());
     addressToggle_->setChecked(settings_->value("ui/addressExpanded",false).toBool());
+    keyDirectory_=usableDirectory(settings_->value("files/keyDirectory").toString());
+    recordingOptions_.directory=usableDirectory(settings_->value("recording/directory").toString());
+    recordingOptions_.fileBytes=std::clamp(settings_->value("recording/fileMiB",128).toULongLong(),1ULL,4096ULL)*1048576;
+    recordingOptions_.diskBytes=std::clamp(settings_->value("recording/diskMiB",1024).toULongLong(),2ULL,1048576ULL)*1048576;
+    recordingOptions_.diskBytes=std::max(recordingOptions_.diskBytes,2*recordingOptions_.fileBytes);
+    recordingOptions_.durationMs=std::clamp(settings_->value("recording/seconds",300).toULongLong(),1ULL,86400ULL)*1000;
+    const auto expression=settings_->value("filter/expression").toString();if(expression.isEmpty() || compileDisplayFilter(expression.toStdString()).value){expressionInput_->setText(expression);applyExpression(expression);}
     preferredDevice_=settings_->value("capture/device").toString();
     successfulBpf_=settings_->value("capture/bpf").toString();bpfDraft_=successfulBpf_;
     openDirectory_=usableDirectory(settings_->value("files/openDirectory").toString());saveDirectory_=usableDirectory(settings_->value("files/saveDirectory").toString());
@@ -48,6 +56,9 @@ void MainWindow::saveSettings() {
     settings_->setValue("ui/statistics",statistics_->isChecked());
     settings_->setValue("ui/language",i18n::language().current());
     settings_->setValue("ui/addressExpanded",addressToggle_->isChecked());
+    settings_->setValue("filter/expression",model_->expression()?q(model_->expression()->source()):QString{});
+    settings_->setValue("files/keyDirectory",keyDirectory_);
+    settings_->setValue("recording/directory",recordingOptions_.directory);settings_->setValue("recording/fileMiB",qulonglong(recordingOptions_.fileBytes/1048576));settings_->setValue("recording/diskMiB",qulonglong(recordingOptions_.diskBytes/1048576));settings_->setValue("recording/seconds",qulonglong(recordingOptions_.durationMs/1000));
     for(auto* splitter:centralWidget()->findChildren<QSplitter*>()) settings_->setValue("ui/"+splitter->objectName(),splitter->saveState());
     const auto device=devices_->currentData().toString();settings_->setValue("capture/device",device.isEmpty()?preferredDevice_:device);
     settings_->setValue("capture/bpf",successfulBpf_);

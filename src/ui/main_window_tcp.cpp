@@ -7,7 +7,7 @@
 #include <algorithm>
 
 namespace etherscope {
-void MainWindow::refreshTcpConversations() {if(tcpDialog_)tcpDialog_->refresh(currentStore(),view_==0?"实时":"文件");}
+void MainWindow::refreshTcpConversations() {if(tcpDialog_){tcpDialog_->refresh(currentStore(),view_==0?"实时":"文件");tcpDialog_->setApplicationIndex(&applicationIndex_[view_]);}}
 void MainWindow::showTcpConversations() {
     if(closing_)return;
     if(!tcpDialog_) {

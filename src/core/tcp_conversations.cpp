@@ -21,7 +21,7 @@ void event(TcpConversation& item,const Packet& packet,unsigned direction,TcpEven
     auto index=(item.eventStart+item.eventCount)%item.eventLimit;
     if(item.eventCount==item.eventLimit){item.eventStart=(item.eventStart+1)%item.eventLimit;++item.eventsOverwritten;}
     else ++item.eventCount;
-    item.events[index]={packet.id,packet.raw.timestampNs,packet.tcp->sequence,packet.tcp->acknowledgment,kind,direction};
+    item.events[index]={packet.id,packet.raw.timestampNs,packet.tcp->sequence,packet.tcp->acknowledgment,kind,direction,packet.raw.timestampValid};
 }
 void analyze(TcpConversation& item,const Packet& packet,unsigned direction) {
     const auto& t=*packet.tcp;const auto other=1u-direction;const bool pureSyn=(t.flags&(syn|ack))==syn;
@@ -29,22 +29,22 @@ void analyze(TcpConversation& item,const Packet& packet,unsigned direction) {
         auto& seen=item.syn[direction];
         if(seen.seen)++item.synRepeats;
         else {
-            seen={t.sequence,t.sequence+1+t.payloadLength,packet.raw.timestampNs,true};
+            seen={t.sequence,t.sequence+1+t.payloadLength,packet.raw.timestampNs,true,packet.raw.timestampValid};
             if(item.initiator<0)item.initiator=static_cast<int>(direction);else item.simultaneousOpen=true;
         }
         event(item,packet,direction,TcpEventKind::Syn);
     } else if((t.flags&(syn|ack))==(syn|ack)) {
         if(item.initiator>=0 && static_cast<unsigned>(item.initiator)==other && !item.simultaneousOpen
             && t.acknowledgment==item.syn[other].next && !item.synAck.seen) {
-            item.synAck={t.sequence,t.sequence+1+t.payloadLength,packet.raw.timestampNs,true};
-            item.synAckNs=elapsed(item.syn[other].timestampNs,packet.raw.timestampNs);
+            item.synAck={t.sequence,t.sequence+1+t.payloadLength,packet.raw.timestampNs,true,packet.raw.timestampValid};
+            if(item.syn[other].timestampValid && packet.raw.timestampValid)item.synAckNs=elapsed(item.syn[other].timestampNs,packet.raw.timestampNs);
         }
         event(item,packet,direction,TcpEventKind::SynAck);
     } else if((t.flags&ack) && !(t.flags&rst) && item.initiator==static_cast<int>(direction)
         && item.synAck.seen && !item.simultaneousOpen && !item.handshakeSeen
         && t.sequence==item.syn[direction].next && t.acknowledgment==item.synAck.next) {
         item.handshakeSeen=true;
-        if(item.synAckNs && packet.raw.timestampNs>=item.synAck.timestampNs)
+        if(item.synAckNs && packet.raw.timestampValid && packet.raw.timestampNs>=item.synAck.timestampNs)
             item.handshakeNs=elapsed(item.syn[direction].timestampNs,packet.raw.timestampNs);
         event(item,packet,direction,TcpEventKind::Handshake);
     }
@@ -83,7 +83,7 @@ void TcpConversations::observe(Packet& packet) {
     auto source=endpoint(packet,true),destination=endpoint(packet,false);
     if(source==destination){++skipped_;return;}
     const unsigned direction=source<destination?0:1;
-    TcpKey key{direction?destination:source,direction?source:destination,packet.vlanId};
+    TcpKey key{direction?destination:source,direction?source:destination,packet.vlanId,packet.raw.interfaceId};
     auto current=current_.find(key);const auto& tcp=*packet.tcp;const bool pureSyn=(tcp.flags&(syn|ack))==syn;
     bool fresh=current==current_.end();
     if(!fresh && pureSyn) {
@@ -97,12 +97,12 @@ void TcpConversations::observe(Packet& packet) {
             if(oldest!=current_.end() && oldest->second==items_.begin())current_.erase(oldest);
             items_.pop_front();++overwritten_;
         }
-        TcpConversation item;item.id=nextId_++;item.key=key;item.firstNs=item.lastNs=packet.raw.timestampNs;
+        TcpConversation item;item.id=nextId_++;item.key=key;
         items_.push_back(std::move(item));current=current_.insert_or_assign(key,std::prev(items_.end())).first;
     }
     auto it=current->second;items_.splice(items_.end(),items_,it);auto& item=*it;
     ++item.packets[direction];item.wireBytes[direction]+=packet.raw.originalLength;item.payloadBytes[direction]+=tcp.payloadLength;
-    item.firstNs=std::min(item.firstNs,packet.raw.timestampNs);item.lastNs=std::max(item.lastNs,packet.raw.timestampNs);
+    if(packet.raw.timestampValid){if(!item.hasTimestamps)item.firstNs=item.lastNs=packet.raw.timestampNs;else {item.firstNs=std::min(item.firstNs,packet.raw.timestampNs);item.lastNs=std::max(item.lastNs,packet.raw.timestampNs);}item.hasTimestamps=true;}
     analyze(item,packet,direction);packet.tcpConversationId=item.id;
 }
 void TcpConversations::clear() {items_.clear();current_.clear();nextId_=1;overwritten_=skipped_=0;++revision_;++generation_;}
