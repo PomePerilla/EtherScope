@@ -26,6 +26,13 @@ struct ChecksumResult {
     ChecksumStatus status{ChecksumStatus::NotChecked};
     std::optional<std::uint16_t> computed;
 };
+struct TcpInfo {
+    bool operator==(const TcpInfo&) const=default;
+    std::uint16_t sourcePort{},destinationPort{};
+    std::uint32_t sequence{},acknowledgment{},payloadLength{};
+    std::uint8_t flags{};
+    bool completeSegment{};
+};
 struct Packet {
     std::uint64_t id{};
     RawPacket raw;
@@ -36,6 +43,9 @@ struct Packet {
     std::optional<std::array<std::uint8_t, 4>> sourceIp, destinationIp;
     std::optional<std::array<std::uint8_t, 16>> sourceIpv6, destinationIpv6;
     std::optional<std::uint8_t> icmpType;
+    std::optional<TcpInfo> tcp;
+    std::optional<std::uint16_t> vlanId;
+    std::uint64_t tcpConversationId{};
     ChecksumResult ipv4Checksum, icmpChecksum;
     std::vector<Field> fields;
     std::size_t estimatedBytes{};

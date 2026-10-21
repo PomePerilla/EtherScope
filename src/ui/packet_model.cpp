@@ -56,7 +56,7 @@ void PacketModel::rebuild() {
     visible_.clear();
     for(const auto& p:store_->packets())if(filter_.matches(*p))visible_.emplace_back(p);
 }
-void PacketModel::setStore(SessionStore* store) { beginResetModel(); store_=store; rebuild(); endResetModel(); }
+void PacketModel::setStore(SessionStore* store) { beginResetModel(); store_=store;filter_.tcpConversationId.reset(); rebuild(); endResetModel(); }
 void PacketModel::append(std::vector<Packet> packets) {
     if(packets.empty()) return;
     const auto previousLast=store_->packets().empty()?0:store_->packets().back()->id;
@@ -80,7 +80,7 @@ void PacketModel::append(std::vector<Packet> packets) {
         for(auto& packet:added)visible_.emplace_back(std::move(packet));endInsertRows();
     }
 }
-void PacketModel::clear() { beginResetModel(); store_->clear(); rebuild(); endResetModel(); }
+void PacketModel::clear() { beginResetModel(); store_->clear();filter_.tcpConversationId.reset(); rebuild(); endResetModel(); }
 void PacketModel::setFilter(FilterSpec f) {
     if(f==filter_)return;
     beginResetModel();filter_=std::move(f);rebuild();endResetModel();

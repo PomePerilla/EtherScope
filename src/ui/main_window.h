@@ -31,6 +31,7 @@ class QDialog;
 
 namespace etherscope {
 class FilterChip;
+class TcpDialog;
 struct MainWindowOptions {
     QString settingsFile;
     CaptureHooks capture;
@@ -59,6 +60,7 @@ public:
     const SessionStats& sessionStats() const {return view_==0?live_.stats():file_.stats();}
     std::size_t retainedRawBytes() const {return view_==0?live_.rawBytes():file_.rawBytes();}
     std::size_t retainedEstimatedBytes() const {return view_==0?live_.estimatedBytes():file_.estimatedBytes();}
+    const TcpConversations& tcpConversations() const {return view_==0?live_.tcp():file_.tcp();}
     void stopCapture();
     void selectPacket(int row);
     void setDarkTheme(bool dark);
@@ -88,6 +90,7 @@ private:
     QAction *refresh_{},*theme_{},*captureFilterAction_{};
     QLabel* bpfMarker_{};
     QPointer<QDialog> bpfDialog_;
+    QPointer<TcpDialog> tcpDialog_;
     QPointer<QLineEdit> bpfInput_;
     QPointer<QPushButton> bpfApply_;
     QString bpfDraft_,successfulBpf_,sessionBpf_,bpfError_;
@@ -95,7 +98,7 @@ private:
     bool liveStarting_{};
     QPushButton *apply_{},*clear_{};
     QPushButton *addressToggle_{},*diagnostics_{};
-    FilterChip *macChip_{},*ipChip_{},*protocolChip_{},*icmpChip_{};
+    FilterChip *macChip_{},*ipChip_{},*protocolChip_{},*icmpChip_{},*conversationChip_{};
     QCheckBox* statistics_{};
     QWidget *chartPanel_{},*macGroup_{},*ipGroup_{},*filterActions_{},*addressPanel_{},*diagnosticPanel_{};
     QGridLayout* filterLayout_{};
@@ -155,6 +158,8 @@ private:
     void startCapture();
     void beginLive(const QString& device,LiveCaptureOptions options);
     void configureCaptureFilter();
+    void showTcpConversations();
+    void refreshTcpConversations();
     void beginFile(const QString& path,PreparedFile reader);
     void completeFileOpen(FileOpenResult result,const QString& error={});
     void requestCaptureStop();

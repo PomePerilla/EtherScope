@@ -53,6 +53,7 @@ void MainWindow::buildUi() {
     refresh_=menu->addAction("刷新接口");refresh_->setObjectName("refreshAction");refresh_->setShortcut(QKeySequence(Qt::Key_F5));addAction(refresh_);
     captureFilterAction_=menu->addAction("捕获过滤");captureFilterAction_->setObjectName("captureFilterAction");
     connect(captureFilterAction_,&QAction::triggered,this,&MainWindow::configureCaptureFilter);
+    auto* tcpAction=menu->addAction("TCP 会话");tcpAction->setObjectName("tcpConversationsAction");connect(tcpAction,&QAction::triggered,this,&MainWindow::showTcpConversations);
     bpfMarker_=new QLabel("BPF",toolbarBar);bpfMarker_->setObjectName("bpfMarker");bpfMarker_->hide();toolbar->addWidget(bpfMarker_);
     theme_=menu->addAction("深色主题");theme_->setObjectName("darkThemeAction");theme_->setCheckable(true);
     menu->addSeparator();menu->addAction("EtherScope "+QCoreApplication::applicationVersion())->setEnabled(false);more->setMenu(menu);
@@ -72,7 +73,8 @@ void MainWindow::buildUi() {
     icmpChip_=new FilterChip(sessionStrip);icmpChip_->setObjectName("icmpCondition");
     macChip_=new FilterChip(sessionStrip);macChip_->setObjectName("macCondition");
     ipChip_=new FilterChip(sessionStrip);ipChip_->setObjectName("ipCondition");
-    for(auto* chip:{protocolChip_,icmpChip_,macChip_,ipChip_}){sessionBar->addWidget(chip);chip->hide();}sessionBar->addStretch();
+    conversationChip_=new FilterChip(sessionStrip);conversationChip_->setObjectName("tcpConversationCondition");
+    for(auto* chip:{protocolChip_,icmpChip_,macChip_,ipChip_,conversationChip_}){sessionBar->addWidget(chip);chip->hide();}sessionBar->addStretch();
     follow_=new QCheckBox("跟随",sessionStrip);follow_->setObjectName("followLatest");follow_->setChecked(true);sessionBar->addWidget(follow_);
     statistics_=new QCheckBox("统计",sessionStrip);statistics_->setObjectName("statisticsToggle");sessionBar->addWidget(statistics_);layout->addWidget(sessionStrip);
 

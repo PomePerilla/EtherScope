@@ -12,6 +12,7 @@ struct FilterSpec {
     Direction macDirection{Direction::Either}, ipDirection{Direction::Either};
     std::string protocol;
     std::optional<std::uint8_t> icmpType;
+    std::optional<std::uint64_t> tcpConversationId;
     bool matches(const Packet& packet) const;
 };
 struct FilterResult { std::optional<FilterSpec> value; std::string error; };

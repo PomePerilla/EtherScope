@@ -67,7 +67,8 @@ bool FilterSpec::matches(const Packet& p) const {
     const bool layer=protocol=="Ethernet"?(p.raw.linkType==1 && p.sourceMac && p.destinationMac):(protocol.empty() || protocol==p.protocol || family);
     return match(mac,macDirection,p.sourceMac,p.destinationMac) && match(ip,ipDirection,p.sourceIp,p.destinationIp)
         && match(ipv6,ipDirection,p.sourceIpv6,p.destinationIpv6) && layer
-        && (!icmpType || (protocol=="ICMP" && p.icmpType==icmpType));
+        && (!icmpType || (protocol=="ICMP" && p.icmpType==icmpType))
+        && (!tcpConversationId || p.tcpConversationId==*tcpConversationId);
 }
 FilterResult parseFilter(std::string_view macText,Direction macDir,std::string_view ipText,Direction ipDir,std::string_view protocolText,std::optional<std::uint8_t> icmpType) {
     FilterSpec f; f.macDirection=macDir; f.ipDirection=ipDir;

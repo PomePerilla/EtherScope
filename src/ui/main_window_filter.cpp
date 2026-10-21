@@ -17,7 +17,7 @@ void MainWindow::applyFilter() {
     macError_->setText(q(macResult.error));macError_->setVisible(!macResult.value);style::setFlag(mac_,"invalid",!macResult.value);
     ipError_->setText(q(ipResult.error));ipError_->setVisible(!ipResult.value);style::setFlag(ip_,"invalid",!ipResult.value);
     if(!macResult.value || !ipResult.value)return;
-    auto filter=*macResult.value;filter.ip=ipResult.value->ip;filter.ipv6=ipResult.value->ipv6;filter.ipDirection=ipDirection;filter.protocol=model_->filter().protocol;filter.icmpType=model_->filter().icmpType;
+    auto filter=*macResult.value;filter.ip=ipResult.value->ip;filter.ipv6=ipResult.value->ipv6;filter.ipDirection=ipDirection;filter.protocol=model_->filter().protocol;filter.icmpType=model_->filter().icmpType;filter.tcpConversationId=model_->filter().tcpConversationId;
     commitFilter(std::move(filter));
 }
 void MainWindow::commitFilter(FilterSpec filter) {
@@ -38,5 +38,6 @@ void MainWindow::updateFilterStatus() {
     macChip_->setCondition(f.mac?direction(f.macDirection)+"MAC "+q(formatMac(*f.mac)):QString{});
     QString ip;if(f.ip)ip="IPv4 "+q(formatIp(*f.ip));else if(f.ipv6)ip="IPv6 "+q(formatIpv6(*f.ipv6));
     ipChip_->setCondition(ip.isEmpty()?QString{}:direction(f.ipDirection)+ip);protocolChip_->setCondition(q(f.protocol));
+    conversationChip_->setCondition(f.tcpConversationId?QString("会话 %1").arg(*f.tcpConversationId):QString{});
 }
 }

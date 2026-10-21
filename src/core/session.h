@@ -1,5 +1,6 @@
 #pragma once
 #include "core/packet.h"
+#include "core/tcp_conversations.h"
 #include <deque>
 #include <map>
 #include <memory>
@@ -18,11 +19,13 @@ public:
     const SessionStats& stats() const { return stats_; }
     std::size_t rawBytes() const { return rawBytes_; }
     std::size_t estimatedBytes() const { return estimatedBytes_; }
+    const TcpConversations& tcp() const {return tcp_;}
 private:
     std::size_t maxPackets_,maxBytes_,rawBytes_{};
     std::size_t maxEstimatedBytes_,estimatedBytes_{};
     std::uint64_t nextId_{1};
     SessionStats stats_;
+    TcpConversations tcp_;
     std::deque<std::shared_ptr<const Packet>> packets_;
 };
 }

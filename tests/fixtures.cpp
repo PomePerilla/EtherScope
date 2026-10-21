@@ -3,6 +3,26 @@
 #include <stdexcept>
 
 namespace etherscope::fixtures {
+RawPacket tcp(std::uint8_t flags,std::uint32_t sequence,std::uint32_t acknowledgment,bool reverse,std::uint16_t clientPort,bool v6,std::vector<std::uint8_t> payload) {
+    std::vector<std::uint8_t> segment(20,0);
+    auto put=[&](std::size_t offset,std::uint32_t value,int bytes){for(int i=0;i<bytes;++i)segment[offset+i]=static_cast<std::uint8_t>(value>>(8*(bytes-1-i)));};
+    put(0,reverse?443:clientPort,2);put(2,reverse?clientPort:443,2);put(4,sequence,4);put(8,acknowledgment,4);segment[12]=0x50;segment[13]=flags;put(14,8192,2);
+    segment.insert(segment.end(),payload.begin(),payload.end());
+    auto raw=v6?ipv6(6,std::move(segment)):ipv4(6,std::move(segment));
+    if(reverse) {
+        auto& b=raw.bytes;const std::size_t first=v6?22:26,second=v6?38:30,count=v6?16:4;
+        for(std::size_t i=0;i<count;++i)std::swap(b[first+i],b[second+i]);
+        for(std::size_t i=0;i<6;++i)std::swap(b[i],b[i+6]);
+    }
+    return raw;
+}
+std::vector<RawPacket> tcpConversationSamples() {
+    std::vector<RawPacket> result={tcp(2,100),tcp(2,100),tcp(18,500,101,true),tcp(16,101,501),tcp(24,101,501,false,50000,false,{'a','b','c'}),
+        tcp(16,501,104,true),tcp(17,104,501),tcp(16,501,105,true),tcp(17,501,105,true),tcp(16,105,502),
+        tcp(2,10,0,false,50000,true),tcp(20,0,11,true,50000,true),tcp(2,900),tcp(24,1000,2000,false,51000,false,{'x'}),tcp(16,2000,1001,true,51000)};
+    for(std::size_t i=0;i<result.size();++i)result[i].timestampNs=1700000000000000000LL+static_cast<std::int64_t>(i)*10000000;
+    return result;
+}
 namespace {
 void put16(std::vector<std::uint8_t>& b,std::size_t o,std::uint16_t n) {b[o]=std::uint8_t(n>>8);b[o+1]=std::uint8_t(n);}
 std::uint16_t checksum(const std::vector<std::uint8_t>& b,std::size_t start,std::size_t length) {

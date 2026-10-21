@@ -4,6 +4,7 @@
 #include "version.h"
 #include <QApplication>
 #include <QCheckBox>
+#include <QAction>
 #include <QComboBox>
 #include <QDateTime>
 #include <QFile>
@@ -70,6 +71,7 @@ int main(int argc,char** argv) {
     if(seconds<2 || seconds>7200 || pps<1 || pps>100000)return 2;
     auto raws=fixtures::samples();const auto ipv6=fixtures::ipv6Samples();raws.insert(raws.end(),ipv6.begin(),ipv6.end());
     const auto analysis=fixtures::analysisSamples();raws.insert(raws.end(),analysis.begin(),analysis.end());
+    if(args.contains("--tcp"))raws=fixtures::tcpConversationSamples();
     for(auto& raw:raws) {raw.bytes.resize(std::max<std::size_t>(64,raw.bytes.size()),0);raw.originalLength=static_cast<std::uint32_t>(raw.bytes.size());}
     const auto target=std::uint64_t(seconds)*pps;
     MainWindowOptions options;QTemporaryDir temporary;options.settingsFile=temporary.filePath("settings.ini");
@@ -94,6 +96,7 @@ int main(int argc,char** argv) {
     for(auto id=target;id>0 && expectedRetained<10000;--id){const auto index=static_cast<std::size_t>((id-1)%raws.size()),rawBytes=raws[index].bytes.size(),cost=footprints[index];
         if(expectedRaw+rawBytes>64*1024*1024 || expectedBytes+cost>64*1024*1024)break;++expectedRetained;expectedRaw+=rawBytes;expectedBytes+=cost;}
     MainWindow window(nullptr,options);window.resize(1280,820);window.show();
+    if(args.contains("--tcp-panel"))window.findChild<QAction*>("tcpConversationsAction")->trigger();
     QElapsedTimer clock,stopClock;clock.start();const auto cpuStart=cpuSeconds();
     std::vector<qint64> delays,appendTimes,filterTimes;QJsonArray memorySamples;QJsonArray exports;QJsonArray stalls;
     QTimer poll;poll.setTimerType(Qt::PreciseTimer);qint64 lastBeat=0,lastMemory=-1000,nextProgress=60000;
@@ -179,6 +182,9 @@ int main(int argc,char** argv) {
                 && stopMs<=1000 && peak<=256*1024*1024 && (seconds>=7200?(!warmMemory.empty() && !tailMemory.empty() && medianGrowth<=8*1024*1024):growth<=16*1024*1024) && window.packetModel()->rowCount()==static_cast<int>(expectedRetained)
                 && window.retainedRawBytes()==expectedRaw && window.retainedEstimatedBytes()<=64*1024*1024 && resets==0 && saveRequests==2 && exports.size()==2 && saveValid;
             QJsonObject report{{"kind","synthetic_source_capture_decode_queue_store_ui"},{"version",ETHERSCOPE_VERSION},
+                {"tcp_fixture",args.contains("--tcp")},{"tcp_panel",args.contains("--tcp-panel")},
+                {"tcp_connections",double(window.tcpConversations().items().size())},{"tcp_estimated_bytes",double(window.tcpConversations().estimatedBytes())},
+                {"tcp_overwritten",double(window.tcpConversations().overwritten())},{"tcp_skipped",double(window.tcpConversations().skipped())},
                 {"utc",QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},{"requested_seconds",seconds},{"target_pps",pps},
                 {"elapsed_ms",double(now)},{"received",double(final.received)},{"parsed",double(window.sessionStats().received)},
                 {"achieved_pps",final.received*1000.0/now},{"queue_dropped",double(final.queueDropped)},

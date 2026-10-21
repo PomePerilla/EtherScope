@@ -6,7 +6,7 @@ int main(int argc,char** argv) {
     if(argc!=2)return 2;
     const std::filesystem::path directory(argv[1]);std::filesystem::create_directories(directory);
     auto raws=etherscope::fixtures::samples();
-    for(auto list:{etherscope::fixtures::ipv6Samples(),etherscope::fixtures::analysisSamples()})raws.insert(raws.end(),list.begin(),list.end());
+    for(auto list:{etherscope::fixtures::ipv6Samples(),etherscope::fixtures::analysisSamples(),etherscope::fixtures::tcpConversationSamples()})raws.insert(raws.end(),list.begin(),list.end());
     std::vector<std::uint8_t> dense(24,0);dense[0]=135;
     for(int i=0;i<3000;++i)dense.insert(dense.end(),{1,1,0,1,2,3,4,5});
     raws.push_back(etherscope::fixtures::ipv6(58,dense,255));

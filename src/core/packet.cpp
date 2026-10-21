@@ -152,7 +152,7 @@ struct Decoder {
         if(end>o+8) emitField(g,[&]{return Field{"数据",std::to_string(end-o-8)+" 字节",o+8,end-o-8,{}};});
         append(root_,std::move(g)); p.summary=label+"  Code "+std::to_string(code);
     }
-    void tcp(std::size_t o,std::size_t end,bool fragmented=false) {
+    void tcp(std::size_t o,std::size_t end,bool partialFragment=false,bool completeSegment=true) {
         p.protocol="TCP";
         if(has(o,13,end) && (b[o+12]>>4)<5){fail("TCP 数据偏移异常");return;}
         auto partial=[&]{
@@ -161,9 +161,10 @@ struct Decoder {
             if(has(o,8,end))emitField(g,[&]{return Field{"序列号",std::to_string(u32(o+4)),o+4,4,{}};});
             append(root_,std::move(g));p.summary="TCP 不完整首部";
         };
-        if(!has(o,20,end)) {if(fragmented)partial();else fail("TCP 首部被截断");return;}
+        if(!has(o,20,end)) {if(partialFragment)partial();else fail("TCP 首部被截断");return;}
         auto n=std::size_t(b[o+12]>>4)*4;
-        if(!has(o,n,end)) {if(fragmented)partial();else fail("TCP 选项被截断");return;}
+        if(!has(o,n,end)) {if(partialFragment)partial();else fail("TCP 选项被截断");return;}
+        p.tcp=TcpInfo{u16(o),u16(o+2),u32(o+4),u32(o+8),static_cast<std::uint32_t>(end-o-n),b[o+13],completeSegment};
         auto g=node([&]{return Field{"TCP","传输控制协议",o,n,{}};});
         emitField(g,[&]{return Field{"源端口",std::to_string(u16(o)),o,2,{}};}); emitField(g,[&]{return Field{"目的端口",std::to_string(u16(o+2)),o+2,2,{}};});
         emitField(g,[&]{return Field{"序列号",std::to_string(u32(o+4)),o+4,4,{}};}); emitField(g,[&]{return Field{"确认号",std::to_string(u32(o+8)),o+8,4,{}};});
@@ -211,7 +212,7 @@ struct Decoder {
         if(offset || more) p.warnings.push_back("IPv4 分片; 不进行重组");
         if(offset) { p.summary="IPv4 非首片  偏移 "+std::to_string(offset*8); return; }
         const bool complete=total<=b.size()-o;
-        switch(b[o+9]) { case 1: icmp(o+n,end,more,complete); break; case 6: tcp(o+n,end,more && complete); break; case 17: udp(o+n,end,more); break;
+        switch(b[o+9]) { case 1: icmp(o+n,end,more,complete); break; case 6: tcp(o+n,end,more && complete,complete && !more); break; case 17: udp(o+n,end,more); break;
             default: p.summary="IPv4  上层协议 "+std::to_string(b[o+9]); }
     }
     void ndOptions(Node& group,std::size_t o,std::size_t end) {
@@ -341,7 +342,7 @@ struct Decoder {
             cursor+=n;
         }
         switch(next) {
-            case 6:tcp(cursor,end);break;case 17:udp(cursor,end,fragmented);break;case 58:icmpv6(cursor,end,hop);break;
+            case 6:tcp(cursor,end,false,!fragmented && payload<=b.size()-o-40);break;case 17:udp(cursor,end,fragmented);break;case 58:icmpv6(cursor,end,hop);break;
             case 59:p.summary="IPv6  无下一首部";break;
             case 50:
                 p.summary="IPv6  ESP 加密载荷";p.warnings.push_back("ESP 加密数据不解密，不推断上层协议");
@@ -384,7 +385,7 @@ struct Decoder {
         append(root_,std::move(g));
         if(type==0x8100) {
             if(!has(14,4,b.size())) { fail("802.1Q VLAN 标记被截断"); return std::move(p); }
-            auto tci=u16(14); auto vlan=node([&]{return Field{"802.1Q","VLAN "+std::to_string(tci&0xfff),14,4,{}};});
+            auto tci=u16(14);p.vlanId=tci&0xfff;auto vlan=node([&]{return Field{"802.1Q","VLAN "+std::to_string(tci&0xfff),14,4,{}};});
             emitField(vlan,[&]{return Field{"优先级 PCP",std::to_string(tci>>13),14,2,{}};}); emitField(vlan,[&]{return Field{"DEI",std::to_string((tci>>12)&1),14,2,{}};});
             emitField(vlan,[&]{return Field{"VLAN ID",std::to_string(tci&0xfff),14,2,{}};}); type=u16(16); emitField(vlan,[&]{return Field{"封装类型",hex(type,4),16,2,{}};});
             append(root_,std::move(vlan)); o=18;

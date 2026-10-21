@@ -1,4 +1,5 @@
 #include "ui/main_window.h"
+#include "ui/tcp_dialog.h"
 #include <QCheckBox>
 #include <QAction>
 #include <QDialog>
@@ -91,6 +92,78 @@ QString sampleFile(QTemporaryDir& directory) {
 class DesktopTests:public QObject {
     Q_OBJECT
 private slots:
+    void tcpSummariesAndFilter() {
+        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();
+        std::vector<Packet> packets;for(auto raw:fixtures::tcpConversationSamples())packets.push_back(decodeSummary(std::move(raw)));window.ingestBenchmark(std::move(packets));
+        window.findChild<QLineEdit*>("ipInput")->setText("invalid draft");window.findChild<QAction*>("tcpConversationsAction")->trigger();
+        auto* dialog=window.findChild<TcpDialog*>();QVERIFY(dialog);auto* table=dialog->findChild<QTableView*>("tcpTable");QAbstractItemModelTester tester(table->model(),QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QCOMPARE(table->model()->rowCount(),4);QCOMPARE(table->model()->index(0,5).data().toString(),QString("FIN 已确认"));QCOMPARE(table->model()->index(0,10).data().toDouble(),30.0);
+        QCOMPARE(dialog->findChild<QLabel*>("tcpMetric2")->text(),QString("1"));QCOMPARE(dialog->findChild<QLabel*>("tcpMode")->text(),QString("文件"));
+        dialog->selectConversation(2);QCOMPARE(table->currentIndex().data(Qt::UserRole).toULongLong(),qulonglong(2));QCOMPARE(dialog->findChild<QLabel*>("tcpMetric3")->text(),QString("1"));
+        dialog->selectConversation(1);dialog->findChild<QPushButton*>("tcpFilterButton")->click();QTRY_VERIFY(!window.findChild<TcpDialog*>());
+        QCOMPARE(window.packetModel()->rowCount(),10);QCOMPARE(window.packetModel()->filter().tcpConversationId,std::optional<std::uint64_t>(1));
+        QCOMPARE(window.findChild<QLineEdit*>("ipInput")->text(),QString("invalid draft"));QVERIFY(window.findChild<QPushButton*>("tcpConversationCondition")->isVisible());
+        window.findChild<QPushButton*>("tcpConversationCondition")->click();QCOMPARE(window.packetModel()->rowCount(),15);QVERIFY(!window.packetModel()->filter().tcpConversationId);
+        window.findChild<QAction*>("tcpConversationsAction")->trigger();dialog=window.findChild<TcpDialog*>();dialog->selectConversation(1);dialog->findChild<QPushButton*>("tcpFilterButton")->click();QTRY_VERIFY(!window.findChild<TcpDialog*>());
+        auto* protocol=window.findChild<QComboBox*>("protocolFilter");protocol->setCurrentText("ICMP");QVERIFY(!window.packetModel()->filter().tcpConversationId);QCOMPARE(window.packetModel()->rowCount(),0);
+    }
+    void tcpEventNavigationAndEviction() {
+        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();
+        std::vector<Packet> packets;for(auto raw:fixtures::tcpConversationSamples())packets.push_back(decodeSummary(std::move(raw)));window.ingestBenchmark(std::move(packets));
+        window.findChild<QAction*>("tcpConversationsAction")->trigger();auto* dialog=window.findChild<TcpDialog*>();dialog->selectConversation(1);
+        auto* events=dialog->findChild<QTreeWidget*>("tcpEvents");QTreeWidgetItem* handshake=nullptr;
+        for(int i=0;i<events->topLevelItemCount();++i)if(events->topLevelItem(i)->text(3)=="握手完成")handshake=events->topLevelItem(i);
+        QVERIFY(handshake);events->setCurrentItem(handshake);dialog->findChild<QPushButton*>("tcpLocateButton")->click();QTRY_VERIFY(!window.findChild<TcpDialog*>());
+        QVERIFY(waitForDetails(window));QCOMPARE(window.findChild<QLabel*>("detailPacketId")->text(),QString("#4"));
+        window.findChild<QComboBox*>("protocolFilter")->setCurrentText("ICMP");window.findChild<QAction*>("tcpConversationsAction")->trigger();dialog=window.findChild<TcpDialog*>();dialog->selectConversation(1);
+        dialog->findChild<QPushButton*>("tcpLocateButton")->click();QCOMPARE(dialog->findChild<QLabel*>("tcpError")->text(),QString("报文已被筛选"));
+        std::vector<Packet> more;for(int i=0;i<10001;++i)more.push_back(decodeSummary(fixtures::icmp()));window.ingestBenchmark(std::move(more));
+        dialog->findChild<QPushButton*>("tcpLocateButton")->click();QCOMPARE(dialog->findChild<QLabel*>("tcpError")->text(),QString("报文已覆盖"));
+        QCOMPARE(dialog->findChild<QLabel*>("tcpCount")->text(),QString("4"));
+        dialog->findChild<QPushButton*>("tcpFilterButton")->click();QCOMPARE(dialog->findChild<QLabel*>("tcpError")->text(),QString("无匹配报文"));QVERIFY(!window.packetModel()->filter().tcpConversationId);
+        QPointer<TcpDialog> tracked=dialog;window.close();QTRY_VERIFY(!tracked);QVERIFY(!window.isVisible());
+    }
+    void tcpLiveFileIsolationAndSettings() {
+        auto options=testOptions();options.capture.run=[](const QString&,bool,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions&){
+            opened("捕获中");for(auto raw:fixtures::tcpConversationSamples())sink(std::move(raw));while(!stop.stop_requested())std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        };
+        {
+            MainWindow window(nullptr,options);QVERIFY(waitForInterfaces(window));window.show();window.findChild<QComboBox*>("protocolFilter")->setCurrentText("ICMP");window.findChild<QPushButton*>("startButton")->click();
+            QTRY_COMPARE(window.sessionStats().received,std::uint64_t(15));QCOMPARE(window.packetModel()->rowCount(),0);window.findChild<QAction*>("tcpConversationsAction")->trigger();auto* dialog=window.findChild<TcpDialog*>();
+            QCOMPARE(dialog->findChild<QLabel*>("tcpCount")->text(),QString("4"));QCOMPARE(dialog->findChild<QLabel*>("tcpMode")->text(),QString("实时"));
+            window.stopCapture();QTRY_VERIFY(!window.busy());window.findChild<QTabBar*>("sessionTabs")->setCurrentIndex(1);QCOMPARE(dialog->findChild<QTableView*>("tcpTable")->model()->rowCount(),0);
+            std::vector<Packet> packets;for(auto raw:fixtures::tcpConversationSamples())packets.push_back(decodeSummary(std::move(raw)));window.ingestBenchmark(std::move(packets));
+            QTRY_COMPARE_WITH_TIMEOUT(dialog->findChild<QTableView*>("tcpTable")->model()->rowCount(),4,2000);dialog->selectConversation(2);dialog->findChild<QPushButton*>("tcpFilterButton")->click();QTRY_VERIFY(!window.findChild<TcpDialog*>());
+            QCOMPARE(window.packetModel()->rowCount(),2);QVERIFY(window.packetModel()->filter().tcpConversationId);
+            window.findChild<QTabBar*>("sessionTabs")->setCurrentIndex(0);QVERIFY(!window.packetModel()->filter().tcpConversationId);QCOMPARE(window.packetModel()->rowCount(),15);
+        }
+        MainWindow restored(nullptr,options);QVERIFY(waitForInterfaces(restored));QCOMPARE(restored.packetModel()->filter().protocol,std::string("TCP"));QVERIFY(!restored.packetModel()->filter().tcpConversationId);
+    }
+    void tcpThemesAndSizes() {
+        MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();std::vector<Packet> packets;
+        for(auto raw:fixtures::tcpConversationSamples())packets.push_back(decodeSummary(std::move(raw)));window.ingestBenchmark(std::move(packets));window.findChild<QAction*>("tcpConversationsAction")->trigger();auto* dialog=window.findChild<TcpDialog*>();
+        for(bool dark:{false,true})for(const auto size:{QSize(1024,640),QSize(1440,800)}) {
+            window.setDarkTheme(dark);dialog->resize(size);dialog->selectConversation(2);QTest::qWait(10);
+            auto* table=dialog->findChild<QTableView*>("tcpTable");QVERIFY(table->width()<=dialog->width());
+            QCOMPARE(table->model()->index(1,1).data(Qt::ToolTipRole).toString(),QString("2001:db8::1"));
+            for(const auto& name:{"tcpFilterButton","tcpLocateButton"}){auto* button=dialog->findChild<QPushButton*>(name);QVERIFY(dialog->rect().contains(QRect(button->mapTo(dialog,QPoint{}),button->size())));}
+            const auto screenshots=qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");if(!screenshots.isEmpty()){QDir().mkpath(screenshots);QVERIFY(dialog->grab().save(screenshots+QString("/tcp-%1-%2.png").arg(dark?"dark":"light").arg(size.width())));}
+        }
+    }
+    void tcpPcapReopenAndStaleRequests() {
+        QTemporaryDir directory;MainWindow window(nullptr,testOptions());QVERIFY(waitForInterfaces(window));window.show();std::vector<Packet> packets;
+        for(auto raw:fixtures::tcpConversationSamples())packets.push_back(decodeSummary(std::move(raw)));window.ingestBenchmark(std::move(packets));
+        window.findChild<QAction*>("tcpConversationsAction")->trigger();auto* dialog=window.findChild<TcpDialog*>();dialog->selectConversation(1);
+        const SessionStore* oldStore=nullptr;quint64 oldGeneration=0;
+        connect(dialog,&TcpDialog::filterRequested,this,[&](quint64,quint64 generation,const SessionStore* store){oldStore=store;oldGeneration=generation;});
+        dialog->findChild<QPushButton*>("tcpFilterButton")->click();QTRY_VERIFY(!window.findChild<TcpDialog*>());QVERIFY(oldStore);QCOMPARE(window.packetModel()->rowCount(),10);
+        const auto path=directory.filePath("tcp.pcap");QSignalSpy saved(&window,&MainWindow::saveFinished);QVERIFY(window.saveFile(path));QTRY_COMPARE(saved.count(),1);QCOMPARE(saved.front()[2].toULongLong(),qulonglong(15));
+        QSignalSpy opened(&window,&MainWindow::fileOpenFinished);QVERIFY(window.openFile(path));QTRY_COMPARE(opened.count(),1);QVERIFY(!window.packetModel()->filter().tcpConversationId);QCOMPARE(window.packetModel()->rowCount(),15);QCOMPARE(window.tcpConversations().items().size(),std::size_t(4));
+        window.findChild<QAction*>("tcpConversationsAction")->trigger();dialog=window.findChild<TcpDialog*>();
+        const auto before=window.findChild<QTableView*>("packetTable")->currentIndex();emit dialog->filterRequested(1,oldGeneration,oldStore);emit dialog->locateRequested(1,oldGeneration,oldStore);
+        QVERIFY(!window.packetModel()->filter().tcpConversationId);QCOMPARE(window.findChild<QTableView*>("packetTable")->currentIndex(),before);
+        QCOMPARE(dialog->findChild<QTableView*>("tcpTable")->model()->index(0,10).data().toDouble(),30.0);
+    }
     void bpfStartIsTransactional() {
         auto options=testOptions();options.capture=fakeCapture();auto base=options.capture.run;
         options.capture.run=[base](const QString& target,bool file,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions& capture){

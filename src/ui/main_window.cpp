@@ -11,6 +11,7 @@
 #include "core/pcap_file.h"
 #include "ui/helpers.h"
 #include "ui/filter_chip.h"
+#include "ui/tcp_dialog.h"
 #include "ui/style.h"
 #include <QAction>
 #include <QDialog>
@@ -61,7 +62,7 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
     connect(open_,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getOpenFileName(this,"打开文件",usableDirectory(openDirectory_),"PCAP 文件 (*.pcap *.cap)"); if(!path.isEmpty()) openFile(path);});
     connect(save_,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getSaveFileName(this,"保存文件",QDir(usableDirectory(saveDirectory_)).filePath("capture.pcap"),"PCAP 文件 (*.pcap)"); if(!path.isEmpty()) saveFile(path);});
     connect(apply_,&QPushButton::clicked,this,&MainWindow::applyFilter); connect(mac_,&QLineEdit::returnPressed,this,&MainWindow::applyFilter); connect(ip_,&QLineEdit::returnPressed,this,&MainWindow::applyFilter);
-    connect(protocol_,&QComboBox::currentIndexChanged,this,[this](int index){auto filter=model_->filter();filter.protocol=index==0?"":protocol_->itemText(index).toStdString();filter.icmpType.reset();commitFilter(std::move(filter));});
+    connect(protocol_,&QComboBox::currentIndexChanged,this,[this](int index){auto filter=model_->filter();filter.protocol=index==0?"":protocol_->itemText(index).toStdString();filter.icmpType.reset();filter.tcpConversationId.reset();commitFilter(std::move(filter));});
     connect(icmpType_,&QComboBox::currentIndexChanged,this,[this]{
         auto filter=model_->filter();if(filter.protocol!="ICMP")return;
         const auto type=icmpType_->currentData().toInt();filter.icmpType=type<0?std::nullopt:std::optional<std::uint8_t>(static_cast<std::uint8_t>(type));commitFilter(std::move(filter));
@@ -75,6 +76,7 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
     connect(ipChip_,&QPushButton::clicked,this,[this]{auto filter=model_->filter();filter.ip.reset();filter.ipv6.reset();filter.ipDirection=Direction::Either;ip_->clear();ipDirection_->setCurrentIndex(0);ipError_->hide();style::setFlag(ip_,"invalid",false);commitFilter(std::move(filter));});
     connect(protocolChip_,&QPushButton::clicked,this,[this]{protocol_->setCurrentIndex(0);});
     connect(icmpChip_,&QPushButton::clicked,this,[this]{icmpType_->setCurrentIndex(0);});
+    connect(conversationChip_,&QPushButton::clicked,this,[this]{auto filter=model_->filter();filter.tcpConversationId.reset();commitFilter(std::move(filter));});
     connect(modes_,&QTabBar::currentChanged,this,&MainWindow::switchMode);
     connect(table_->selectionModel(),&QItemSelectionModel::currentRowChanged,this,[this]{if(!updatingSelection_) showDetails();});
     connect(table_,&QTableView::clicked,this,[this](const QModelIndex& index){if(view_==0 && index.row()!=model_->rowCount()-1) follow_->setChecked(false);});
@@ -130,7 +132,7 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
         if(epoch!=engine_.generation() || active_<0) return;
         if(active_==0 && liveStarting_) {
             if(state_==CaptureState::Stopping)return;
-            liveStarting_=false;model_->clear();selected_.reset();showDetails();counters_[0]={};resetRates();
+            liveStarting_=false;model_->clear();updateFilterStatus();selected_.reset();showDetails();counters_[0]={};resetRates();refreshTcpConversations();
             successfulBpf_=startingOptions_.bpf;sessionBpf_=successfulBpf_;bpfError_.clear();
         }
         if(active_==1) openDirectory_=QFileInfo(filePath_).absolutePath();
@@ -161,7 +163,7 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
     connect(&rateTimer_,&QTimer::timeout,this,[this]{
         const double seconds=std::max(0.001,rateClock_.restart()/1000.0); const auto c=counters_[view_];
         const auto count=c.received>=lastCount_?c.received-lastCount_:0, bytes=c.bytes>=lastBytes_?c.bytes-lastBytes_:0;
-        chart_->addSample(count/seconds,bytes/seconds);chart_->setProtocols(currentStore().stats().protocols);lastCount_=c.received;lastBytes_=c.bytes;
+        chart_->addSample(count/seconds,bytes/seconds);chart_->setProtocols(currentStore().stats().protocols);lastCount_=c.received;lastBytes_=c.bytes;refreshTcpConversations();
     }); rateClock_.start(); rateTimer_.start(1000);
     setDarkTheme(true);restoreSettings();refreshInterfaces();updateStatus();updateButtons();
 }
@@ -253,7 +255,7 @@ void MainWindow::finishCapture() {
     if(openingFile_ && finishedSession==1 && activeFileRequest_==fileRequest_)completeFileOpen(failed_[1]?FileOpenResult::Failure:(stopped?FileOpenResult::Cancelled:FileOpenResult::Success),failed_[1]?q(sourceStatus_[1]):QString{});
     auto action=std::exchange(pendingAction_,{});
     if(action && !closing_)action();
-    updateStatus();updateButtons();tryClose();
+    updateStatus();updateButtons();refreshTcpConversations();tryClose();
 }
 void MainWindow::switchMode(int index) {
     if(index==view_)return;
@@ -264,7 +266,7 @@ void MainWindow::switchMode(int index) {
 void MainWindow::showMode(int index) {
     {QSignalBlocker block(modes_);modes_->setCurrentIndex(index);}
     if(view_==index) return;
-    actionError_.clear();view_=index;selected_.reset();model_->setStore(&currentStore());showDetails();resetRates();updateStatus();updateButtons();
+    actionError_.clear();view_=index;selected_.reset();model_->setStore(&currentStore());updateFilterStatus();showDetails();resetRates();updateStatus();updateButtons();refreshTcpConversations();
     if(model_->rowCount()>0) table_->setCurrentIndex(model_->index(0,0));
 }
 bool MainWindow::openFile(const QString& path) {
@@ -279,7 +281,7 @@ void MainWindow::completeFileOpen(FileOpenResult result,const QString& error) {
 }
 void MainWindow::beginFile(const QString& path,PreparedFile reader) {
     activeFileRequest_=fileRequest_;
-    actionError_.clear();showMode(1);model_->clear();selected_.reset();failed_[1]=false;counters_[1]={};
+    actionError_.clear();showMode(1);model_->clear();updateFilterStatus();refreshTcpConversations();selected_.reset();failed_[1]=false;counters_[1]={};
     sourceStatus_[1]="读取中";fileName_=QFileInfo(path).fileName();filePath_=path;
     active_=1;producerFinished_=false;state_=CaptureState::Starting;resetRates();engine_.startFile(path,std::move(reader));updateStatus();updateButtons();
 }
@@ -333,7 +335,7 @@ void MainWindow::updateButtons() {
 void MainWindow::resetRates() {chart_->reset();chart_->setProtocols(currentStore().stats().protocols);lastCount_=counters_[view_].received;lastBytes_=counters_[view_].bytes;rateClock_.restart();}
 void MainWindow::reportError(const QString& message) {actionError_=message;updateStatus();}
 void MainWindow::closeEvent(QCloseEvent* event) {
-    if(!busy() && !preparation_.busy() && !details_.busy() && !saving_){saveSettings();event->accept();return;}
+    if(!busy() && !preparation_.busy() && !details_.busy() && !saving_){if(tcpDialog_)tcpDialog_->close();saveSettings();event->accept();return;}
     event->ignore();closing_=true;detailTimer_.stop();fieldItems_.clear();detailsPending_=false;details_.cancel();pendingAction_={};preparation_.requestStop();stopCapture();updateStatus();updateButtons();tryClose();
 }
 void MainWindow::tryClose() {

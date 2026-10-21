@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(EtherScope VERSION 1.6.0 LANGUAGES CXX)
+project(EtherScope VERSION 1.7.0 LANGUAGES CXX)
 configure_file(src/version.h.in generated/version.h @ONLY)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,7 +10,7 @@ else()
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 include(CTest)
-add_library(etherscope_core src/core/packet.cpp src/core/filter.cpp src/core/pcap_file.cpp src/core/session.cpp)
+add_library(etherscope_core src/core/packet.cpp src/core/filter.cpp src/core/pcap_file.cpp src/core/session.cpp src/core/tcp_conversations.cpp)
 target_include_directories(etherscope_core PUBLIC src)
 option(ETHERSCOPE_BUILD_GUI "Build the Qt desktop application" ON)
 option(ETHERSCOPE_BUILD_FUZZERS "Build Clang parser fuzz target" OFF)
@@ -40,6 +40,8 @@ if(ETHERSCOPE_BUILD_GUI)
     src/ui/filter_chip.cpp
     src/ui/main_window_settings.cpp
     src/ui/main_window_inspector.cpp
+    src/ui/main_window_tcp.cpp
+    src/ui/tcp_dialog.cpp
     src/ui/packet_model.cpp
     src/ui/traffic_chart.cpp)
   set_target_properties(etherscope_desktop PROPERTIES AUTOMOC ON)
@@ -79,6 +81,9 @@ if(BUILD_TESTING)
   add_executable(core_tests tests/core_tests.cpp tests/fixtures.cpp)
   target_link_libraries(core_tests PRIVATE etherscope_core)
   add_test(NAME protocol_filter_pcap_session COMMAND core_tests)
+  add_executable(tcp_tests tests/tcp_tests.cpp tests/fixtures.cpp)
+  target_link_libraries(tcp_tests PRIVATE etherscope_core)
+  add_test(NAME tcp_conversations COMMAND tcp_tests)
   add_executable(etherscope_benchmark tests/benchmark.cpp tests/fixtures.cpp)
   target_link_libraries(etherscope_benchmark PRIVATE etherscope_core)
   add_executable(make_samples tests/make_samples.cpp tests/fixtures.cpp)
