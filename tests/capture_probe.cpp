@@ -164,7 +164,7 @@ int main(int argc, char **argv) {
                     CaptureWriter writer(file, CaptureFormat::Pcapng, raws);
                     for (const auto *raw : raws)
                         writer.write(*raw);
-                    writer.finish();
+                    file.flush();
                 } else
                     writePcap(file, refs);
             } catch (const std::exception &e) {

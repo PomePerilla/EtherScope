@@ -99,9 +99,11 @@ void MainWindow::collectApplications() {
                 std::erase_if(update.facts, [&](const auto &pair) {
                     return !first || pair.first < first || pair.first > last;
                 });
-                applicationIndex_[session].apply(
-                    update.conversation, std::move(update.result), std::move(update.facts),
-                    session == view_ ? &delta : nullptr, {update.keyRevision, update.revision});
+                if (applicationIndex_[session].apply(
+                        update.conversation, std::move(update.result), std::move(update.facts),
+                        session == view_ ? &delta : nullptr, {update.keyRevision, update.revision}))
+                    applicationIndex_[session].limit(update.limitedPackets,
+                                                     session == view_ ? &delta : nullptr);
                 changed |= session == view_;
             }
     }

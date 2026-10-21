@@ -184,83 +184,81 @@ std::size_t estimateApplicationBytes(const ApplicationResult &result) {
     }
     return bytes;
 }
+std::size_t estimateApplicationFact(const ApplicationFacts &fact) {
+    std::size_t bytes = sizeof(std::pair<const std::uint64_t, ApplicationFacts>) + 64;
+    for (const auto &[name, values] : fact.values) {
+        bytes += sizeof(decltype(fact.values)::value_type) + 64 + name.capacity() +
+                 values.capacity() * sizeof(ApplicationValue);
+        for (const auto &value : values)
+            if (const auto *text = std::get_if<std::string>(&value))
+                bytes += text->capacity();
+    }
+    return bytes;
+}
 std::size_t estimateApplicationFacts(const std::map<std::uint64_t, ApplicationFacts> &facts) {
-    std::size_t bytes = facts.size() * (sizeof(ApplicationFacts) + 64);
+    std::size_t bytes = 0;
     for (const auto &[id, fact] : facts) {
         (void)id;
-        for (const auto &[name, values] : fact.values) {
-            bytes += name.capacity() + 96 + values.capacity() * sizeof(ApplicationValue);
-            for (const auto &value : values)
-                if (const auto *text = std::get_if<std::string>(&value))
-                    bytes += text->capacity();
-        }
+        bytes += estimateApplicationFact(fact);
     }
     return bytes;
 }
 std::map<std::uint64_t, ApplicationFacts>
 indexApplication(const ApplicationResult &result,
                  std::span<const std::shared_ptr<const Packet>> packets) {
+    constexpr std::size_t budget = 1024 * 1024;
     std::map<std::uint64_t, ApplicationFacts> index;
-    for (const auto &p : packets) {
-        auto &facts = index[p->id];
-        facts.status =
-            (p->tcp && !p->tcp->payloadLength) ? AnalysisStatus::Complete : result.status;
-    }
-    std::size_t bytes = estimateApplicationFacts(index);
-    for (const auto &message : result.messages) {
+    std::set<std::uint64_t> retained;
+    for (const auto &packet : packets)
+        retained.insert(packet->id);
+    std::size_t bytes = 0;
+    // Publish message facts before allocating empty status records. Prefer recent output.
+    for (auto message = result.messages.rbegin(); message != result.messages.rend(); ++message) {
         std::set<std::uint64_t> ids;
-        for (const auto &span : message.sources)
-            ids.insert(span.packetId);
-        std::string protocol = message.protocol;
+        for (const auto &span : message->sources)
+            if (retained.contains(span.packetId))
+                ids.insert(span.packetId);
+        std::string protocol = message->protocol;
         for (auto &c : protocol)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        for (auto id : ids) {
-            auto &facts = index[id];
-            facts.values[protocol] = {true};
+        for (const auto id : ids) {
+            const auto old = index.find(id);
+            const auto previous = old == index.end() ? 0 : estimateApplicationFact(old->second);
+            ApplicationFacts candidate = old == index.end() ? ApplicationFacts{} : old->second;
+            candidate.status = result.status;
+            candidate.values[protocol] = {true};
             if (protocol == "tls") {
-                const char *status = "complete";
-                switch (result.status) {
-                case AnalysisStatus::MissingKeys:
-                    status = "missing_keys";
-                    break;
-                case AnalysisStatus::AuthenticationFailed:
-                    status = "authentication_failed";
-                    break;
-                case AnalysisStatus::Unsupported:
-                    status = "unsupported";
-                    break;
-                case AnalysisStatus::Limited:
-                    status = "limited";
-                    break;
-                case AnalysisStatus::Incomplete:
-                    status = "incomplete";
-                    break;
-                case AnalysisStatus::Pending:
-                    status = "pending";
-                    break;
-                case AnalysisStatus::Complete:
-                    break;
-                }
-                facts.values["tls.status"] = {std::string(status)};
+                static constexpr std::array<const char *, 7> names = {
+                    "pending",      "complete",    "incomplete",           "limited",
+                    "missing_keys", "unsupported", "authentication_failed"};
+                candidate.values["tls.status"] = {
+                    std::string(names[static_cast<std::size_t>(result.status)])};
             }
-            for (const auto &field : message.fields)
+            for (const auto &field : message->fields)
                 if (!field.key.empty()) {
-                    auto &values = facts.values[field.key];
-                    if (std::find(values.begin(), values.end(), field.value) != values.end())
-                        continue;
-                    const auto *text = std::get_if<std::string>(&field.value);
-                    bytes += field.key.size() + 128 + 2 * sizeof(ApplicationValue) +
-                             (text ? text->size() : 0);
-                    if (bytes > 1024 * 1024) {
-                        for (auto &[packet, fact] : index) {
-                            (void)packet;
-                            fact.status = AnalysisStatus::Limited;
-                        }
-                        return index;
-                    }
-                    values.push_back(field.value);
+                    auto &values = candidate.values[field.key];
+                    if (std::find(values.begin(), values.end(), field.value) == values.end())
+                        values.push_back(field.value);
                 }
+            const auto cost = estimateApplicationFact(candidate);
+            if (cost <= budget && bytes - previous <= budget - cost) {
+                bytes = bytes - previous + cost;
+                index[id] = std::move(candidate);
+            } else if (old != index.end())
+                old->second.status = AnalysisStatus::Limited;
         }
+    }
+    for (auto packet = packets.rbegin(); packet != packets.rend(); ++packet) {
+        if (index.contains((*packet)->id))
+            continue;
+        ApplicationFacts fact;
+        fact.status = ((*packet)->tcp && !(*packet)->tcp->payloadLength) ? AnalysisStatus::Complete
+                                                                         : result.status;
+        const auto cost = estimateApplicationFact(fact);
+        if (cost > budget - bytes)
+            break;
+        bytes += cost;
+        index.emplace((*packet)->id, std::move(fact));
     }
     return index;
 }

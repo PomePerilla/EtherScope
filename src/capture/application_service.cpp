@@ -238,7 +238,18 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                 error = QString::fromUtf8(e.what());
             }
             keyCommand = command;
-            emit keyLogChanged(success, error);
+            // Recheck at delivery: reset or a new key command can overtake file I/O.
+            QMetaObject::invokeMethod(
+                this,
+                [this, current = epoch, command, success, error] {
+                    {
+                        std::lock_guard lock(mutex_);
+                        if (stopped_ || current != generation_ || command != keyCommand_)
+                            return;
+                    }
+                    emit keyLogChanged(success, error);
+                },
+                Qt::QueuedConnection);
         }
         std::vector<ApplicationUpdate> results;
         // Cache eviction must release references even when a new batch is rejected.
@@ -410,6 +421,9 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
             const std::vector<std::shared_ptr<const Packet>> retainedPackets(c.packets.begin(),
                                                                              c.packets.end());
             update.facts = indexApplication(*result, retainedPackets);
+            for (const auto &packet : retainedPackets)
+                if (!update.facts.contains(packet->id))
+                    update.limitedPackets.push_back(packet->id);
             update.result = std::move(result);
             results.push_back(std::move(update));
         }
@@ -444,15 +458,21 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                              result.result->messages.begin(), result.result->messages.end(),
                              [](const auto &message) { return message.protocol == "TLS"; }));
                     const auto size = sizeof(ApplicationUpdate) +
+                                      result.limitedPackets.capacity() * sizeof(std::uint64_t) +
                                       estimateApplicationFacts(result.facts) +
                                       (result.result ? result.result->estimatedBytes : 0);
+                    constexpr auto statusReserve =
+                        10000 * (sizeof(std::pair<const std::uint64_t, ApplicationFacts>) + 64) +
+                        4096;
                     if (completed_.size() >= 2048 ||
-                        size > applicationStagingBudget - 1024 * 1024 ||
-                        resultBytes_ > applicationStagingBudget - 1024 * 1024 - size) {
+                        size > applicationStagingBudget - statusReserve ||
+                        resultBytes_ > applicationStagingBudget - statusReserve - size) {
                         for (const auto &[id, fact] : result.facts) {
                             (void)fact;
                             limited_[id].status = AnalysisStatus::Limited;
                         }
+                        for (const auto id : result.limitedPackets)
+                            limited_[id].status = AnalysisStatus::Limited;
                         while (limited_.size() > 10000)
                             limited_.erase(limited_.begin());
                         continue;
@@ -462,6 +482,8 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                         (void)fact;
                         limited_.erase(id);
                     }
+                    for (const auto id : result.limitedPackets)
+                        limited_.erase(id);
                     resultBytes_ += size;
                     ++stats_.completedUpdates;
                     completed_.push_back(std::move(result));

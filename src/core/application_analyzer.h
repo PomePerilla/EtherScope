@@ -24,6 +24,7 @@ ApplicationResult analyzeDatagram(const Packet &packet);
 ApplicationResult analyzeConversation(const TcpStreamRequest &request, const TlsKeyLog &keys,
                                       std::stop_token stop = {});
 std::size_t estimateApplicationFacts(const std::map<std::uint64_t, ApplicationFacts> &facts);
+std::size_t estimateApplicationFact(const ApplicationFacts &facts);
 std::map<std::uint64_t, ApplicationFacts>
 indexApplication(const ApplicationResult &result,
                  std::span<const std::shared_ptr<const Packet>> packets);

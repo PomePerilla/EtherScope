@@ -172,7 +172,8 @@ void incrementalDiagnostics() {
         facts.status = static_cast<AnalysisStatus>(state);
         IndexDelta changes;
         index.apply(state + 1, result(), {{state + 1, std::move(facts)}}, &changes, {1, 2});
-        check(changes.packets == std::set<std::uint64_t>{state + 1},
+        check(changes.packets ==
+                  (state == 0 ? std::set<std::uint64_t>{} : std::set<std::uint64_t>{state + 1}),
               "Index delta identifies the affected packet");
     }
     auto diagnostics = index.diagnostics();
@@ -206,6 +207,44 @@ void incrementalDiagnostics() {
     check(store.find(11) && !store.find(1) && store.deltaAfter(11).added.empty(),
           "Session lookups respect retention");
 }
+void factsPreferMessagesUnderPressure() {
+    SessionStore store;
+    for (unsigned i = 0; i < 10000; ++i)
+        store.append(decodeSummary(fixtures::tcp(24, 100 + i, 0, false, 50000, false, {'x'})));
+    auto value = result();
+    for (std::uint64_t id = 9001; id <= 10000; ++id) {
+        ApplicationMessage message;
+        message.protocol = "HTTP";
+        message.sources = {{id, 0, 1, 0}};
+        message.fields.push_back({"Host", "http.host", std::string("recent.example"), 0, 1});
+        value->messages.push_back(std::move(message));
+    }
+    value->estimatedBytes = estimateApplicationBytes(*value);
+    std::vector<std::shared_ptr<const Packet>> retained(store.packets().begin(),
+                                                        store.packets().end());
+    auto facts = indexApplication(*value, retained);
+    check(estimateApplicationFacts(facts) <= 1024 * 1024,
+          "Field and status records keep the existing result budget");
+    check(facts.contains(10000) && facts.at(10000).values.contains("http.host"),
+          "Recent message fields precede empty status records");
+    ApplicationIndex index;
+    index.observe(store.deltaAfter(0));
+    std::vector<std::uint64_t> omitted;
+    for (const auto &packet : store.packets())
+        if (!facts.contains(packet->id))
+            omitted.push_back(packet->id);
+    index.apply(1, std::move(value), std::move(facts));
+    index.limit(omitted);
+    check(!omitted.empty() && index.diagnostics().count(AnalysisStatus::Pending) == 0,
+          "Omitted status records are limited rather than indefinitely pending");
+    check(index.facts(omitted.front())->status == AnalysisStatus::Limited,
+          "Compact limit facts preserve three-valued filtering");
+    auto filter = compileDisplayFilter("http.host == \"recent.example\"").value;
+    check(filter->evaluate(*store.find(10000), index.facts(10000)) == FilterTruth::True,
+          "Recent host fields remain filterable at full retention");
+    index.clear();
+    check(index.estimatedBytes() == 0, "Compact coverage releases all index storage");
+}
 } // namespace
 int main() {
     try {
@@ -214,6 +253,7 @@ int main() {
         namespacesAndAccounting();
         crossingConnections();
         incrementalDiagnostics();
+        factsPreferMessagesUnderPressure();
         std::cout << checks << " application index checks passed\n";
         return 0;
     } catch (const std::exception &error) {

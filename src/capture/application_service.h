@@ -12,6 +12,7 @@ struct ApplicationUpdate {
     bool keySensitive{};
     std::shared_ptr<const ApplicationResult> result;
     std::map<std::uint64_t, ApplicationFacts> facts;
+    std::vector<std::uint64_t> limitedPackets;
 };
 struct ApplicationHooks {
     std::function<ApplicationResult(const TcpStreamRequest &, const TlsKeyLog &, std::stop_token)>

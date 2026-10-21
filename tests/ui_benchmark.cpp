@@ -333,7 +333,7 @@ int main(int argc, char **argv) {
             i18n::language().set(
                 languages[static_cast<std::size_t>(languageChanges) % languages.size()]);
             ++languageChanges;
-            nextLanguage = now + 10000;
+            nextLanguage += 10000;
         }
         if (streamLoad && now >= nextStream && now < seconds * 1000 && c.enqueued > 0 &&
             !window.tcpConversations().items().empty()) {
@@ -498,7 +498,8 @@ int main(int argc, char **argv) {
                                     medianGrowth <= 8 * 1024 * 1024)
                                  : growth <= 16 * 1024 * 1024) &&
                 window.packetModel()->rowCount() == static_cast<int>(expectedRows) &&
-                analysis.rejectedPackets == 0 && analysis.stateBytes <= applicationStateBudget &&
+                (!expression || !longHttp || expectedRows > 0) && analysis.rejectedPackets == 0 &&
+                analysis.stateBytes <= applicationStateBudget &&
                 analysis.retainedBytes <= applicationInputBudget &&
                 (!longHttp ||
                  (analysis.deliveredBytes == expectedDelivered && analysis.stateEvictions == 0)) &&
@@ -592,9 +593,9 @@ int main(int argc, char **argv) {
                 {"analysis_state_bytes", double(analysis.stateBytes)},
                 {"analysis_retained_bytes", double(analysis.retainedBytes)},
                 {"analysis_unresolved_pending",
-                 double(window.applicationIndex().unresolved().first)},
+                 double(window.applicationIndex().diagnostics().count(AnalysisStatus::Pending))},
                 {"analysis_unresolved_incomplete",
-                 double(window.applicationIndex().unresolved().second)},
+                 double(window.applicationIndex().diagnostics().incomplete())},
                 {"cpu_single_core_average_percent", (cpuSeconds() - cpuStart) * 100000.0 / now},
                 {"exports", exports},
                 {"memory_samples", memorySamples},

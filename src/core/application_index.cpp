@@ -1,4 +1,5 @@
 #include "core/application_index.h"
+#include "core/application_analyzer.h"
 #include <algorithm>
 
 namespace etherscope {
@@ -8,15 +9,21 @@ constexpr std::size_t membershipBytes = sizeof(std::uint64_t) + treeNodeOverhead
 } // namespace
 
 std::size_t ApplicationIndex::estimateFactBytes(const ApplicationFacts &facts) {
-    std::size_t bytes = sizeof(FactRecord) + treeNodeOverhead;
-    for (const auto &[name, values] : facts.values) {
-        bytes += sizeof(decltype(facts.values)::value_type) + treeNodeOverhead + name.capacity() +
-                 values.capacity() * sizeof(ApplicationValue);
-        for (const auto &value : values)
-            if (const auto *text = std::get_if<std::string>(&value))
-                bytes += text->capacity();
+    return estimateApplicationFact(facts) + sizeof(FactRecord) - sizeof(ApplicationFacts) -
+           sizeof(std::uint64_t);
+}
+void ApplicationIndex::limit(std::span<const std::uint64_t> packets, IndexDelta *changes) {
+    for (const auto id : packets) {
+        const auto tracked = tracked_.find(id);
+        if (tracked == tracked_.end() || facts_.contains(id) ||
+            tracked->second == AnalysisStatus::Limited)
+            continue;
+        --diagnostics_.states[static_cast<std::size_t>(tracked->second)];
+        tracked->second = AnalysisStatus::Limited;
+        ++diagnostics_.states[static_cast<std::size_t>(tracked->second)];
+        if (changes)
+            changes->packets.insert(id);
     }
-    return bytes;
 }
 void ApplicationIndex::clear() {
     entries_.clear();
@@ -34,8 +41,8 @@ void ApplicationIndex::changed(std::uint64_t packet) {
     if (tracked == tracked_.end())
         return;
     --diagnostics_.states[static_cast<std::size_t>(tracked->second)];
-    const auto *value = facts(packet);
-    tracked->second = value ? value->status : AnalysisStatus::Pending;
+    const auto value = facts_.find(packet);
+    tracked->second = value != facts_.end() ? value->second.value.status : AnalysisStatus::Pending;
     ++diagnostics_.states[static_cast<std::size_t>(tracked->second)];
 }
 void ApplicationIndex::observe(const SessionDelta &delta, IndexDelta *changes) {
@@ -64,7 +71,18 @@ void ApplicationIndex::enforceBudget() {
 }
 const ApplicationFacts *ApplicationIndex::facts(std::uint64_t id) const {
     const auto found = facts_.find(id);
-    return found == facts_.end() ? nullptr : &found->second.value;
+    if (found != facts_.end())
+        return &found->second.value;
+    const auto tracked = tracked_.find(id);
+    if (tracked == tracked_.end())
+        return nullptr;
+    static const auto statuses = [] {
+        std::array<ApplicationFacts, 7> result{};
+        for (std::size_t i = 0; i < result.size(); ++i)
+            result[i].status = static_cast<AnalysisStatus>(i);
+        return result;
+    }();
+    return &statuses[static_cast<std::size_t>(tracked->second)];
 }
 void ApplicationIndex::eraseEmptyEntry(Entries::iterator entry) {
     bytes_ -= entry->second.bytes;
@@ -110,19 +128,19 @@ void ApplicationIndex::removeEntry(Entries::iterator entry, bool retainLimited) 
     bytes_ -= entry->second.packets.size() * membershipBytes;
     eraseEmptyEntry(entry);
 }
-void ApplicationIndex::apply(std::uint64_t conversation,
+bool ApplicationIndex::apply(std::uint64_t conversation,
                              std::shared_ptr<const ApplicationResult> result,
                              std::map<std::uint64_t, ApplicationFacts> facts, IndexDelta *delta,
                              std::pair<std::uint64_t, std::uint64_t> revision) {
     if (facts.empty())
-        return;
+        return false;
     changes_ = nullptr;
     const EntryKey key{conversation != 0, conversation ? conversation : facts.begin()->first};
     if (const auto old = entries_.find(key); old != entries_.end()) {
         if (revision != std::pair<std::uint64_t, std::uint64_t>{} &&
             old->second.revision > revision) {
             changes_ = nullptr;
-            return;
+            return false;
         }
         if (delta) {
             for (const auto id : old->second.packets)
@@ -172,6 +190,7 @@ void ApplicationIndex::apply(std::uint64_t conversation,
     changes_ = delta;
     enforceBudget();
     changes_ = nullptr;
+    return true;
 }
 void ApplicationIndex::prune(std::uint64_t first, std::uint64_t last, IndexDelta *delta) {
     changes_ = delta;

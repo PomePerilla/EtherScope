@@ -2,6 +2,7 @@
 #include "core/display_filter.h"
 #include "core/session.h"
 #include <set>
+#include <span>
 
 namespace etherscope {
 struct IndexDelta {
@@ -21,11 +22,12 @@ struct AnalysisDiagnostics {
 class ApplicationIndex {
   public:
     void clear();
-    void apply(std::uint64_t conversation, std::shared_ptr<const ApplicationResult> result,
+    bool apply(std::uint64_t conversation, std::shared_ptr<const ApplicationResult> result,
                std::map<std::uint64_t, ApplicationFacts> facts, IndexDelta *delta = nullptr,
                std::pair<std::uint64_t, std::uint64_t> revision = {});
     void prune(std::uint64_t first, std::uint64_t last, IndexDelta *delta = nullptr);
     void observe(const SessionDelta &delta, IndexDelta *changes = nullptr);
+    void limit(std::span<const std::uint64_t> packets, IndexDelta *changes = nullptr);
     AnalysisDiagnostics diagnostics() const {
         return diagnostics_;
     }
