@@ -18,6 +18,7 @@ if($LASTEXITCODE){throw 'Fuzz build failed.'}
 python (Join-Path $sourceRoot 'tests/make_application_corpus.py') (Join-Path $build 'application-corpus')
 New-Item -ItemType Directory -Path (Join-Path $build 'file-corpus'),(Join-Path $build 'failures') -Force | Out-Null
 Copy-Item -Path (Join-Path $sourceRoot 'samples/*.pcap') -Destination (Join-Path $build 'file-corpus')
+python (Join-Path $sourceRoot 'tests/capture_fixtures.py') (Join-Path $build 'file-corpus')
 foreach($target in @('packet','stream','application','file')){
     & (Join-Path $build "$($target)_fuzzer.exe") (Join-Path $build "$target-corpus") -max_len=65535 -timeout=5 -rss_limit_mb=512 "-max_total_time=$Seconds" "-artifact_prefix=$build/failures/$target-" *> (Join-Path $build "$target-fuzz.log")
     if($LASTEXITCODE){throw "$target fuzz failed. See $build/$target-fuzz.log"}

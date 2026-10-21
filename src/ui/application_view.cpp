@@ -58,7 +58,7 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     list_->setHeaderLabels({"协议", "方向", "摘要", "状态"});
     list_->setUniformRowHeights(true);
     list_->setColumnWidth(0, 75);
-    list_->setColumnWidth(1, 60);
+    list_->setColumnWidth(1, 90);
     list_->setColumnWidth(2, 350);
     auto *lower = new QSplitter(Qt::Horizontal, splitter);
     fields_ = new QTreeWidget(lower);
@@ -99,6 +99,7 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     fillTimer_.setInterval(0);
     i18n::bind(this);
     connect(&i18n::language(), &i18n::Language::changed, this, &ApplicationView::rebuild);
+    rebuild();
 }
 ApplicationView::~ApplicationView() {
     // Child widgets outlive members and may emit selection signals while closing.

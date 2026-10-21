@@ -47,6 +47,9 @@ void writerCases(){
     auto x=r.next(),y=r.next();check(x->bytes==a.raw.bytes && x->timestampNs==a.raw.timestampNs && x->interfaceInfo->name=="eth0","PCAPNG roundtrip");check(y->linkType==101 && x->interfaceId!=y->interfaceId,"Mixed links preserved");check(decodeSummary(*y).error.empty(),"Opaque link is not malformed");
     bool failed=false;try{std::ostringstream legacy;writeCapture(legacy,list,CaptureFormat::Pcap);}catch(...){failed=true;}check(failed,"Classic mixed interfaces rejected");
     a.raw.timestampValid=false;list={&a};std::ostringstream simple;writeCapture(simple,list,CaptureFormat::Pcapng);f.write(simple.str());CaptureReader spb(f.path);check(!spb.next()->timestampValid,"SPB export");
+    a.raw.timestampValid=true;b.raw.timestampValid=false;list={&a,&b};std::ostringstream multi;writeCapture(multi,list,CaptureFormat::Pcapng);f.write(multi.str());CaptureReader reordered(f.path);
+    x=reordered.next();y=reordered.next();check(x->interfaceId!=y->interfaceId && y->interfaceId==0 && !y->timestampValid && y->bytes==b.raw.bytes,"Untimed interface is first in multi-interface export");
+    a.raw.timestampValid=false;failed=false;try{std::ostringstream invalid;writeCapture(invalid,list,CaptureFormat::Pcapng);}catch(const std::exception&){failed=true;}check(failed,"Untimed records on two interfaces rejected");
 }
 }
 int main(){try{readerCases();writerCases();std::cout<<checks<<" file checks passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

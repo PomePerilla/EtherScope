@@ -116,7 +116,7 @@ private slots:
         }
     }
     void applicationViewKeepsSelectionAndLocatesBytes(){
-        ApplicationView view;auto result=std::make_shared<ApplicationResult>();
+        ApplicationView view;QCOMPARE(view.findChild<QLabel*>("applicationState")->text(),i18n::text("Pending analysis"));auto result=std::make_shared<ApplicationResult>();
         ApplicationMessage message;message.protocol="HTTP";message.bytes=std::make_shared<const std::vector<std::uint8_t>>(64,'x');message.length=64;
         message.sources={{7,54,32,0},{8,54,32,32}};message.fields={{"Host","http.host",std::string("example.com"),33,5}};
         result->messages={message,message};result->messages[1].offset=1;view.setResults({result});view.show();
@@ -135,6 +135,13 @@ private slots:
         auto* input=window.findChild<QLineEdit*>("expressionInput");input->setText("tcp &&");QVERIFY(!window.applyExpression(input->text()));QCOMPARE(window.packetModel()->rowCount(),1);QCOMPARE(input->text(),QString("tcp &&"));
         window.findChild<QPushButton*>("expressionCondition")->click();QCOMPARE(window.packetModel()->rowCount(),4);
         window.selectPacket(3);window.findChild<QAction*>("applicationAnalysisAction")->trigger();QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QTreeWidget*>("applicationMessages")->topLevelItemCount()>0,5000);QVERIFY(window.findChild<QPlainTextEdit*>("applicationBytes")->toPlainText().contains("GET"));
+        auto* dialog=window.findChild<QDialog*>("applicationDialog");QVERIFY(dialog);
+        for(const auto& language:{"en","zh_CN","zh_TW"})for(bool dark:{false,true})for(const QSize size:{QSize(1024,768),QSize(1440,900)}){
+            i18n::language().set(language);window.setDarkTheme(dark);dialog->resize(size);QTest::qWait(30);
+            auto* view=dialog->findChild<ApplicationView*>();QVERIFY(view);QVERIFY(dialog->rect().contains(QRect(view->mapTo(dialog,QPoint(0,0)),view->size())));
+            auto* bytes=view->findChild<QPlainTextEdit*>("applicationBytes");QVERIFY(bytes->isVisible());QVERIFY(bytes->width()>=200);
+            const auto screenshots=qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");if(!screenshots.isEmpty())QVERIFY(dialog->grab().save(screenshots+QString("/application-%1-%2-%3.png").arg(language).arg(dark?"dark":"light").arg(size.width())));
+        }
     }
     void expressionRestoresOnlyValidCondition() {
         const auto options=testOptions();{

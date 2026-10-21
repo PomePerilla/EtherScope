@@ -69,7 +69,7 @@ void MainWindow::setDarkTheme(bool dark) {
         QMenu::item:selected { background: %10; }
         QMenu::item:disabled { color: %4; }
         QToolTip { color: %7; background: %2; border: 1px solid %3; padding: 4px; }
-        QPlainTextEdit#hexView { font-family: 'Consolas', 'Courier New'; font-size: 12px; padding: 6px; }
+        QPlainTextEdit#hexView, QPlainTextEdit#streamBytes, QPlainTextEdit#applicationBytes { font-family: 'Consolas', 'Courier New'; font-size: 12px; padding: 6px; }
     )").arg(bg,bar,border,muted,base,accent,text,hover,dark?"#646464":"#9da5af",selection,style::danger,QString::number(style::controlHeight-2)));
     {QSignalBlocker block(theme_);theme_->setChecked(dark);}updateStatus();
 }

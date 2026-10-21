@@ -72,6 +72,7 @@ jobs:
           mkdir -p build/application-corpus build/file-corpus
           python3 tests/make_application_corpus.py build/application-corpus
           cp samples/*.pcap build/file-corpus/
+          python3 tests/capture_fixtures.py build/file-corpus
           mkdir -p build/fuzz-failures
           build/core/packet_fuzzer build/corpus -max_len=65540 -timeout=5 -rss_limit_mb=512 -max_total_time="$FUZZ_SECONDS" -artifact_prefix=build/fuzz-failures/packet- > build/packet-fuzz.log 2>&1 &
           packet_pid=$!

@@ -320,8 +320,9 @@ CaptureWriter::CaptureWriter(std::ostream &stream, CaptureFormat format,
         if (!p)
             throw std::runtime_error("Invalid capture packet");
         validate(*p);
+        const auto snap = p->interfaceInfo ? p->interfaceInfo->snapLength : 65535;
         auto [it, inserted] =
-            interfaces_.try_emplace(p->interfaceId, Interface{0, p->linkType, 65535});
+            interfaces_.try_emplace(p->interfaceId, Interface{0, p->linkType, snap});
         if (it->second.link != p->linkType)
             throw std::runtime_error("Capture interface link types differ");
         it->second.snap = std::max(it->second.snap, static_cast<std::uint32_t>(p->bytes.size()));
@@ -346,14 +347,17 @@ CaptureWriter::CaptureWriter(std::ostream &stream, CaptureFormat format,
         output(h);
         return;
     }
+    std::optional<std::uint32_t> untimed;
     for (const auto *p : packets) {
         if (p->timestampValid && p->timestampNs < 0)
             throw std::runtime_error("PCAPNG timestamp is out of range");
-        if (!p->timestampValid &&
-            (interfaces_.size() != 1 ||
-             p->bytes.size() !=
-                 std::min<std::size_t>(p->originalLength, interfaces_.begin()->second.snap)))
-            throw std::runtime_error("Missing timestamp cannot be represented losslessly");
+        if (!p->timestampValid) {
+            if ((untimed && *untimed != p->interfaceId) ||
+                p->bytes.size() !=
+                    std::min<std::size_t>(p->originalLength, interfaces_.at(p->interfaceId).snap))
+                throw std::runtime_error("Missing timestamp cannot be represented losslessly");
+            untimed = p->interfaceId;
+        }
     }
     std::vector<std::uint8_t> body;
     put(body, 0x1a2b3c4d, 4);
@@ -362,7 +366,17 @@ CaptureWriter::CaptureWriter(std::ostream &stream, CaptureFormat format,
     put(body, UINT64_MAX, 8);
     block(shb, body);
     std::uint32_t index = 0;
-    for (auto &[id, i] : interfaces_) {
+    // SPB implicitly uses the first IDB, even when other interfaces are present.
+    std::vector<std::uint32_t> order;
+    if (untimed)
+        order.push_back(*untimed);
+    for (const auto &[id, info] : interfaces_) {
+        (void)info;
+        if (!untimed || id != *untimed)
+            order.push_back(id);
+    }
+    for (const auto id : order) {
+        auto &i = interfaces_.at(id);
         i.index = index++;
         body.clear();
         if (i.link > 65535)
@@ -405,7 +419,7 @@ void CaptureWriter::write(const RawPacket &p) {
         return;
     }
     if (!p.timestampValid) {
-        if (interfaces_.size() != 1 ||
+        if (it->second.index != 0 ||
             p.bytes.size() != std::min<std::size_t>(p.originalLength, it->second.snap))
             throw std::runtime_error("Missing timestamp cannot be represented losslessly");
         put(body, p.originalLength, 4);

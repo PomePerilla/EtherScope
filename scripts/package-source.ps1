@@ -11,6 +11,7 @@ foreach ($folder in @('src', 'tests', 'scripts')) {
     foreach ($item in Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -Recurse -Force) {
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Linked path: $($item.FullName)" }
         if ($item.PSIsContainer) { continue }
+        if ($item.Extension -eq '.pyc' -and $item.Directory.Name -eq '__pycache__') { continue }
         if ($item.Extension -notin @('.cpp', '.h', '.inc', '.in', '.xpm', '.ps1', '.py', '.iss', '.isl', '.json')) {
             throw "Unexpected source file: $($item.FullName)"
         }

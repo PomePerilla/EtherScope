@@ -22,7 +22,6 @@ RecordingService::~RecordingService() {
 RecordingStats RecordingService::stats() const {
     std::lock_guard lock(mutex_);
     auto value = stats_;
-    value.queued = queue_.size();
     return value;
 }
 bool RecordingService::start(RecordingOptions options) {
@@ -76,6 +75,7 @@ void RecordingService::submit(const RawPacket &raw) {
         return;
     }
     queue_.push_back(raw);
+    ++stats_.queued;
     queueBytes_ += bytes;
     wake_.notify_one();
 }
@@ -124,6 +124,7 @@ void RecordingService::run(RecordingOptions options, quint64 request) {
             throw std::runtime_error("Recording write failed");
         std::lock_guard lock(mutex_);
         stats_.written += pending;
+        stats_.queued -= pending;
         pending = 0;
         stats_.diskBytes = closedBytes + writer->bytesWritten();
         lastFlush = now();
@@ -234,6 +235,7 @@ void RecordingService::run(RecordingOptions options, quint64 request) {
         stats_.failed = true;
         stats_.error = QString::fromUtf8(error.what());
         stats_.unwritten += queue_.size() + pending + (current ? 1u : 0u);
+        stats_.queued=0;
         queue_.clear();
         queueBytes_ = 0;
         accepting_ = false;
