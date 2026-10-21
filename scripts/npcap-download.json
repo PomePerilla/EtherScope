@@ -1,0 +1,8 @@
+{
+  "version": "1.89",
+  "url": "https://npcap.com/dist/npcap-1.89.exe",
+  "fileName": "npcap-1.89.exe",
+  "sha256": "8AED85E900D783D1308506E919587D3E540451947AF8A82F2D04F819E44305CC",
+  "publisher": "Nmap Software LLC",
+  "licenseUrl": "https://github.com/nmap/npcap/blob/master/LICENSE"
+}

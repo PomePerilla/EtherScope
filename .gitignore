@@ -1,0 +1,8 @@
+/.tools/
+/build/
+/output/
+/课程项目/
+/课件/
+*.user
+__pycache__/
+*.pyc

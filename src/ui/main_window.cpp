@@ -1,0 +1,331 @@
+#include "ui/main_window.h"
+#include <QCheckBox>
+#include <QComboBox>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QTableView>
+#include <QTabBar>
+#include <QTreeWidget>
+#include "core/pcap_file.h"
+#include "ui/helpers.h"
+#include "ui/filter_chip.h"
+#include "ui/style.h"
+#include <QAction>
+#include <QApplication>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QFontDatabase>
+#include <QCloseEvent>
+#include <QDir>
+#include <QGuiApplication>
+#include <QHeaderView>
+#include <QHBoxLayout>
+#include <QKeyEvent>
+#include <QWheelEvent>
+#include <QScreen>
+#include <QScrollBar>
+#include <QScopedValueRollback>
+#include <QSettings>
+#include <QResource>
+#include <QSignalBlocker>
+#include <QSplitter>
+#include <QStandardPaths>
+#include <QStatusBar>
+#include <QTextBlock>
+#include <QVBoxLayout>
+#include <QStandardItemModel>
+#include <QTreeView>
+#include <algorithm>
+#include <filesystem>
+#include <functional>
+#include <utility>
+
+static void initDesktopResources() {Q_INIT_RESOURCE(desktop_icons);}
+namespace etherscope {
+MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(parent),preparation_(this,options.capture.interfaces,std::move(options.prepareFile)),engine_(this,std::move(options.capture)),exporter_(this,std::move(options.exportWriter)),snapshotObserver_(std::move(options.snapshotObserver)) {
+    initDesktopResources();
+    const auto config=options.settingsFile.isEmpty()?QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)+"/settings.ini":options.settingsFile;
+    QDir().mkpath(QFileInfo(config).absolutePath());settings_=std::make_unique<QSettings>(config,QSettings::IniFormat);
+    buildUi();
+    connect(theme_,&QAction::toggled,this,&MainWindow::setDarkTheme);
+    connect(refresh_,&QAction::triggered,this,&MainWindow::refreshInterfaces);
+    connect(devices_,&QComboBox::currentIndexChanged,this,[this](int index){
+        if(index>=0) preferredDevice_=devices_->currentData().toString();updateButtons();
+    });
+    connect(start_,&QPushButton::clicked,this,&MainWindow::startCapture);
+    connect(stop_,&QPushButton::clicked,this,&MainWindow::stopCapture);
+    connect(open_,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getOpenFileName(this,"打开文件",usableDirectory(openDirectory_),"PCAP 文件 (*.pcap *.cap)"); if(!path.isEmpty()) openFile(path);});
+    connect(save_,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getSaveFileName(this,"保存文件",QDir(usableDirectory(saveDirectory_)).filePath("capture.pcap"),"PCAP 文件 (*.pcap)"); if(!path.isEmpty()) saveFile(path);});
+    connect(apply_,&QPushButton::clicked,this,&MainWindow::applyFilter); connect(mac_,&QLineEdit::returnPressed,this,&MainWindow::applyFilter); connect(ip_,&QLineEdit::returnPressed,this,&MainWindow::applyFilter);
+    connect(protocol_,&QComboBox::currentIndexChanged,this,[this](int index){auto filter=model_->filter();filter.protocol=index==0?"":protocol_->itemText(index).toStdString();filter.icmpType.reset();commitFilter(std::move(filter));});
+    connect(icmpType_,&QComboBox::currentIndexChanged,this,[this]{
+        auto filter=model_->filter();if(filter.protocol!="ICMP")return;
+        const auto type=icmpType_->currentData().toInt();filter.icmpType=type<0?std::nullopt:std::optional<std::uint8_t>(static_cast<std::uint8_t>(type));commitFilter(std::move(filter));
+    });
+    connect(clear_,&QPushButton::clicked,this,[this]{
+        mac_->clear();ip_->clear();macDirection_->setCurrentIndex(0);ipDirection_->setCurrentIndex(0);
+        {QSignalBlocker block(protocol_);protocol_->setCurrentIndex(0);}commitFilter({});
+        macError_->hide();ipError_->hide();style::setFlag(mac_,"invalid",false);style::setFlag(ip_,"invalid",false);
+    });
+    connect(macChip_,&QPushButton::clicked,this,[this]{auto filter=model_->filter();filter.mac.reset();filter.macDirection=Direction::Either;mac_->clear();macDirection_->setCurrentIndex(0);macError_->hide();style::setFlag(mac_,"invalid",false);commitFilter(std::move(filter));});
+    connect(ipChip_,&QPushButton::clicked,this,[this]{auto filter=model_->filter();filter.ip.reset();filter.ipv6.reset();filter.ipDirection=Direction::Either;ip_->clear();ipDirection_->setCurrentIndex(0);ipError_->hide();style::setFlag(ip_,"invalid",false);commitFilter(std::move(filter));});
+    connect(protocolChip_,&QPushButton::clicked,this,[this]{protocol_->setCurrentIndex(0);});
+    connect(icmpChip_,&QPushButton::clicked,this,[this]{icmpType_->setCurrentIndex(0);});
+    connect(modes_,&QTabBar::currentChanged,this,&MainWindow::switchMode);
+    connect(table_->selectionModel(),&QItemSelectionModel::currentRowChanged,this,[this]{if(!updatingSelection_) showDetails();});
+    connect(table_,&QTableView::clicked,this,[this](const QModelIndex& index){if(view_==0 && index.row()!=model_->rowCount()-1) follow_->setChecked(false);});
+    connect(follow_,&QCheckBox::toggled,this,[this](bool checked){if(checked && view_==0) table_->scrollToBottom();});
+    table_->installEventFilter(this);table_->viewport()->installEventFilter(this);table_->verticalScrollBar()->installEventFilter(this);
+    connect(table_->verticalScrollBar(),&QScrollBar::sliderMoved,this,[this](int value){if(view_==0 && value<table_->verticalScrollBar()->maximum()) follow_->setChecked(false);});
+    connect(table_->verticalScrollBar(),&QScrollBar::actionTriggered,this,[this]{
+        if(view_==0 && table_->verticalScrollBar()->sliderPosition()<table_->verticalScrollBar()->maximum()) follow_->setChecked(false);
+    });
+    connect(fields_,&QTreeWidget::currentItemChanged,this,[this](QTreeWidgetItem* item){highlightBytes(item);});
+    connect(fields_,&QTreeWidget::itemCollapsed,this,[this](QTreeWidgetItem* item){collapsedFields_.insert(item->data(0,Qt::UserRole+2).toString());});
+    connect(fields_,&QTreeWidget::itemExpanded,this,[this](QTreeWidgetItem* item){collapsedFields_.remove(item->data(0,Qt::UserRole+2).toString());});
+    connect(previousBytes_,&QPushButton::clicked,this,[this]{renderHexPage(hexStart_>=hexPageSize_?hexStart_-hexPageSize_:0);highlightBytes(fields_->currentItem(),false);});
+    connect(nextBytes_,&QPushButton::clicked,this,[this]{renderHexPage(hexStart_+hexPageSize_);highlightBytes(fields_->currentItem(),false);});
+    connect(&preparation_,&PreparationService::interfacesReady,this,[this](quint64 request,CaptureInterfaces interfaces,const QString& error,bool cancelled){
+        if(request!=preparation_.interfaceGeneration())return;
+        queryingInterfaces_=false;
+        if(!cancelled && !closing_) {
+            const auto previous=devices_->currentData().toString().isEmpty()?preferredDevice_:devices_->currentData().toString();
+            QSignalBlocker block(devices_);auto* model=qobject_cast<QStandardItemModel*>(devices_->model());model->removeRows(0,model->rowCount());
+            for(const auto& device:interfaces){
+                auto* name=new QStandardItem(device.description);name->setData(device.name,Qt::UserRole);name->setToolTip(device.description);
+                auto* addresses=new QStandardItem(device.addresses);addresses->setToolTip(device.addresses);model->appendRow({name,addresses});
+            }
+            if(!previous.isEmpty())devices_->setCurrentIndex(devices_->findData(previous));
+            if(devices_->currentIndex()>=0)preferredDevice_=devices_->currentData().toString();
+            auto* view=qobject_cast<QTreeView*>(devices_->view());view->resizeColumnToContents(0);view->resizeColumnToContents(1);
+            sourceStatus_[0]=!error.isEmpty()?error.toStdString():(interfaces.empty()?"无可用接口":"就绪");
+        }
+        updateStatus();updateButtons();emit interfacesFinished(request);tryClose();
+    },Qt::QueuedConnection);
+    connect(&preparation_,&PreparationService::fileReady,this,[this](quint64 request,const QString& path,PreparedFile reader,const QString& error,bool cancelled){
+        if(request!=fileRequest_ || !openingFile_)return;preparingFile_=false;
+        if(cancelled || closing_ || fileCancelRequested_){completeFileOpen(FileOpenResult::Cancelled);tryClose();return;}
+        if(!reader){reportError(error);completeFileOpen(FileOpenResult::Failure,error);return;}
+        if(!scheduleAction([this,path,reader=std::move(reader)]{beginFile(path,reader);})){completeFileOpen(FileOpenResult::Cancelled);}
+    },Qt::QueuedConnection);
+    connect(&engine_,&CaptureEngine::opened,this,[this](quint64 epoch,const QString& text){
+        if(epoch!=engine_.generation() || active_<0) return;
+        if(active_==1) openDirectory_=QFileInfo(filePath_).absolutePath();
+        if(state_!=CaptureState::Stopping) {state_=CaptureState::Running;sourceStatus_[active_]=text.toStdString();}
+        updateStatus();updateButtons();
+    });
+    connect(&engine_,&CaptureEngine::failed,this,[this](quint64 epoch,const QString& text){
+        if(epoch!=engine_.generation() || active_<0) return; failed_[active_]=true;sourceStatus_[active_]=text.toStdString();updateStatus();updateButtons();
+    });
+    connect(&engine_,&CaptureEngine::finished,this,[this](quint64 epoch){
+        if(epoch!=engine_.generation() || active_<0)return;
+        producerFinished_=true;
+        flush();
+    });
+    connect(&exporter_,&ExportEngine::progress,this,[this](quint64 job,quint64 bytes,quint64 total){
+        if(saving_ && job==exporter_.generation()) exportLabel_->setText(QString("正在保存 %1%").arg(total?bytes*100/total:0));
+    });
+    connect(&exporter_,&ExportEngine::finished,this,[this](quint64 job,bool success,const QString& path,quint64 count,const QString& error){
+        if(job!=exporter_.generation() || !saving_) return;saving_=false;exportLabel_->clear();
+        if(success) {
+            saveDirectory_=QFileInfo(path).absolutePath();const auto message=QString("已保存 %1 包").arg(count);exportLabel_->setText(message);
+            QTimer::singleShot(12000,this,[this,message]{if(!saving_ && exportLabel_->text()==message)exportLabel_->clear();});
+        }
+        else {closing_=false;reportError(error);}
+        updateStatus();updateButtons();emit saveFinished(success,path,count,error);tryClose();
+    });
+    connect(&batchTimer_,&QTimer::timeout,this,&MainWindow::flush); batchTimer_.start(100);
+    connect(&rateTimer_,&QTimer::timeout,this,[this]{
+        const double seconds=std::max(0.001,rateClock_.restart()/1000.0); const auto c=counters_[view_];
+        const auto count=c.received>=lastCount_?c.received-lastCount_:0, bytes=c.bytes>=lastBytes_?c.bytes-lastBytes_:0;
+        chart_->addSample(count/seconds,bytes/seconds);chart_->setProtocols(currentStore().stats().protocols);lastCount_=c.received;lastBytes_=c.bytes;
+    }); rateClock_.start(); rateTimer_.start(1000);
+    setDarkTheme(true);restoreSettings();refreshInterfaces();updateStatus();updateButtons();
+}
+MainWindow::~MainWindow() {engine_.stop();saveSettings();}
+void MainWindow::refreshInterfaces() {
+    if(closing_ || preparation_.discovering() || state_!=CaptureState::Idle || openingFile_)return;
+    actionError_.clear();sourceStatus_[0]="查询网卡";queryingInterfaces_=true;preparation_.requestInterfaces();updateStatus();updateButtons();
+}
+void MainWindow::startCapture() {
+    if(discovering() || openingFile_ || devices_->currentData().toString().isEmpty())return;
+    const auto device=devices_->currentData().toString();scheduleAction([this,device]{beginLive(device);});
+}
+bool MainWindow::scheduleAction(std::function<void()> action) {
+    if(closing_ || state_==CaptureState::Stopping) return false;
+    if(state_!=CaptureState::Idle){pendingAction_=std::move(action);requestCaptureStop();}else action();return true;
+}
+void MainWindow::beginLive(const QString& device) {
+    actionError_.clear();showMode(0);model_->clear();selected_.reset();failed_[0]=false;counters_[0]={};sourceStatus_[0]="连接中";
+    preferredDevice_=device;state_=CaptureState::Starting;
+    active_=0;producerFinished_=false;resetRates();engine_.startLive(device);updateStatus();updateButtons();
+}
+void MainWindow::stopCapture() {
+    if(openingFile_) {
+        if(preparingFile_){fileCancelRequested_=true;preparation_.cancelFile();}
+        else if(activeFileRequest_!=fileRequest_ || active_!=1){pendingAction_={};completeFileOpen(FileOpenResult::Cancelled);}
+    }
+    requestCaptureStop();
+}
+void MainWindow::requestCaptureStop() {
+    if(state_==CaptureState::Idle || state_==CaptureState::Stopping)return;
+    state_=CaptureState::Stopping;if(active_>=0 && !failed_[active_])sourceStatus_[active_]="停止中";
+    engine_.requestStop();updateStatus();updateButtons();
+}
+void MainWindow::flush() {
+    if(active_<0)return;
+    QElapsedTimer elapsed;elapsed.start();
+    std::size_t limit=512;
+    if(snapshotPending_ && snapshotSession_==active_) {
+        const auto& store=active_==0?live_:file_;
+        limit=static_cast<std::size_t>(std::min<std::uint64_t>(limit,snapshotBoundary_-std::min(snapshotBoundary_,store.stats().received)));
+    }
+    auto batch=engine_.takeBatch(limit);
+    if(!batch.empty()) {
+        if(active_==view_) {
+            QScopedValueRollback<bool> changing(updatingSelection_,true);
+            model_->append(std::move(batch));
+            if(!table_->currentIndex().isValid() && model_->rowCount()>0)table_->setCurrentIndex(model_->index(0,0));
+            showDetails();
+            if(follow_->isChecked() && view_==0)table_->scrollToBottom();
+        } else {
+            auto& store=active_==0?live_:file_;
+            for(auto& packet:batch)store.append(std::move(packet));
+        }
+    }
+    counters_[active_]=engine_.counters();
+    if(snapshotPending_) {
+        const auto& store=snapshotSession_==0?live_:file_;
+        if(store.stats().received>=snapshotBoundary_)startSnapshotExport();
+    }
+    updateStatus();
+    if(!saving_ && !closing_ && !currentStore().packets().empty() && !save_->isEnabled())save_->setEnabled(true);
+    emit batchProcessed(elapsed.nsecsElapsed()/1000);
+    if(producerFinished_ && counters_[active_].queuedPackets==0) {
+        finishCapture();
+    } else if(counters_[active_].queuedPackets>0 && !drainScheduled_) {
+        drainScheduled_=true;
+        QTimer::singleShot(0,this,[this]{drainScheduled_=false;flush();});
+    }
+}
+void MainWindow::finishCapture() {
+    const bool stopped=state_==CaptureState::Stopping;const int finishedSession=active_;
+    if(!failed_[active_])sourceStatus_[active_]=active_==1?(stopped?"读取已停止":"读取完成"):(stopped?"已停止":"已结束");
+    active_=-1;state_=CaptureState::Idle;producerFinished_=false;
+    if(openingFile_ && finishedSession==1 && activeFileRequest_==fileRequest_)completeFileOpen(failed_[1]?FileOpenResult::Failure:(stopped?FileOpenResult::Cancelled:FileOpenResult::Success),failed_[1]?q(sourceStatus_[1]):QString{});
+    auto action=std::exchange(pendingAction_,{});
+    if(action && !closing_)action();
+    updateStatus();updateButtons();tryClose();
+}
+void MainWindow::switchMode(int index) {
+    if(index==view_)return;
+    if(openingFile_){QSignalBlocker block(modes_);modes_->setCurrentIndex(view_);return;}
+    {QSignalBlocker block(modes_);modes_->setCurrentIndex(view_);}
+    scheduleAction([this,index]{showMode(index);});
+}
+void MainWindow::showMode(int index) {
+    {QSignalBlocker block(modes_);modes_->setCurrentIndex(index);}
+    if(view_==index) return;
+    actionError_.clear();view_=index;selected_.reset();model_->setStore(&currentStore());showDetails();resetRates();updateStatus();updateButtons();
+    if(model_->rowCount()>0) table_->setCurrentIndex(model_->index(0,0));
+}
+bool MainWindow::openFile(const QString& path) {
+    if(closing_ || openingFile_ || state_==CaptureState::Stopping || path.isEmpty())return false;
+    openingFile_=true;preparingFile_=true;fileCancelRequested_=false;openingPath_=path;actionError_.clear();
+    if(!preparation_.requestFile(path)){openingFile_=false;preparingFile_=false;return false;}
+    fileRequest_=preparation_.fileGeneration();updateStatus();updateButtons();return true;
+}
+void MainWindow::completeFileOpen(FileOpenResult result,const QString& error) {
+    if(!openingFile_)return;openingFile_=false;preparingFile_=false;
+    emit fileOpenFinished(fileRequest_,result,openingPath_,error);updateStatus();updateButtons();
+}
+void MainWindow::beginFile(const QString& path,PreparedFile reader) {
+    activeFileRequest_=fileRequest_;
+    actionError_.clear();showMode(1);model_->clear();selected_.reset();failed_[1]=false;counters_[1]={};
+    sourceStatus_[1]="读取中";fileName_=QFileInfo(path).fileName();filePath_=path;
+    active_=1;producerFinished_=false;state_=CaptureState::Starting;resetRates();engine_.startFile(path,std::move(reader));updateStatus();updateButtons();
+}
+bool MainWindow::saveFile(const QString& path) {
+    if(saving_ || closing_ || path.isEmpty())return false;
+    const auto& store=currentStore();
+    const auto boundary=active_==view_?engine_.counters().enqueued:store.stats().received;
+    if(store.packets().empty() && boundary<=store.stats().received) {reportError("缓存为空");return false;}
+    saving_=true;snapshotPending_=true;snapshotPath_=path;snapshotSession_=view_;snapshotBoundary_=boundary;
+    actionError_.clear();exportLabel_->setText("正在保存 0%");updateStatus();updateButtons();
+    if(store.stats().received>=snapshotBoundary_)startSnapshotExport();
+    else if(!drainScheduled_) {
+        drainScheduled_=true;QTimer::singleShot(0,this,[this]{drainScheduled_=false;flush();});
+    }
+    return true;
+}
+void MainWindow::startSnapshotExport() {
+    const auto& store=snapshotSession_==0?live_:file_;
+    PacketSnapshot snapshot(store.packets().begin(),store.packets().end());if(snapshotObserver_)snapshotObserver_(snapshot);
+    snapshotPending_=false;
+    if(!exporter_.start(snapshotPath_,std::move(snapshot))) {
+        saving_=false;closing_=false;exportLabel_->clear();reportError("保存启动失败");updateButtons();
+        emit saveFinished(false,snapshotPath_,0,"保存启动失败");
+    }
+    updateStatus();
+}
+void MainWindow::updateStatus() {
+    if(!status_)return;
+    const auto statusText=closing_?QString("退出中"):(!actionError_.isEmpty()?actionError_:(preparingFile_?QString("准备文件"):q(sourceStatus_[view_])));
+    const bool error=failed_[view_] || !actionError_.isEmpty();
+    if(statusText!=lastStatusText_){lastStatusText_=statusText;status_->setText(statusText);status_->setToolTip(statusText);}
+    if(error!=lastStatusError_){lastStatusError_=error;style::setFlag(status_,"error",error);}
+    const auto& s=currentStore();const auto& c=counters_[view_];const auto drops=c.driverDropped?QString::number(*c.driverDropped):QString("未知");
+    const QStringList values={QString::number(c.received),QString::number(s.stats().received),QString::number(s.packets().size()),QString::number(model_->rowCount()),
+        QString::number(s.stats().overwritten),QString::number(c.queueDropped),drops,QString::number(s.stats().malformed),
+        QString::number(double(s.estimatedBytes())/1048576,'f',1)+" MiB",QString::number(double(c.queuedEstimatedBytes)/1048576,'f',1)+" MiB",QString::number(double(exporter_.referencedBytes())/1048576,'f',1)+" MiB"};
+    for(qsizetype i=0;i<values.size();++i)if(diagnosticValues_[i]->text()!=values[i])diagnosticValues_[i]->setText(values[i]);
+    capturedLabel_->setText(QString::number(c.received));displayedLabel_->setText(QString::number(model_->rowCount()));
+    const auto discarded=c.queueDropped+c.driverDropped.value_or(0);droppedLabel_->setText(QString::number(discarded));style::setFlag(droppedLabel_,"warning",discarded>0);
+    style::setFlag(diagnostics_,"warning",discarded>0);setWindowTitle("EtherScope");modes_->setTabToolTip(1,filePath_);
+
+}
+void MainWindow::updateButtons() {
+    start_->setEnabled(!busy() && !discovering() && !closing_ && devices_->currentIndex()>=0);stop_->setEnabled(!closing_ && (preparingFile_ || state_==CaptureState::Starting || state_==CaptureState::Running));
+    refresh_->setEnabled(!busy() && !discovering() && !closing_);devices_->setEnabled(!busy() && !discovering() && !closing_);modes_->setEnabled(!openingFile_ && state_!=CaptureState::Stopping && !closing_);
+    open_->setEnabled(!openingFile_ && state_!=CaptureState::Stopping && !closing_);save_->setEnabled(!saving_ && !closing_ && !currentStore().packets().empty());follow_->setEnabled(view_==0);
+}
+void MainWindow::resetRates() {chart_->reset();chart_->setProtocols(currentStore().stats().protocols);lastCount_=counters_[view_].received;lastBytes_=counters_[view_].bytes;rateClock_.restart();}
+void MainWindow::reportError(const QString& message) {actionError_=message;updateStatus();}
+void MainWindow::closeEvent(QCloseEvent* event) {
+    if(!busy() && !preparation_.busy() && !saving_){saveSettings();event->accept();return;}
+    event->ignore();closing_=true;pendingAction_={};preparation_.requestStop();stopCapture();updateStatus();updateButtons();tryClose();
+}
+void MainWindow::tryClose() {
+    if(!closing_ || busy() || preparation_.busy() || saving_ || closeScheduled_)return;
+    closeScheduled_=true;QTimer::singleShot(0,this,[this]{closeScheduled_=false;if(closing_ && !busy() && !preparation_.busy() && !saving_)close();});
+}
+bool MainWindow::eventFilter(QObject* watched,QEvent* event) {
+    if(event->type()==QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key()==Qt::Key_Escape && addressPanel_->isVisible()) {
+        auto* widget=qobject_cast<QWidget*>(watched);
+        if(widget && addressPanel_->isAncestorOf(widget)){addressToggle_->setChecked(false);addressToggle_->setFocus();return true;}
+    }
+    const bool tableInput=watched==table_ || watched==table_->viewport() || watched==table_->verticalScrollBar();
+    bool navigation=false,wheel=false;
+    if(event->type()==QEvent::KeyPress) {
+        const auto key=static_cast<QKeyEvent*>(event)->key();navigation=key==Qt::Key_Up || key==Qt::Key_Down || key==Qt::Key_PageUp || key==Qt::Key_PageDown || key==Qt::Key_Home || key==Qt::Key_End;
+    } else if(event->type()==QEvent::Wheel) {
+        auto* value=static_cast<QWheelEvent*>(event);wheel=value->angleDelta().y()!=0 || value->pixelDelta().y()!=0;
+    }
+    if(view_==0 && tableInput && (wheel || navigation)) {
+        QTimer::singleShot(0,this,[this,navigation]{
+            if(view_==0 && (table_->verticalScrollBar()->value()<table_->verticalScrollBar()->maximum() ||
+                (navigation && table_->currentIndex().isValid() && table_->currentIndex().row()!=model_->rowCount()-1))) follow_->setChecked(false);
+        });
+    }
+    return QMainWindow::eventFilter(watched,event);
+}
+void MainWindow::selectPacket(int row) {if(row>=0 && row<model_->rowCount()) table_->setCurrentIndex(model_->index(row,0));}
+void MainWindow::ingestBenchmark(std::vector<Packet> packets) {
+    if(busy() || closing_) return;
+    if(view_!=1) showMode(1);sourceStatus_[1]="测试中";
+    for(const auto& p:packets) {++counters_[1].received;counters_[1].bytes+=p.raw.originalLength;}
+    model_->append(std::move(packets));showDetails();updateStatus();updateButtons();
+}
+}

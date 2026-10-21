@@ -1,0 +1,78 @@
+#include "ui/main_window.h"
+#include "ui/helpers.h"
+#include <QLabel>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QSignalBlocker>
+#include <QTableView>
+#include <QTextBlock>
+#include <QTreeWidget>
+#include <QFontDatabase>
+#include <algorithm>
+
+namespace etherscope {
+namespace {
+QString fieldText(const std::string& value) {
+    auto text=q(value);
+    if(text=="未捕获或无法确认，不作推断") return "-";
+    return text.replace("（捕获内容）","").replace("（未验证）","").replace("（未解密）","").replace("; 不递归解析","");
+}
+QString warningText(const std::string& value) {
+    const auto text=q(value);
+    if(text.startsWith("ESP ")) return "ESP";
+    if(text.startsWith("有效载荷长度为 0")) return "零长度载荷";
+    if(text.startsWith("邻居发现报文")) return "NDP 首部异常";
+    if(text.startsWith("不支持的 IPv6")) return "未知协议";
+    return text.section(";",0,0);
+}
+}
+void MainWindow::showDetails() {
+    const auto packetAtRow=model_->packetAt(table_->currentIndex().row());
+    if(packetAtRow && packetAtRow==selected_)return;
+    selected_=packetAtRow;QSignalBlocker block(fields_);fields_->clear();hex_->setExtraSelections({});hex_->clear();hexPager_->hide();hexStart_=0;
+    if(!selected_){for(auto* label:{detailId_,detailProtocol_,detailCaptured_,detailOriginal_,detailIssues_})label->clear();detailIssues_->setToolTip({});return;}
+    const auto& packet=*selected_;
+    detailId_->setText(QString("#%1").arg(packet.id));detailProtocol_->setText(q(packet.protocol));
+    detailCaptured_->setText(QString("%1 B").arg(packet.raw.bytes.size()));detailOriginal_->setText(QString("%1 B").arg(packet.raw.originalLength));
+    QStringList issues;if(!packet.error.empty())issues<<q(packet.error);for(const auto& warning:packet.warnings)issues<<warningText(warning);
+    detailIssues_->setText(issues.isEmpty()?QString{}:issues.front());detailIssues_->setToolTip(issues.join("\n"));
+    std::function<void(QTreeWidgetItem*,const Field&)> add=[&](QTreeWidgetItem* parent,const Field& field){
+        auto* item=parent?new QTreeWidgetItem(parent):new QTreeWidgetItem(fields_);item->setText(0,q(field.name));item->setText(1,fieldText(field.value));
+        const auto name=q(field.name);if(name.contains("地址") || name.contains("MAC") || q(field.value).startsWith("0x"))item->setFont(1,QFontDatabase::systemFont(QFontDatabase::FixedFont));
+        item->setData(0,Qt::UserRole,QVariant::fromValue<qulonglong>(field.offset));item->setData(0,Qt::UserRole+1,QVariant::fromValue<qulonglong>(field.length));
+        const auto path=(parent?parent->data(0,Qt::UserRole+2).toString():QString{})+"/"+q(field.name);
+        item->setData(0,Qt::UserRole+2,path);
+        for(const auto& c:field.children)add(item,c);item->setExpanded(!collapsedFields_.contains(path));
+    };for(const auto& field:packet.fields) add(nullptr,field);
+    renderHexPage(0);
+}
+void MainWindow::renderHexPage(std::size_t start) {
+    if(!selected_) return;
+    const auto& bytes=selected_->raw.bytes;
+    hexStart_=bytes.empty()?0:std::min(start/hexPageSize_,(bytes.size()-1)/hexPageSize_)*hexPageSize_;
+    const auto end=std::min(bytes.size(),hexStart_+hexPageSize_);QString text;text.reserve(static_cast<qsizetype>((end-hexStart_)*5));
+    for(std::size_t i=hexStart_;i<end;i+=16) {
+        text+=QString("%1  ").arg(static_cast<qulonglong>(i),6,16,QChar('0'));
+        for(std::size_t j=0;j<16;++j) text+=i+j<end?QString("%1 ").arg(bytes[i+j],2,16,QChar('0')):"   ";
+        text+="  ";for(std::size_t j=0;j<16 && i+j<end;++j) {auto c=bytes[i+j];text+=c>=32 && c<127?QChar(c):QChar('.');}text+='\n';
+    }hex_->setPlainText(text);
+    byteRange_->setText(QString("字节 %1-%2 / %3").arg(hexStart_).arg(end?end-1:0).arg(bytes.size()));
+    previousBytes_->setEnabled(hexStart_>0);nextBytes_->setEnabled(end<bytes.size());hexPager_->setVisible(bytes.size()>hexPageSize_);
+}
+void MainWindow::highlightBytes(QTreeWidgetItem* item,bool locate) {
+    QList<QTextEdit::ExtraSelection> selections;
+    if(item && selected_) {
+        auto offset=item->data(0,Qt::UserRole).toULongLong(),length=item->data(0,Qt::UserRole+1).toULongLong();
+        auto end=std::min<qulonglong>(selected_->raw.bytes.size(),offset+length);
+        if(locate && length && offset<selected_->raw.bytes.size() && (offset<hexStart_ || offset>=hexStart_+hexPageSize_)) renderHexPage(static_cast<std::size_t>(offset));
+        end=std::min<qulonglong>(end,hexStart_+hexPageSize_);
+        for(auto o=std::max<qulonglong>(offset,hexStart_);o<end;) {
+            const auto block=hex_->document()->findBlockByNumber(static_cast<int>((o-hexStart_)/16));if(!block.isValid()) break;
+            auto n=std::min<qulonglong>(end-o,16-o%16);QTextEdit::ExtraSelection s;s.cursor=QTextCursor(hex_->document());
+            s.cursor.setPosition(block.position()+8+static_cast<int>(o%16)*3);s.cursor.setPosition(s.cursor.position()+static_cast<int>(n)*3-1,QTextCursor::KeepAnchor);
+            s.format.setBackground(QColor("#356ed5"));s.format.setForeground(Qt::white);selections.push_back(s);o+=n;
+        }
+    }
+    hex_->setExtraSelections(selections);if(!selections.empty()) {hex_->setTextCursor(selections.front().cursor);hex_->ensureCursorVisible();}
+}
+}

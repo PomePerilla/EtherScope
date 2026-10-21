@@ -1,0 +1,28 @@
+#pragma once
+#include "core/packet.h"
+#include <deque>
+#include <map>
+#include <memory>
+
+namespace etherscope {
+struct SessionStats {
+    std::uint64_t received{}, wireBytes{}, overwritten{}, malformed{};
+    std::map<std::string,std::uint64_t> protocols;
+};
+class SessionStore {
+public:
+    explicit SessionStore(std::size_t maxPackets=10000,std::size_t maxBytes=64*1024*1024,std::size_t maxEstimatedBytes=64*1024*1024);
+    void append(Packet packet);
+    void clear();
+    const std::deque<std::shared_ptr<const Packet>>& packets() const { return packets_; }
+    const SessionStats& stats() const { return stats_; }
+    std::size_t rawBytes() const { return rawBytes_; }
+    std::size_t estimatedBytes() const { return estimatedBytes_; }
+private:
+    std::size_t maxPackets_,maxBytes_,rawBytes_{};
+    std::size_t maxEstimatedBytes_,estimatedBytes_{};
+    std::uint64_t nextId_{1};
+    SessionStats stats_;
+    std::deque<std::shared_ptr<const Packet>> packets_;
+};
+}

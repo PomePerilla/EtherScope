@@ -1,0 +1,2 @@
+#pragma once
+#define ETHERSCOPE_VERSION "@PROJECT_VERSION@"
