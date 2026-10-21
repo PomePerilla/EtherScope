@@ -657,6 +657,39 @@ void summaryModes() {
                 summary.estimatedBytes() * 2 <= full.estimatedBytes(),
             "Summary cache saves at least half the full footprint");
 }
+void loopbackCapture() {
+    for (const auto &ethernet : {fixtures::samples().front(), fixtures::ipv6Samples().front()}) {
+        const bool ipv6 = ethernet.bytes[14] >> 4 == 6;
+        for (const bool bigEndian : {false, true}) {
+            RawPacket raw = ethernet;
+            raw.linkType = 0;
+            raw.bytes.erase(raw.bytes.begin(), raw.bytes.begin() + 14);
+            raw.bytes.insert(raw.bytes.begin(), 4, 0);
+            raw.bytes[bigEndian ? 3 : 0] = ipv6 ? 24 : 2;
+            raw.originalLength = static_cast<std::uint32_t>(raw.bytes.size());
+            const auto packet = decodePacket(raw), summary = decodeSummary(raw);
+            require(packet.error.empty() && testing::sameSummary(packet, summary),
+                    "Loopback framing reuses the protocol decoder");
+            require(ipv6 ? packet.sourceIpv6.has_value() : packet.sourceIp.has_value(),
+                    "Loopback exposes the original IP family");
+            require(!packet.sourceMac && !packet.destinationMac &&
+                        !parseFilter("", Direction::Either, "", Direction::Either, "Ethernet")
+                             .value->matches(packet),
+                    "Loopback does not invent Ethernet addresses");
+            std::size_t count = 0;
+            require(testing::validFields(packet.fields, raw.bytes.size(), count),
+                    "Loopback field ranges stay within original bytes");
+            for (std::size_t size = 0; size < raw.bytes.size(); ++size) {
+                auto truncated = raw;
+                truncated.bytes.resize(size);
+                const auto decoded = decodePacket(truncated);
+                count = 0;
+                require(testing::validFields(decoded.fields, size, count),
+                        "Truncated loopback fields remain bounded");
+            }
+        }
+    }
+}
 void sessions() {
     SessionStore count(3, 100000);
     for (int i = 0; i < 10; ++i)
@@ -682,6 +715,7 @@ void sessions() {
 int main() {
     try {
         addressFormatting();
+        loopbackCapture();
         pcapWireEncoding();
         protocols();
         analysis();

@@ -269,7 +269,8 @@ void CaptureEngine::runLive(const QString &device, quint64 epoch, std::stop_toke
             a->close(p);
         }
     } guard{api_.get(), handle};
-    if (api_->datalink(handle) != DLT_EN10MB)
+    const auto linkType = api_->datalink(handle);
+    if (linkType != DLT_EN10MB && linkType != DLT_NULL)
         throw std::runtime_error("接口链路类型不支持");
     if (options.bpf.contains(QChar(0)))
         throw std::runtime_error("捕获过滤包含无效字符");
@@ -341,6 +342,7 @@ void CaptureEngine::runLive(const QString &device, quint64 epoch, std::stop_toke
             raw.timestampNs =
                 std::int64_t(h->ts.tv_sec) * 1000000000 + std::int64_t(h->ts.tv_usec) * 1000;
             raw.originalLength = h->len;
+            raw.linkType = static_cast<std::uint32_t>(linkType);
             raw.bytes.assign(data, data + h->caplen);
             enqueue(std::move(raw), false, stop);
         } else if (status == -1)

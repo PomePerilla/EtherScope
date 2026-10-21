@@ -34,6 +34,31 @@ void arp(std::size_t o) {
 Packet run() {
     if (p.raw.originalLength < b.size())
         fail("原始长度小于捕获长度");
+    if (p.raw.linkType == 0) {
+        p.protocol = "Loopback";
+        if (!has(0, 4, b.size())) {
+            fail("回环首部被截断");
+            return std::move(p);
+        }
+        // DLT_NULL uses the capture host's byte order. Recognize both representations.
+        const auto family = u32(0);
+        const bool v4 = family == 2 || family == 0x02000000;
+        const bool v6 = family == 24 || family == 0x18000000;
+        auto link = node([&] { return Field{"Loopback", "DLT_NULL", 0, 4, {}}; });
+        emitField(link, [&] {
+            return Field{"地址族", v4 ? "IPv4" : (v6 ? "IPv6" : hex(family, 8)), 0, 4, {}};
+        });
+        append(root_, std::move(link));
+        if (v4)
+            ipv4(4);
+        else if (v6)
+            ipv6(4);
+        else
+            p.summary = "DLT_NULL " + hex(family, 8);
+        if (p.raw.originalLength > b.size())
+            p.warnings.push_back("捕获长度小于原始帧长");
+        return std::move(p);
+    }
     if (p.raw.linkType != 1) {
         p.protocol = "其他链路";
         p.summary = "Link type " + std::to_string(p.raw.linkType);

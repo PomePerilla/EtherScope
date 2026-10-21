@@ -1,5 +1,6 @@
 #include "capture/capture.h"
 #include "core/pcap_file.h"
+#include "core/capture_file.h"
 #include "core/tcp_conversations.h"
 #include <QCoreApplication>
 #include <QFile>
@@ -64,6 +65,7 @@ int main(int argc, char **argv) {
     const auto cpuStart = cpuSeconds();
     bool opened = false, stopping = false;
     std::uint64_t decoded = 0;
+    std::optional<std::uint32_t> observedLinkType;
     QElapsedTimer stop, openedClock;
     qint64 firstBatchMs = -1;
     std::vector<Packet> matches;
@@ -86,6 +88,7 @@ int main(int argc, char **argv) {
             firstBatchMs = openedClock.elapsed();
         decoded += batch.size();
         for (auto &packet : batch) {
+            observedLinkType = packet.raw.linkType;
             const auto name = QString::fromStdString(packet.protocol);
             protocols[name] = protocols.value(name).toInt() + 1;
             packet.id = ++tcpPacketId;
@@ -154,7 +157,16 @@ int main(int argc, char **argv) {
                 for (const auto &packet : matches)
                     refs.push_back(&packet);
                 std::ofstream file(std::filesystem::path(pcap.toStdWString()), std::ios::binary);
-                writePcap(file, refs);
+                if (pcap.endsWith(".pcapng", Qt::CaseInsensitive)) {
+                    std::vector<const RawPacket *> raws;
+                    for (const auto *packet : refs)
+                        raws.push_back(&packet->raw);
+                    CaptureWriter writer(file, CaptureFormat::Pcapng, raws);
+                    for (const auto *raw : raws)
+                        writer.write(*raw);
+                    writer.finish();
+                } else
+                    writePcap(file, refs);
             } catch (const std::exception &e) {
                 error = QString::fromUtf8(e.what());
             }
@@ -175,6 +187,9 @@ int main(int argc, char **argv) {
             {"utc", QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
             {"enumerated_interfaces", static_cast<int>(devices.size())},
             {"opened", opened},
+            {"device", device},
+            {"link_type",
+             observedLinkType ? QJsonValue(int(*observedLinkType)) : QJsonValue(QJsonValue::Null)},
             {"received", double(count.received)},
             {"decoded", double(decoded)},
             {"protocols", protocols},

@@ -3223,5 +3223,20 @@
     "资源受限",
     "Resource limited",
     "資源受限"
+  ],
+  [
+    "回环",
+    "Loopback",
+    "回環"
+  ],
+  [
+    "地址族",
+    "Address family",
+    "位址族"
+  ],
+  [
+    "回环首部被截断",
+    "Truncated loopback header",
+    "回環標頭被截斷"
   ]
 ]

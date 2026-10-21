@@ -116,7 +116,7 @@ void ApplicationIndex::apply(std::uint64_t conversation,
                              std::pair<std::uint64_t, std::uint64_t> revision) {
     if (facts.empty())
         return;
-    changes_ = delta;
+    changes_ = nullptr;
     const EntryKey key{conversation != 0, conversation ? conversation : facts.begin()->first};
     if (const auto old = entries_.find(key); old != entries_.end()) {
         if (revision != std::pair<std::uint64_t, std::uint64_t>{} &&
@@ -124,6 +124,21 @@ void ApplicationIndex::apply(std::uint64_t conversation,
             changes_ = nullptr;
             return;
         }
+        if (delta) {
+            for (const auto id : old->second.packets)
+                if (!facts.contains(id))
+                    delta->packets.insert(id);
+        }
+    }
+    if (delta) {
+        // Ownership can change while the filter-visible values remain identical.
+        for (const auto &[id, value] : facts) {
+            const auto *previous = this->facts(id);
+            if (!previous || previous->status != value.status || previous->values != value.values)
+                delta->packets.insert(id);
+        }
+    }
+    if (const auto old = entries_.find(key); old != entries_.end()) {
         removeEntry(old, false);
     }
 
@@ -154,6 +169,7 @@ void ApplicationIndex::apply(std::uint64_t conversation,
         bytes_ += record.bytes + membershipBytes;
         changed(packet);
     }
+    changes_ = delta;
     enforceBudget();
     changes_ = nullptr;
 }

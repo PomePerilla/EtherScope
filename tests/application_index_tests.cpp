@@ -182,6 +182,11 @@ void incrementalDiagnostics() {
     index.apply(2, result(), {{2, limited()}}, &stale, {1, 1});
     check(stale.packets.empty() && index.facts(2)->status == AnalysisStatus::Complete,
           "Older connection revisions do not overwrite facts");
+    IndexDelta unchanged;
+    ApplicationFacts same;
+    same.status = AnalysisStatus::Complete;
+    index.apply(2, result(), {{2, same}}, &unchanged, {1, 3});
+    check(unchanged.packets.empty(), "Identical filter values do not request reevaluation");
     for (unsigned i = 0; i < 3; ++i)
         store.append(decodeSummary(fixtures::tcp(24, 200 + i, 0, false, 50000, false, payload)));
     auto next = store.deltaAfter(delta.through);

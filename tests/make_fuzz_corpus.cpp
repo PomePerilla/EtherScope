@@ -50,6 +50,16 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 3000; ++i)
         dense.insert(dense.end(), {1, 1, 0, 1, 2, 3, 4, 5});
     raws.push_back(etherscope::fixtures::ipv6(58, dense, 255));
+    for (auto raw :
+         {etherscope::fixtures::samples().front(), etherscope::fixtures::ipv6Samples().front()}) {
+        const auto family = raw.bytes[14] >> 4 == 6 ? 24 : 2;
+        raw.bytes.erase(raw.bytes.begin(), raw.bytes.begin() + 14);
+        raw.bytes.insert(raw.bytes.begin(), 4, 0);
+        raw.bytes[0] = static_cast<std::uint8_t>(family);
+        raw.linkType = 0;
+        raw.originalLength = static_cast<std::uint32_t>(raw.bytes.size());
+        raws.push_back(std::move(raw));
+    }
     std::size_t number = 0;
     for (const auto &raw : raws)
         for (int kind = 0; kind < 3; ++kind) {
@@ -59,7 +69,7 @@ int main(int argc, char **argv) {
             if (kind == 2 && !bytes.empty())
                 bytes.back() ^= 255;
             std::ofstream file(directory / std::to_string(number++), std::ios::binary);
-            file.put(1);
+            file.put(raw.linkType == 0 ? 2 : 1);
             for (unsigned shift = 0; shift < 32; shift += 8)
                 file.put(static_cast<char>(raw.originalLength >> shift));
             file.write(reinterpret_cast<const char *>(bytes.data()),
