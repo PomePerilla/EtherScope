@@ -17,6 +17,7 @@ struct CaptureInterface { QString name, description, addresses; };
 struct LiveCaptureOptions { QString bpf; };
 struct CaptureCounters {
     std::uint64_t received{},bytes{},queueDropped{};
+    std::uint64_t untimedPackets{},untimedBytes{};
     std::optional<std::uint64_t> driverDropped;
     std::uint64_t enqueued{},queuedPackets{},queuedBytes{},peakQueuedPackets{},peakQueuedBytes{};
     std::uint64_t queuedEstimatedBytes{},peakQueuedEstimatedBytes{},waitWakeups{};
@@ -64,6 +65,7 @@ private:
     std::uint64_t enqueued_{},peakQueuedPackets_{},peakQueuedBytes_{};
     std::atomic<bool> running_{};
     std::atomic<std::uint64_t> received_{},bytes_{},queueDropped_{};
+    std::atomic<std::uint64_t> untimedPackets_{},untimedBytes_{};
     std::atomic<std::int64_t> driverDropped_{-1};
     quint64 generation_{};
     void reset();

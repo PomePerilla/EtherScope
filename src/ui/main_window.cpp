@@ -172,8 +172,9 @@ MainWindow::MainWindow(QWidget* parent,MainWindowOptions options):QMainWindow(pa
     connect(&batchTimer_,&QTimer::timeout,this,&MainWindow::flush); batchTimer_.start(100);
     connect(&rateTimer_,&QTimer::timeout,this,[this]{
         const double seconds=std::max(0.001,rateClock_.restart()/1000.0); const auto c=counters_[view_];
-        const auto count=c.received>=lastCount_?c.received-lastCount_:0, bytes=c.bytes>=lastBytes_?c.bytes-lastBytes_:0;
-        chart_->addSample(count/seconds,bytes/seconds);chart_->setProtocols(currentStore().stats().protocols);lastCount_=c.received;lastBytes_=c.bytes;refreshTcpConversations();
+        const auto timed=c.received-c.untimedPackets,timedBytes=c.bytes-c.untimedBytes;
+        const auto count=timed>=lastCount_?timed-lastCount_:0, bytes=timedBytes>=lastBytes_?timedBytes-lastBytes_:0;
+        chart_->addSample(count/seconds,bytes/seconds);chart_->setProtocols(currentStore().stats().protocols);lastCount_=timed;lastBytes_=timedBytes;refreshTcpConversations();
     }); rateClock_.start(); rateTimer_.start(1000);
     setDarkTheme(true);restoreSettings();retranslate();refreshInterfaces();updateStatus();updateButtons();
 }
@@ -349,7 +350,7 @@ void MainWindow::updateButtons() {
     refresh_->setEnabled(!busy() && !discovering() && !closing_);devices_->setEnabled(!busy() && !discovering() && !closing_);modes_->setEnabled(!openingFile_ && state_!=CaptureState::Stopping && !closing_);
     open_->setEnabled(!openingFile_ && state_!=CaptureState::Stopping && !closing_);save_->setEnabled(!saving_ && !closing_ && !currentStore().packets().empty());follow_->setEnabled(view_==0);
 }
-void MainWindow::resetRates() {chart_->reset();chart_->setProtocols(currentStore().stats().protocols);lastCount_=counters_[view_].received;lastBytes_=counters_[view_].bytes;rateClock_.restart();}
+void MainWindow::resetRates() {chart_->reset();chart_->setProtocols(currentStore().stats().protocols);lastCount_=counters_[view_].received-counters_[view_].untimedPackets;lastBytes_=counters_[view_].bytes-counters_[view_].untimedBytes;rateClock_.restart();}
 void MainWindow::reportError(const QString& message) {actionError_=message;updateStatus();}
 void MainWindow::closeEvent(QCloseEvent* event) {
     if(!busy() && !preparation_.busy() && !details_.busy() && !saving_ && !recording_.running() && !applications_[0]->busy() && !applications_[1]->busy() && (!tcpDialog_ || !tcpDialog_->streamBusy())){if(tcpDialog_)tcpDialog_->close();saveSettings();event->accept();return;}
@@ -384,7 +385,7 @@ void MainWindow::selectPacket(int row) {if(row>=0 && row<model_->rowCount()) tab
 void MainWindow::ingestBenchmark(std::vector<Packet> packets) {
     if(busy() || closing_) return;
     if(view_!=1) showMode(1);sourceStatus_[1]="测试中";
-    for(const auto& p:packets) {++counters_[1].received;counters_[1].bytes+=p.raw.originalLength;}
+    for(const auto& p:packets) {++counters_[1].received;counters_[1].bytes+=p.raw.originalLength;if(!p.raw.timestampValid){++counters_[1].untimedPackets;counters_[1].untimedBytes+=p.raw.originalLength;}}
     model_->append(std::move(packets));submitApplications(view_);showDetails();updateStatus();updateButtons();
 }
 }

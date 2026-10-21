@@ -11,7 +11,7 @@ void ApplicationIndex::apply(std::uint64_t conversation,std::shared_ptr<const Ap
     Entry entry;entry.result=std::move(result);entry.bytes=sizeof(Entry)+(entry.result?entry.result->estimatedBytes:0);
     for(auto& [id,value]:facts){entry.packets.push_back(id);entry.bytes+=sizeof(ApplicationFacts)+96;for(const auto& [name,values]:value.values){entry.bytes+=name.capacity()+96+values.capacity()*sizeof(ApplicationValue);for(const auto& v:values)if(const auto* text=std::get_if<std::string>(&v))entry.bytes+=text->capacity();}facts_[id]=std::move(value);}
     entry.bytes+=entry.packets.capacity()*sizeof(std::uint64_t);bytes_+=entry.bytes;entries_[key]=std::move(entry);order_.push_back(key);
-    while(bytes_>applicationBudget && !order_.empty()) {
+    while(bytes_>applicationBudget/2 && !order_.empty()) {
         const auto oldest=order_.front();order_.pop_front();auto found=entries_.find(oldest);if(found==entries_.end())continue;
         bytes_-=found->second.bytes;for(auto id:found->second.packets){auto& f=facts_[id];f.values.clear();f.status=AnalysisStatus::Limited;}entries_.erase(found);
     }

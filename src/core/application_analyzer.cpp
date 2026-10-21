@@ -71,7 +71,12 @@ std::map<std::uint64_t,ApplicationFacts> indexApplication(const ApplicationResul
     for(const auto& message:result.messages) {
         std::set<std::uint64_t> ids;for(const auto& span:message.sources)ids.insert(span.packetId);
         std::string protocol=message.protocol;for(auto& c:protocol)c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        for(auto id:ids){auto& facts=index[id];facts.values[protocol]={true};for(const auto& field:message.fields)if(!field.key.empty()){auto& values=facts.values[field.key];if(std::find(values.begin(),values.end(),field.value)==values.end())values.push_back(field.value);}}
+        for(auto id:ids){auto& facts=index[id];facts.values[protocol]={true};
+            if(protocol=="tls"){
+                const char* status="complete";switch(result.status){case AnalysisStatus::MissingKeys:status="missing_keys";break;case AnalysisStatus::AuthenticationFailed:status="authentication_failed";break;case AnalysisStatus::Unsupported:status="unsupported";break;case AnalysisStatus::Limited:status="limited";break;case AnalysisStatus::Incomplete:status="incomplete";break;case AnalysisStatus::Pending:status="pending";break;case AnalysisStatus::Complete:break;}
+                facts.values["tls.status"]={std::string(status)};
+            }
+            for(const auto& field:message.fields)if(!field.key.empty()){auto& values=facts.values[field.key];if(std::find(values.begin(),values.end(),field.value)==values.end())values.push_back(field.value);}}
     }
     return index;
 }

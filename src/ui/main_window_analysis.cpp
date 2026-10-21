@@ -68,10 +68,11 @@ void MainWindow::showApplicationAnalysis() {
 void MainWindow::appendDnsFields() {
     if(!selected_ || !selectedDetails_ || std::any_of(selectedDetails_->fields.begin(),selectedDetails_->fields.end(),[](const auto& f){return f.name=="DNS";}))return;
     auto details=std::make_shared<PacketDetails>(*selectedDetails_);Field dns{"DNS","",0,0,{}};
+    auto nodes=[](auto&& self,const std::vector<Field>& fields)->std::size_t{std::size_t count=fields.size();for(const auto& field:fields)count+=self(self,field.children);return count;};const auto existing=nodes(nodes,details->fields);if(existing>=maxPacketFields-1)return;
     const auto results=applicationIndex_[view_].results(selected_->id);
     for(const auto& result:results)for(const auto& message:result->messages)if(message.protocol=="DNS" && message.source==DataSource::Original) {
         dns.offset=message.offset;dns.length=message.length;
-        for(const auto& field:message.fields)if(dns.children.size()<maxPacketFields/2)dns.children.push_back({field.name,applicationText(field.value),field.offset,field.length,{}});
+        for(const auto& field:message.fields)if(dns.children.size()<maxPacketFields-existing-1)dns.children.push_back({field.name,applicationText(field.value),field.offset,field.length,{}});
     }
     if(dns.children.empty())return;details->fields.push_back(std::move(dns));details->estimatedBytes+=details->fields.back().children.size()*sizeof(Field);selectedDetails_=std::move(details);
 }

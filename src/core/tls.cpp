@@ -58,7 +58,7 @@ struct Decoder {
         for(unsigned index=0;index<2;++index){auto& d=directions[index?1-*client:*client];const auto key=material.begin()+static_cast<std::ptrdiff_t>(index*cipher->keyLength),iv=material.begin()+static_cast<std::ptrdiff_t>(2*cipher->keyLength+index*cipher->ivLength);d.key.assign(key,key+static_cast<std::ptrdiff_t>(cipher->keyLength));d.iv.assign(iv,iv+static_cast<std::ptrdiff_t>(cipher->ivLength));}
     }
     void hello(ApplicationMessage& m,unsigned side,std::uint8_t type) {
-        const auto& bytes=*m.bytes;ByteView view(bytes);auto cursor=m.offset+4;const auto end=m.offset+m.length;const auto version=view.integer(cursor,2);add(m,"Version","tls.version",version,cursor,2);cursor+=2;
+        const auto& bytes=*m.bytes;ByteView view(bytes);auto cursor=m.offset+4;const auto end=m.offset+m.length;const auto version=view.integer(cursor,2);add(m,"Version","tls.legacy_version",version,cursor,2);cursor+=2;
         const auto random=view.slice(cursor,32);if(type==1){client=side;std::copy(random.begin(),random.end(),clientRandom.begin());haveClient=true;}else{std::copy(random.begin(),random.end(),serverRandom.begin());haveServer=true;}cursor+=32;
         const auto session=static_cast<std::size_t>(view.integer(cursor++,1));if(session>32)throw std::runtime_error("Invalid TLS session ID");view.slice(cursor,session);cursor+=session;
         if(type==1){const auto count=static_cast<std::size_t>(view.integer(cursor,2));cursor+=2;if(!count || count%2)throw std::runtime_error("Invalid TLS cipher list");view.slice(cursor,count);cursor+=count;const auto compression=static_cast<std::size_t>(view.integer(cursor++,1));if(!compression)throw std::runtime_error("Invalid TLS compression list");view.slice(cursor,compression);cursor+=compression;}
@@ -67,6 +67,7 @@ struct Decoder {
         // Extension offsets are relative to the shared handshake buffer.
         extensions(m,std::span(bytes).first(end),cursor,type==2);
         if(type==2 && haveClient) {
+            if(!is13)add(m,"Version","tls.version",version,m.offset+4,2);
             static constexpr std::array<std::uint8_t,32> retry{0xcf,0x21,0xad,0x74,0xe5,0x9a,0x61,0x11,0xbe,0x1d,0x8c,0x02,0x1e,0x65,0xb8,0x91,0xc2,0xa2,0x11,0x16,0x7a,0xbb,0x8c,0x5e,0x07,0x9e,0x09,0xe2,0xc8,0xa8,0x33,0x9c};
             if(serverRandom==retry){haveServer=false;return;}
             if(!is13 && version!=0x0303){status(AnalysisStatus::Unsupported,"Unsupported TLS version");return;}

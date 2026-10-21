@@ -28,6 +28,9 @@ void inflate(Inflater& inflater,Headers& headers,ApplicationMessage& m,std::size
             std::string name(reinterpret_cast<char*>(nv.name),nv.namelen),value(reinterpret_cast<char*>(nv.value),nv.valuelen);
             if(name.empty() || std::any_of(name.begin(),name.end(),[](unsigned char c){return c<33 || c>126 || (c>='A' && c<='Z');}) || std::any_of(value.begin(),value.end(),[](unsigned char c){return c==0 || c=='\r' || c=='\n';}))throw std::runtime_error("Invalid HTTP/2 header");
             if(name[0]==':'){if(regular || !pseudo.insert(name).second)throw std::runtime_error("Invalid HTTP/2 pseudo-header order");}else regular=true;
+            if(name=="connection" || name=="proxy-connection" || name=="keep-alive" || name=="transfer-encoding" || name=="upgrade" || (name=="te" && value!="trailers"))throw std::runtime_error("Invalid HTTP/2 connection header");
+            if(name[0]==':' && name!=":method" && name!=":scheme" && name!=":path" && name!=":authority" && name!=":status" && name!=":protocol")throw std::runtime_error("Unknown HTTP/2 pseudo-header");
+            if(pseudo.contains(":status") && pseudo.size()>1)throw std::runtime_error("Mixed HTTP/2 pseudo-headers");
             std::string key="http.header."+name;ApplicationValue fieldValue=value;
             if(name==":method")key="http.request.method";else if(name==":path")key="http.request.uri";else if(name==":authority" || name=="host")key="http.host";
             else if(name==":status"){std::uint64_t status=0;auto [p,e]=std::from_chars(value.data(),value.data()+value.size(),status);if(e!=std::errc{} || p!=value.data()+value.size() || value.size()!=3 || status<100)throw std::runtime_error("Invalid HTTP/2 status");key="http.response.code";fieldValue=status;}

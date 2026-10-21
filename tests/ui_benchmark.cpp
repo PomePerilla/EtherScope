@@ -76,6 +76,9 @@ int main(int argc,char** argv) {
     auto raws=fixtures::samples();const auto ipv6=fixtures::ipv6Samples();raws.insert(raws.end(),ipv6.begin(),ipv6.end());
     const auto analysis=fixtures::analysisSamples();raws.insert(raws.end(),analysis.begin(),analysis.end());
     if(args.contains("--tcp"))raws=fixtures::tcpConversationSamples();
+    if(const auto position=args.indexOf("--application-pcap");position>=0 && position+1<args.size()){
+        CaptureReader reader(std::filesystem::path(args[position+1].toStdWString()));raws.clear();while(auto raw=reader.next())raws.push_back(std::move(*raw));if(raws.empty())return 2;
+    }
     const bool streamLoad=args.contains("--stream-load");
     if(streamLoad)raws={fixtures::tcp(24,100,0,false,50000,false,std::vector<std::uint8_t>(1024,'x'))};
     for(auto& raw:raws) {raw.bytes.resize(std::max<std::size_t>(64,raw.bytes.size()),0);raw.originalLength=static_cast<std::uint32_t>(raw.bytes.size());}
@@ -105,6 +108,7 @@ int main(int argc,char** argv) {
     const bool recordingLoad=args.contains("--recording");
     if(recordingLoad){QSettings settings(options.settingsFile,QSettings::IniFormat);settings.setValue("recording/directory",temporary.filePath("recordings"));settings.setValue("recording/fileMiB",16);settings.setValue("recording/diskMiB",64);settings.sync();}
     MainWindow window(nullptr,options);window.resize(1280,820);window.show();
+    if(const auto position=args.indexOf("--key-log");position>=0 && position+1<args.size())window.setTlsKeyLog(args[position+1]);
     if(recordingLoad)window.findChild<QAction*>("recordingAction")->setChecked(true);
     if(args.contains("--tcp-panel") || streamLoad)window.findChild<QAction*>("tcpConversationsAction")->trigger();
     StreamPane* streamPane=nullptr;int streamRequests=0,streamCompleted=0;bool streamValid=true;qint64 nextStream=2000;

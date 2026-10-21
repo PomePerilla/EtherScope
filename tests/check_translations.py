@@ -17,7 +17,9 @@ def main():
         assert not any(s in english + traditional for s in ('·', '—', '–', '｜')), source
         messages[source] = (english, traditional)
     missing = set()
-    for path in (root / 'src').rglob('*.cpp'):
+    for path in (root / 'src').rglob('*'):
+        if path.suffix not in ('.cpp', '.inc'):
+            continue
         for literal in re.findall(r'"(?:[^"\\]|\\.)*"', path.read_text(encoding='utf-8-sig')):
             try:
                 value = json.loads(literal)

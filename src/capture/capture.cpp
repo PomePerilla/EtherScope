@@ -90,6 +90,7 @@ std::vector<CaptureInterface> CaptureEngine::interfaces(QString& error) {
 void CaptureEngine::reset() {
     stop(); std::lock_guard lock(mutex_); queue_.clear();queuedBytes_=0;queuedEstimatedBytes_=0;peakQueuedEstimatedBytes_=0;waitWakeups_=0;waitStrategy_=0;
     received_=0; bytes_=0; queueDropped_=0; driverDropped_=-1;
+    untimedPackets_=0;untimedBytes_=0;
     enqueued_=0;peakQueuedPackets_=0;peakQueuedBytes_=0;++generation_;
 }
 void CaptureEngine::enqueue(RawPacket raw,bool file,std::stop_token stop) {
@@ -100,7 +101,7 @@ void CaptureEngine::enqueue(RawPacket raw,bool file,std::stop_token stop) {
         if(!queueSpace_.wait(lock,stop,[this]{return queue_.size()<2048 && queuedBytes_<4*1024*1024 && queuedEstimatedBytes_<32*1024*1024;}))return;
     }
     {
-        std::lock_guard lock(mutex_);if(!file){++received_;bytes_+=raw.originalLength;}
+        std::lock_guard lock(mutex_);if(!file){++received_;bytes_+=raw.originalLength;if(!raw.timestampValid){++untimedPackets_;untimedBytes_+=raw.originalLength;}}
         const std::size_t limit=file?32*1024*1024:8*1024*1024;
         if(!file && (queue_.size()>=8192 || n>limit || queuedBytes_>limit-n || queuedEstimatedBytes_>=estimatedLimit)){++queueDropped_;return;}
     }
@@ -110,6 +111,7 @@ void CaptureEngine::enqueue(RawPacket raw,bool file,std::stop_token stop) {
         if(n>32*1024*1024 || footprint>estimatedLimit)throw std::runtime_error("数据包超过队列预算");
         if(!queueSpace_.wait(lock,stop,[&]{return queue_.size()<2048 && queuedBytes_<=32*1024*1024-n && queuedEstimatedBytes_<=estimatedLimit-footprint;}))return;
         ++received_;bytes_+=packet.raw.originalLength;
+        if(!packet.raw.timestampValid){++untimedPackets_;untimedBytes_+=packet.raw.originalLength;}
     } else if(footprint>estimatedLimit || queuedEstimatedBytes_>estimatedLimit-footprint) {++queueDropped_;return;}
     queue_.push_back(std::move(packet));queuedBytes_+=n;queuedEstimatedBytes_+=footprint;++enqueued_;
     peakQueuedPackets_=std::max<std::uint64_t>(peakQueuedPackets_,queue_.size());peakQueuedBytes_=std::max<std::uint64_t>(peakQueuedBytes_,queuedBytes_);
@@ -205,7 +207,7 @@ std::vector<Packet> CaptureEngine::takeBatch(std::size_t maxPackets) {
     queueSpace_.notify_one();return out;
 }
 CaptureCounters CaptureEngine::counters() const {
-    std::lock_guard lock(mutex_);CaptureCounters c; c.received=received_;c.bytes=bytes_;c.queueDropped=queueDropped_;
+    std::lock_guard lock(mutex_);CaptureCounters c; c.received=received_;c.bytes=bytes_;c.queueDropped=queueDropped_;c.untimedPackets=untimedPackets_;c.untimedBytes=untimedBytes_;
     auto drop=driverDropped_.load();if(drop>=0)c.driverDropped=static_cast<std::uint64_t>(drop);
     c.enqueued=enqueued_;c.queuedPackets=queue_.size();c.queuedBytes=queuedBytes_;
     c.peakQueuedPackets=peakQueuedPackets_;c.peakQueuedBytes=peakQueuedBytes_;

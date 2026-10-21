@@ -52,7 +52,7 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                 const QFileInfo info(desiredPath);const auto size=info.size(),time=info.lastModified().toMSecsSinceEpoch();
                 if(command!=keyCommand || size!=fileSize || time!=fileTime) {
                     auto next=std::make_unique<TlsKeyLog>();
-                    if(!desiredPath.isEmpty()){QFile file(desiredPath);if(size>8*1024*1024 || !file.open(QIODevice::ReadOnly))throw std::runtime_error("TLS key log cannot be read");auto bytes=file.readAll();const auto newline=bytes.lastIndexOf('\n');if(newline>=0)bytes.truncate(newline+1);else bytes.clear();next->append(std::string_view(bytes.constData(),static_cast<std::size_t>(bytes.size())));}
+                    if(!desiredPath.isEmpty()){QFile file(desiredPath);if(size>8*1024*1024 || !file.open(QIODevice::ReadOnly))throw std::runtime_error("TLS key log cannot be read");auto bytes=file.read(8*1024*1024+1);if(bytes.size()>8*1024*1024)throw std::length_error("TLS key log exceeds limit");if(command==keyCommand){const auto newline=bytes.lastIndexOf('\n');if(newline>=0)bytes.truncate(newline+1);else bytes.clear();}next->append(std::string_view(bytes.constData(),static_cast<std::size_t>(bytes.size())));}
                     keys=std::move(next);++keyRevision;path=desiredPath;fileSize=size;fileTime=time;for(const auto& [id,c]:connections){(void)c;dirty.insert(id);}
                 }
             }catch(const std::exception& e){success=false;error=QString::fromUtf8(e.what());}
@@ -89,7 +89,7 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
             for(unsigned side=0;side<2;++side){if(c.info.syn[side].seen)request.start[side]=c.info.syn[side].sequence+1;if(c.info.finNext[side])request.end[side]=*c.info.finNext[side]-1;}
             if(c.info.initiator>=0 && c.info.synAck.seen)request.start[1-static_cast<unsigned>(c.info.initiator)]=c.info.synAck.sequence+1;
             std::shared_ptr<ApplicationResult> result;
-            try{result=std::make_shared<ApplicationResult>(hooks_.conversation?hooks_.conversation(request,*keys,token):analyzeConversation(request,*keys,token));}
+            try{if(c.info.id!=id){result=std::make_shared<ApplicationResult>();result->status=AnalysisStatus::Limited;}else result=std::make_shared<ApplicationResult>(hooks_.conversation?hooks_.conversation(request,*keys,token):analyzeConversation(request,*keys,token));}
             catch(const std::exception& e){result=std::make_shared<ApplicationResult>();result->status=AnalysisStatus::Incomplete;result->error=e.what();}
             ApplicationUpdate update;update.generation=epoch;update.revision=c.revision;update.keyRevision=keyRevision;update.conversation=id;update.facts=indexApplication(*result,request.packets);update.result=std::move(result);results.push_back(std::move(update));
         }
