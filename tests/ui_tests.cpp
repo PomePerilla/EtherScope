@@ -74,7 +74,7 @@ CaptureHooks fakeCapture(std::shared_ptr<Gate> starting={},std::shared_ptr<Gate>
             if(fileStarting) fileStarting->wait();PcapReader reader(std::filesystem::path(target.toStdWString()));opened("测试文件读取");
             while(!stop.stop_requested()) {auto raw=reader.next();if(!raw)break;sink(std::move(*raw));}return;
         }
-        if(starting)starting->wait();opened("构造来源 · 非真实抓包");auto raw=fixtures::icmp();
+        if(starting)starting->wait();opened("捕获中");auto raw=fixtures::icmp();
         while(!stop.stop_requested()) {raw.timestampNs+=1000000;sink(raw);std::this_thread::sleep_for(std::chrono::milliseconds(1));}
     };return hooks;
 }
@@ -95,6 +95,7 @@ private slots:
         auto options=testOptions();options.capture=fakeCapture();auto base=options.capture.run;
         options.capture.run=[base](const QString& target,bool file,std::stop_token stop,const CaptureHooks::Sink& sink,const CaptureHooks::Opened& opened,const LiveCaptureOptions& capture){
             if(capture.bpf=="bad (")throw std::runtime_error("捕获过滤无效: syntax");
+            if(capture.bpf=="install-failure")throw std::runtime_error("捕获过滤安装失败: test");
             if(capture.bpf!="icmp")throw std::runtime_error("Unexpected BPF");
             base(target,file,stop,sink,opened,capture);
         };
@@ -107,9 +108,11 @@ private slots:
             const auto retained=window.packetModel()->rowCount();const auto first=window.packetModel()->packetAt(0);
             QVERIFY(retained>0);QCOMPARE(window.findChild<QLabel*>("bpfMarker")->toolTip(),QString("icmp"));
             window.findChild<QComboBox*>("protocolFilter")->setCurrentText("ICMP");
-            QVERIFY(setBpf(window,"bad ("));start->click();QTRY_VERIFY(!window.busy());
-            QCOMPARE(window.packetModel()->rowCount(),retained);QCOMPARE(window.packetModel()->packetAt(0),first);
-            QCOMPARE(window.packetModel()->filter().protocol,std::string("ICMP"));QVERIFY(window.findChild<QLabel*>("captureStatus")->text().contains("syntax"));
+            for(const auto& expression:{QString("bad ("),QString("install-failure")}) {
+                QVERIFY(setBpf(window,expression));start->click();QTRY_VERIFY(!window.busy());
+                QCOMPARE(window.packetModel()->rowCount(),retained);QCOMPARE(window.packetModel()->packetAt(0),first);
+                QCOMPARE(window.packetModel()->filter().protocol,std::string("ICMP"));QVERIFY(window.findChild<QLabel*>("captureStatus")->text().startsWith("捕获过滤"));
+            }
         }
         QSettings saved(options.settingsFile,QSettings::IniFormat);QCOMPARE(saved.value("capture/bpf").toString(),QString("icmp"));
         MainWindow restored(nullptr,options);QVERIFY(waitForInterfaces(restored));QVERIFY(!restored.busy());
@@ -132,7 +135,7 @@ private slots:
         options.detailDecoder=[gate,calls](const RawPacket& raw,std::stop_token){if(++*calls==1)gate->wait();return decodeDetails(raw);};
         MainWindow window(nullptr,options);ReleaseGate release{gate};QVERIFY(waitForInterfaces(window));window.show();
         std::vector<Packet> packets;packets.push_back(decodeSummary(fixtures::icmp()));packets.push_back(decodeSummary(fixtures::icmp(0)));window.ingestBenchmark(std::move(packets));window.selectPacket(0);
-        QTRY_VERIFY(gate->entered.load());int beats=0;QTimer heartbeat;connect(&heartbeat,&QTimer::timeout,this,[&]{++beats;});heartbeat.start(5);QTest::qWait(40);QVERIFY(beats>=3);
+        QTRY_VERIFY(gate->entered.load());int beats=0;QTimer heartbeat;connect(&heartbeat,&QTimer::timeout,this,[&]{++beats;});heartbeat.setTimerType(Qt::PreciseTimer);heartbeat.start(5);QTRY_VERIFY_WITH_TIMEOUT(beats>=3,250);
         for(int i=0;i<100;++i)window.selectPacket(i%2);gate->release();QVERIFY(waitForDetails(window));
         QCOMPARE(calls->load(),2);QCOMPARE(window.findChild<QLabel*>("detailPacketId")->text(),QString("#2"));
         auto* tree=window.findChild<QTreeWidget*>("fieldTree");QCOMPARE(tree->topLevelItemCount(),3);QVERIFY(tree->topLevelItem(2)->child(0)->text(1).startsWith("0 "));
@@ -308,7 +311,7 @@ private slots:
         QVERIFY(window.saveFile(path));QVERIFY(!window.saveFile(dir.filePath("duplicate.pcap")));QTRY_VERIFY_WITH_TIMEOUT(gate->entered.load(),3000);
         std::vector<Packet> more;for(int i=0;i<10050;++i)more.push_back(decodePacket(fixtures::icmp()));window.ingestBenchmark(std::move(more));
         QVERIFY(!first.expired());window.findChild<QTabBar*>("sessionTabs")->setCurrentIndex(0);QCOMPARE(window.packetModel()->rowCount(),0);
-        int beats=0;QTimer heartbeat;connect(&heartbeat,&QTimer::timeout,&window,[&]{++beats;});heartbeat.start(20);QTest::qWait(120);QVERIFY(beats>=3);QVERIFY(window.saving());
+        int beats=0;QTimer heartbeat;connect(&heartbeat,&QTimer::timeout,&window,[&]{++beats;});heartbeat.setTimerType(Qt::PreciseTimer);heartbeat.start(20);QTRY_VERIFY_WITH_TIMEOUT(beats>=3,250);QVERIFY(window.saving());
         gate->release();QTRY_COMPARE_WITH_TIMEOUT(done.count(),1,5000);QVERIFY(done.front()[0].toBool());QCOMPARE(done.front()[2].toULongLong(),qulonglong(12));QVERIFY(first.expired());
         PcapReader reader(std::filesystem::path(path.toStdWString()));for(const auto& raw:originals){auto saved=reader.next();QVERIFY(saved && saved->bytes==raw.bytes && saved->timestampNs==raw.timestampNs);}QVERIFY(!reader.next());
         QVERIFY(!QFile::exists(dir.filePath("duplicate.pcap")));
@@ -331,7 +334,7 @@ private slots:
         QSignalSpy done(&window,&MainWindow::saveFinished);QVERIFY(window.saveFile(path));QTRY_VERIFY_WITH_TIMEOUT(gate->entered.load(),3000);QVERIFY(!window.close());
         gate->release();QTRY_COMPARE_WITH_TIMEOUT(done.count(),1,5000);QVERIFY(!done.front()[0].toBool());QVERIFY(window.isVisible());QCOMPARE(window.packetModel()->rowCount(),1);
         QFile file(path);QVERIFY(file.open(QIODevice::ReadOnly));QCOMPARE(file.readAll(),QByteArray("previous file"));QVERIFY(window.findChild<QLabel*>("captureStatus")->text().contains("失败"));
-        QTest::qWait(120);QVERIFY(window.isVisible());QVERIFY(window.findChild<QPushButton*>("saveButton")->isEnabled());
+        QTest::qWait(120);QVERIFY(window.isVisible());QVERIFY(window.findChild<QPushButton*>("saveButton")->isEnabled());window.selectPacket(0);QVERIFY(waitForDetails(window));QVERIFY(window.findChild<QTreeWidget*>("fieldTree")->topLevelItemCount()>0);
     }
     void stopDuringStartupAndPendingAction() {
         auto gate=std::make_shared<Gate>();auto options=testOptions();options.capture=fakeCapture(gate);
@@ -339,7 +342,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(gate->entered.load(),3000);QCOMPARE(window.captureState(),MainWindow::CaptureState::Starting);
         auto* engine=window.findChild<CaptureEngine*>();QSignalSpy ended(engine,&CaptureEngine::finished);QElapsedTimer stop;stop.start();window.stopCapture();window.stopCapture();QVERIFY(stop.elapsed()<100);
         QCOMPARE(window.captureState(),MainWindow::CaptureState::Stopping);QVERIFY(!window.findChild<QTabBar*>("sessionTabs")->isEnabled());
-        int beats=0;QTimer heartbeat;connect(&heartbeat,&QTimer::timeout,&window,[&]{++beats;});heartbeat.start(20);QTest::qWait(120);QVERIFY(beats>=3);QCOMPARE(ended.count(),0);
+        int beats=0;QTimer heartbeat;connect(&heartbeat,&QTimer::timeout,&window,[&]{++beats;});heartbeat.setTimerType(Qt::PreciseTimer);heartbeat.start(20);QTRY_VERIFY_WITH_TIMEOUT(beats>=3,250);QCOMPARE(ended.count(),0);
         gate->release();QTRY_VERIFY_WITH_TIMEOUT(!window.busy(),3000);QCOMPARE(ended.count(),1);window.stopCapture();QCOMPARE(ended.count(),1);
     }
     void pendingOpenAndStaleNotifications() {
@@ -645,7 +648,7 @@ private slots:
         auto gate=std::make_shared<Gate>();auto calls=std::make_shared<std::atomic<int>>(0);auto options=testOptions();
         options.capture.interfaces=[gate,calls](QString& error){++*calls;gate->wait();error.clear();return CaptureInterfaces{{"slow","慢查询","192.0.2.1"}};};
         MainWindow window(nullptr,options);ReleaseGate release{gate};window.show();QVERIFY(window.discovering());QVERIFY(!window.findChild<QPushButton*>("startButton")->isEnabled());QVERIFY(window.findChild<QPushButton*>("openButton")->isEnabled());
-        int beats=0;QTimer heartbeat;connect(&heartbeat,&QTimer::timeout,this,[&]{++beats;});heartbeat.start(5);QTest::qWait(70);QVERIFY(beats>=5);QVERIFY(gate->entered);
+        int beats=0;QTimer heartbeat;connect(&heartbeat,&QTimer::timeout,this,[&]{++beats;});heartbeat.setTimerType(Qt::PreciseTimer);heartbeat.start(5);QTRY_VERIFY_WITH_TIMEOUT(beats>=5,250);QVERIFY(gate->entered);
         auto* preparation=window.findChild<PreparationService*>();QVERIFY(!preparation->requestInterfaces());QCOMPARE(calls->load(),1);gate->release();QVERIFY(waitForInterfaces(window));
         auto* selector=window.findChild<QComboBox*>("deviceSelector");QCOMPARE(selector->currentData().toString(),QString("slow"));
         emit preparation->interfacesReady(preparation->interfaceGeneration()-1,{{"old","过期网卡",""}},"过期错误",false);QTest::qWait(10);QCOMPARE(selector->currentData().toString(),QString("slow"));
@@ -667,7 +670,7 @@ private slots:
         MainWindow window(nullptr,options);QVERIFY(waitForInterfaces(window));ReleaseGate release{gate};window.show();window.findChild<QPushButton*>("startButton")->click();QTRY_VERIFY_WITH_TIMEOUT(window.sessionStats().received>=20,3000);
         const auto before=window.sessionStats().received;QSignalSpy done(&window,&MainWindow::fileOpenFinished);QVERIFY(window.openFile("slow.pcap"));QTRY_VERIFY_WITH_TIMEOUT(gate->entered.load(),1000);
         QVERIFY(!window.findChild<QTabBar*>("sessionTabs")->isEnabled());QTest::qWait(80);QVERIFY(window.captureCounters().received>before);QVERIFY(window.findChild<QPushButton*>("saveButton")->isEnabled());
-        int beats=0;QTimer timer;connect(&timer,&QTimer::timeout,this,[&]{++beats;});timer.start(5);QTest::qWait(50);QVERIFY(beats>=4);gate->release();QTRY_COMPARE_WITH_TIMEOUT(done.count(),1,3000);
+        int beats=0;QTimer timer;connect(&timer,&QTimer::timeout,this,[&]{++beats;});timer.setTimerType(Qt::PreciseTimer);timer.start(5);QTRY_VERIFY_WITH_TIMEOUT(beats>=4,250);gate->release();QTRY_COMPARE_WITH_TIMEOUT(done.count(),1,3000);
         QCOMPARE(done.front()[1].value<MainWindow::FileOpenResult>(),MainWindow::FileOpenResult::Failure);QCOMPARE(window.findChild<QTabBar*>("sessionTabs")->currentIndex(),0);QVERIFY(window.sessionStats().received>=before);QCOMPARE(window.captureState(),MainWindow::CaptureState::Running);
         window.stopCapture();QTRY_VERIFY_WITH_TIMEOUT(!window.busy(),1000);
     }

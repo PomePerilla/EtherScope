@@ -35,12 +35,12 @@ int main(int argc,char** argv) {
         return 0.0;
 #endif
     };const auto cpuStart=cpuSeconds();
-    bool opened=false,stopping=false;std::uint64_t decoded=0;QElapsedTimer stop,openedClock; qint64 firstBatchMs=-1;std::vector<Packet> matches;QJsonArray observations;int requests=0,replies=0;
+    bool opened=false,stopping=false;std::uint64_t decoded=0;QElapsedTimer stop,openedClock; qint64 firstBatchMs=-1;std::vector<Packet> matches;QJsonArray observations;QJsonObject protocols;int requests=0,replies=0;
     const auto payload=marker.toUtf8();
     const bool ipv6=target.contains(':');
     if(device.isEmpty()) for(const auto& candidate:devices) if(!candidate.addresses.isEmpty()) {device=candidate.name;break;}
     auto take=[&]{
-        auto batch=engine.takeBatch();if(!batch.empty() && firstBatchMs<0 && openedClock.isValid())firstBatchMs=openedClock.elapsed();decoded+=batch.size();if(marker.isEmpty())return;
+        auto batch=engine.takeBatch();if(!batch.empty() && firstBatchMs<0 && openedClock.isValid())firstBatchMs=openedClock.elapsed();decoded+=batch.size();for(const auto& packet:batch){const auto name=QString::fromStdString(packet.protocol);protocols[name]=protocols.value(name).toInt()+1;}if(marker.isEmpty())return;
         for(auto& packet:batch) {
             if(packet.protocol!=(ipv6?"ICMPv6":"ICMP") || (packet.source!=target.toStdString() && packet.destination!=target.toStdString()))continue;
             const auto details=decodeDetails(packet.raw);
@@ -66,7 +66,7 @@ int main(int argc,char** argv) {
         const bool passed=error.isEmpty() && opened && (allowEmpty || count.received>0) && decoded==count.received && count.queueDropped==0 && (marker.isEmpty() || (requests>0 && replies>0));
         QJsonObject report{{"kind",allowEmpty?"npcap_idle_receive_wait":(marker.isEmpty()?"same_machine_npcap_short_capture_no_packet_bytes_saved":"controlled_icmp_real_capture_unique_payload")},{"utc",QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
             {"enumerated_interfaces",static_cast<int>(devices.size())},{"opened",opened},{"received",double(count.received)},{"decoded",double(decoded)},
-            {"queue_dropped",double(count.queueDropped)},{"stop_completed_ms",double(stopMs)},{"first_batch_ms",double(firstBatchMs)},{"duration_ms",duration},{"error",error},{"passed",passed},
+            {"protocols",protocols},{"bpf",args.contains("--bpf")?args.value(args.indexOf("--bpf")+1):QString{}},{"queue_dropped",double(count.queueDropped)},{"stop_completed_ms",double(stopMs)},{"first_batch_ms",double(firstBatchMs)},{"duration_ms",duration},{"error",error},{"passed",passed},
             {"wait_strategy",count.waitStrategy},{"wait_wakeups",double(count.waitWakeups)},{"cpu_single_core_average_percent",(cpuSeconds()-cpuStart)*100000.0/duration},
             {"limits","One local adapter and ICMP echo scenario only; not all ICMP types, long throughput, or second-machine acceptance."}};
         if(!marker.isEmpty()){report["ip_version"]=ipv6?6:4;report["marker"]=marker;report["target"]=target;report["echo_requests"]=requests;report["echo_replies"]=replies;report["matched_packets"]=observations;report["pcap_contains_only_matching_test_packets"]=true;}

@@ -1,13 +1,13 @@
-# EtherScope v1.5.0
+# EtherScope v1.6.0
 
-Windows x64 协议分析器。支持实时抓包、IPv4 / IPv6 解析、MAC / IP 筛选和 PCAP 读写。
+Windows x64 协议分析器。支持实时抓包、IPv4 / IPv6 解析、BPF 捕获过滤、MAC / IP 显示过滤和 PCAP 读写。
 
-IPv4 选项解析、IPv4 / ICMP 校验和、ICMP 类型筛选。
+按需字段解析、IPv4 / ICMP 校验和、ICMP 类型筛选。
 
 ## 运行
 
 1. 下载并安装 [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe)。
-2. 下载[程序包](https://github.com/PomePerilla/EtherScope/releases/download/v1.5.0/EtherScope-1.5.0-windows-x64.zip)，解压后运行 `EtherScope-Setup-1.5.0-x64.exe`。
+2. 下载[程序包](https://github.com/PomePerilla/EtherScope/releases/download/v1.6.0/EtherScope-1.6.0-windows-x64.zip)，解压后运行 `EtherScope-Setup-1.6.0-x64.exe`。
 3. 打开 EtherScope。
 
 ## 构建环境
@@ -37,6 +37,15 @@ cmake --build build/core
 ctest --test-dir build/core --output-on-failure
 ```
 
+## 核心模糊测试
+
+```sh
+cmake -S . -B build/fuzz -DETHERSCOPE_BUILD_GUI=OFF -DETHERSCOPE_BUILD_FUZZERS=ON -DCMAKE_CXX_COMPILER=clang++-18
+cmake --build build/fuzz
+build/fuzz/make_fuzz_corpus build/corpus
+build/fuzz/packet_fuzzer build/corpus -max_len=65540 -max_total_time=120
+```
+
 ## 打包
 
 ```powershell
@@ -59,8 +68,8 @@ Windows x64
 
 | 附件 | 类型 | 使用方式 |
 |---|---|---|
-| `EtherScope-1.5.0-windows-x64.zip` | 程序包 | 安装后使用 |
-| `EtherScope-1.5.0-sourcecode.zip` | 源码包 | 编译后使用 |
+| `EtherScope-1.6.0-windows-x64.zip` | 程序包 | 安装后使用 |
+| `EtherScope-1.6.0-sourcecode.zip` | 源码包 | 编译后使用 |
 
 ## 许可
 
