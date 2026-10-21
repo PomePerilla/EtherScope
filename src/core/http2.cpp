@@ -170,13 +170,21 @@ ApplicationResult decodeHttp2(const std::array<ApplicationInput, 2> &input, std:
             result.error = "HTTP/2 preface is missing";
             return result;
         }
-        std::stable_sort(frames.begin(), frames.end(),
-                         [](const auto &a, const auto &b) { return a.packet < b.packet; });
+        std::array<std::vector<const Frame *>, 2> ordered;
+        for (const auto &frame : frames)
+            ordered[frame.side].push_back(&frame);
+        std::array<std::size_t, 2> cursor{};
         std::array<Inflater, 2> inflaters;
         std::array<Headers, 2> headers;
         std::array<std::uint32_t, 2> maxFrame{16384, 16384};
         std::set<std::uint32_t> streams;
-        for (const auto &frame : frames) {
+        for (std::size_t index = 0; index < frames.size(); ++index) {
+            unsigned side = cursor[0] == ordered[0].size() ? 1 : 0;
+            if (cursor[1] < ordered[1].size() && cursor[0] < ordered[0].size() &&
+                ordered[1][cursor[1]]->packet < ordered[0][cursor[0]]->packet)
+                side = 1;
+            // HPACK and CONTINUATION follow byte order, not capture arrival order.
+            const auto &frame = *ordered[side][cursor[side]++];
             if (stop.stop_requested())
                 return result;
             const auto &source = input[frame.side];

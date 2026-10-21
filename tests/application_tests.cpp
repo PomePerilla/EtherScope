@@ -39,6 +39,8 @@ void http2(){
     const std::string preface="PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";Bytes a(preface.begin(),preface.end());append(a,frame(4,0,0,{}));auto headers=hex("828684410f7777772e6578616d706c652e636f6d");append(a,frame(1,5,1,headers));
     Bytes b=frame(4,0,0,{});append(b,frame(1,5,1,hex("88")));auto r=decodeHttp2({input(a),input(b,1,2)});check(r.status==AnalysisStatus::Complete && has(r,"http.host",std::string("www.example.com")) && has(r,"http.response.code",std::uint64_t(200)),"HTTP/2 HPACK RFC example");
     a.assign(preface.begin(),preface.end());append(a,frame(4,0,0,{}));append(a,frame(1,1,1,Bytes(headers.begin(),headers.begin()+4)));append(a,frame(9,4,1,Bytes(headers.begin()+4,headers.end())));r=decodeHttp2({input(a),input(b,1,2)});check(r.status==AnalysisStatus::Complete && has(r,"http.host",std::string("www.example.com")),"HTTP/2 CONTINUATION");
+    auto reordered=input(a);reordered.sources={{1,54,24,0},{2,54,9,24},{10,54,13,33},{9,54,a.size()-46,46}};
+    r=decodeHttp2({reordered,input(b,1,3)});check(r.status==AnalysisStatus::Complete && has(r,"http.host",std::string("www.example.com")),"Reordered HTTP/2 frames retain HPACK order");
     a.assign(preface.begin(),preface.end());append(a,frame(4,0,0,{}));append(a,frame(1,5,1,hex("be")));check(decodeHttp2({input(a),input(b,1,2)}).status==AnalysisStatus::Incomplete,"Missing HPACK dynamic state");
 }
 void filters(){

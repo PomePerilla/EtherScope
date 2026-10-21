@@ -65,6 +65,12 @@ void run(){
         const auto suites=v13?std::vector<std::uint16_t>{0x1301,0x1302,0x1303}:std::vector<std::uint16_t>{0x009c,0x009d,0x009e,0x009f,0xc02b,0xc02c,0xc02f,0xc030,0xcca8,0xcca9,0xccaa};
         for(auto suite:suites){auto c=sample(suite,v13,v13);TlsKeyLog keys;keys.append(c.keylog);auto result=decodeTls(c.input,keys);if(result.analysis.status!=AnalysisStatus::Complete)throw std::runtime_error(std::to_string(suite)+": "+result.analysis.error);check(result.decrypted,"TLS decryption");const auto http=decodeHttp1(result.plaintext);check(http.status==AnalysisStatus::Complete && http.messages.size()==(v13?3u:2u),"TLS plaintext HTTP parsing");for(const auto& message:http.messages)check(!message.sources.empty() && message.source==DataSource::Decrypted,"Plaintext source mapping");}
     }
+    for(bool v13:{false,true}){
+        auto reordered=sample(v13?0x1301:0xc02b,v13,v13);TlsKeyLog log;log.append(reordered.keylog);
+        for(auto& direction:reordered.input)for(auto& source:direction.sources)source.packetId=100-source.packetId;
+        auto decoded=decodeTls(reordered.input,log);check(decoded.analysis.status==AnalysisStatus::Complete && decoded.decrypted,"TLS reordered records preserve directional sequence");
+        check(decodeHttp1(decoded.plaintext).messages.size()==(v13?3u:2u),"Reordered TLS application data");
+    }
     auto c=sample(0x1301,true);TlsKeyLog empty;auto missing=decodeTls(c.input,empty);check(missing.analysis.status==AnalysisStatus::MissingKeys && !missing.decrypted,"Missing key status");
     TlsKeyLog keys;keys.append(c.keylog);c.bytes[0].back()^=1;c.input[0].bytes=std::make_shared<const Bytes>(c.bytes[0]);auto invalid=decodeTls(c.input,keys);check(invalid.analysis.status==AnalysisStatus::AuthenticationFailed && invalid.plaintext[0].bytes->empty(),"Tampered plaintext never published");
 }

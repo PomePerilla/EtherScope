@@ -371,9 +371,28 @@ struct Decoder {
             if (input[side].incomplete)
                 status(AnalysisStatus::Incomplete, "TLS stream is incomplete");
         }
-        std::stable_sort(records.begin(), records.end(),
-                         [](const auto &a, const auto &b) { return a.packet < b.packet; });
-        for (const auto &record : records) {
+        std::array<std::vector<const Record *>, 2> ordered;
+        for (const auto &record : records)
+            ordered[record.side].push_back(&record);
+        std::array<std::size_t, 2> cursor{};
+        for (std::size_t index = 0; index < records.size(); ++index) {
+            unsigned side = cursor[0] == ordered[0].size() ? 1 : 0;
+            if (cursor[1] < ordered[1].size() && cursor[0] < ordered[0].size()) {
+                if (ordered[1][cursor[1]]->packet < ordered[0][cursor[0]]->packet)
+                    side = 1;
+                // Reassembly can complete earlier records after their peer's reply.
+                // Keep each direction in stream order and establish the hello keys first.
+                if (!haveClient)
+                    for (unsigned candidate = 0; candidate < 2; ++candidate) {
+                        const auto &next = *ordered[candidate][cursor[candidate]];
+                        if (next.type == 22 && next.length &&
+                            (*input[candidate].bytes)[next.offset + 5] == 1)
+                            side = candidate;
+                    }
+                else if (!haveServer && client)
+                    side = 1 - *client;
+            }
+            const auto &record = *ordered[side][cursor[side]++];
             if (stop.stop_requested())
                 break;
             auto &d = directions[record.side];
