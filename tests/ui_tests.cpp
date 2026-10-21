@@ -139,6 +139,7 @@ private slots:
         for(const auto& language:{"en","zh_CN","zh_TW"})for(bool dark:{false,true})for(const QSize size:{QSize(1024,768),QSize(1440,900)}){
             i18n::language().set(language);window.setDarkTheme(dark);dialog->resize(size);QTest::qWait(30);
             auto* view=dialog->findChild<ApplicationView*>();QVERIFY(view);QVERIFY(dialog->rect().contains(QRect(view->mapTo(dialog,QPoint(0,0)),view->size())));
+            auto* fields=view->findChild<QTreeWidget*>("applicationFields");QTRY_VERIFY(fields->topLevelItemCount()>0);QCOMPARE(fields->topLevelItem(0)->text(0),QString(language==QString("en")?"Method":"方法"));
             auto* bytes=view->findChild<QPlainTextEdit*>("applicationBytes");QVERIFY(bytes->isVisible());QVERIFY(bytes->width()>=200);
             const auto screenshots=qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");if(!screenshots.isEmpty())QVERIFY(dialog->grab().save(screenshots+QString("/application-%1-%2-%3.png").arg(language).arg(dark?"dark":"light").arg(size.width())));
         }

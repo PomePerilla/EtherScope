@@ -8,6 +8,7 @@ import os
 import struct
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 import winreg
@@ -147,6 +148,7 @@ def main():
     with preserve_shortcut(shortcut_path), tempfile.TemporaryDirectory(prefix='EtherScope-install-') as temporary:
         root = Path(temporary) / '安装测试 & 空格'
         root.mkdir()
+        subprocess.run([sys.executable, str(project / 'tests/capture_fixtures.py'), str(root / 'pcapng')], check=True)
         with zipfile.ZipFile(archive_path) as archive:
             assert archive.testzip() is None
             files = [name for name in archive.namelist() if not name.endswith('/')]
@@ -177,6 +179,10 @@ def main():
             application = application_root / 'EtherScope.exe'
             assert application.read_bytes() == (project / 'build/msvc-release/EtherScope.exe').read_bytes()
             assert (application_root / 'licenses/EtherScope-MIT.txt').read_bytes() == (project / 'LICENSE').read_bytes()
+            for license_name in ('OpenSSL.txt', 'nghttp2.txt'):
+                assert (application_root / 'licenses' / license_name).read_bytes() == (project / 'docs/licenses' / license_name).read_bytes()
+            notices = (application_root / 'licenses/THIRD_PARTY_NOTICES.txt').read_text(encoding='utf-8-sig')
+            assert 'qtbase-everywhere-src-6.8.3.tar.xz' in notices and 'OpenSSL 3.5.9' in notices
             installed_files = [str(path.relative_to(application_root)) for path in application_root.rglob('*') if path.is_file()]
             assert not any(path.lower().endswith(('.ps1', '.cmd', '.pcap', '.md')) or 'npcap' in path.lower() for path in installed_files)
             shortcut = Path(os.environ['APPDATA']) / 'Microsoft/Windows/Start Menu/Programs' / group / 'EtherScope.lnk'
@@ -192,6 +198,8 @@ def main():
             assert '2001:db8::1' in restored and 'ICMPv6' in restored and 'openDirectory=' in restored
             if args.application_language:
                 assert 'language=' + args.application_language in restored
+            startups.append(launch(shortcut, settings, env, root / 'pcapng/sections.pcapng', args.application_language))
+            assert 'pcapng' in settings.read_text(encoding='utf-8-sig')
             previous_checked = None
             if args.previous_installer:
                 previous_installer = args.previous_installer.resolve(strict=True)
@@ -220,7 +228,7 @@ def main():
             assert probe_code == 0 and capture['passed'] and capture['stop_completed_ms'] <= 1000, capture
             report.update({'archive_integrity': True, 'program_installer_only': True, 'driver_external_download': True,
                            'current_binary': True, 'install_upgrade': True, 'preserved_settings': True,
-                           'shortcut_target': True, 'bundled_dependencies': True, 'ipv6_file_open': True, 'mit_notice': True, 'previous_installer': previous_checked,
+                           'shortcut_target': True, 'bundled_dependencies': True, 'ipv6_file_open': True, 'pcapng_file_open': True, 'third_party_licenses': True, 'mit_notice': True, 'previous_installer': previous_checked,
                            'startup_ms': startups, 'live_capture': capture, 'installer_bytes': installer.stat().st_size,
                            'installer_language': args.installer_language, 'application_language': args.application_language})
         finally:

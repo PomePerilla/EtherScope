@@ -48,6 +48,8 @@ foreach ($name in @('GPL-3.0.txt','LGPL-3.0.txt','Inno-Setup.txt','OpenSSL.txt',
     Copy-Item -LiteralPath (Join-Path $projectRoot ('docs\licenses\'+$name)) -Destination $licenses
 }
 Copy-Item -LiteralPath (Join-Path $QtRoot 'sbom\qtbase-6.8.3.spdx.json') -Destination (Join-Path $licenses 'Qt-6.8.3.spdx.json')
+$notices=(Get-Content -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') -Raw).Replace('docs/licenses/','').Replace('(LICENSE)','(EtherScope-MIT.txt)')
+$notices | Set-Content -LiteralPath (Join-Path $licenses 'THIRD_PARTY_NOTICES.txt') -Encoding UTF8
 $output=Join-Path $projectRoot 'output'
 $release=Join-Path $output "EtherScope-$version"
 New-Item -ItemType Directory -Path $release -Force | Out-Null

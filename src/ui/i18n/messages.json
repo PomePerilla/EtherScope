@@ -3173,5 +3173,15 @@
     "TLS 早期数据不支持",
     "TLS early data is unsupported",
     "TLS 早期資料不支援"
+  ],
+  [
+    "方法",
+    "Method",
+    "方法"
+  ],
+  [
+    "关联请求",
+    "Request",
+    "關聯請求"
   ]
 ]
