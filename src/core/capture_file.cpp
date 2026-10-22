@@ -440,7 +440,7 @@ void CaptureWriter::write(const RawPacket &p) {
     block(6, body);
 }
 void writeCapture(std::ostream &stream, std::span<const Packet *const> packets,
-                  CaptureFormat format) {
+                  CaptureFormat format, CaptureWriteProgress progress) {
     std::vector<const RawPacket *> raw;
     raw.reserve(packets.size());
     for (const auto *p : packets) {
@@ -449,7 +449,11 @@ void writeCapture(std::ostream &stream, std::span<const Packet *const> packets,
         raw.push_back(&p->raw);
     }
     CaptureWriter writer(stream, format, raw);
-    for (const auto *p : raw)
+    std::uint64_t recordsWritten = 0;
+    for (const auto *p : raw) {
         writer.write(*p);
+        if (progress)
+            progress(++recordsWritten);
+    }
 }
 } // namespace etherscope

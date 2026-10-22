@@ -30,7 +30,8 @@ class ExportEngine final : public QObject {
         return referencedBytes_;
     }
   signals:
-    void progress(quint64 job, quint64 bytes, quint64 total);
+    // Reports fully serialized records; the successful terminal value is totalRecords/totalRecords.
+    void progress(quint64 job, quint64 recordsWritten, quint64 totalRecords);
     void finished(quint64 job, bool success, const QString &path, quint64 count,
                   const QString &error);
 

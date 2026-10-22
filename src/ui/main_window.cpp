@@ -354,10 +354,18 @@ MainWindow::MainWindow(QWidget *parent, MainWindowOptions options)
         flush();
     });
     connect(&exporter_, &ExportEngine::progress, this,
-            [this](quint64 job, quint64 bytes, quint64 total) {
-                if (saving_ && job == exporter_.generation())
+            [this](quint64 job, quint64 recordsWritten, quint64 totalRecords) {
+                if (saving_ && job == exporter_.generation()) {
+                    const auto boundedRecords = std::min(recordsWritten, totalRecords);
+                    const auto percent = totalRecords
+                                             ? (boundedRecords == totalRecords
+                                                    ? 100
+                                                    : static_cast<int>(
+                                                          100.0L * boundedRecords / totalRecords))
+                                             : 0;
                     i18n::setLabel(exportLabel_, "正在保存 %1%",
-                                   {QString::number(total ? bytes * 100 / total : 0)});
+                                   {QString::number(std::clamp(percent, 0, 100))});
+                }
             });
     connect(&exporter_, &ExportEngine::finished, this,
             [this](quint64 job, bool success, const QString &path, quint64 count,

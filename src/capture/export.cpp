@@ -35,33 +35,31 @@ bool ExportEngine::start(const QString &path, PacketSnapshot snapshot, CaptureFo
             bool success = false;
             const auto count = static_cast<quint64>(snapshot.size());
             try {
-                quint64 total = 24;
                 std::vector<const Packet *> packets;
                 packets.reserve(snapshot.size());
-                for (const auto &p : snapshot) {
+                for (const auto &p : snapshot)
                     packets.push_back(p.get());
-                    if (p)
-                        total += 16 + p->raw.bytes.size();
-                }
                 QSaveFile file(path);
                 file.setDirectWriteFallback(false);
                 if (!file.open(QIODevice::WriteOnly))
                     throw std::runtime_error("文件保存失败");
                 auto last = std::chrono::steady_clock::now();
-                emit progress(job, 0, total);
-                FileBuffer buffer(file, writer_, [&](quint64 bytes) {
+                emit progress(job, 0, count);
+                FileBuffer buffer(file, writer_, [](quint64) {});
+                std::ostream stream(&buffer);
+                writeCapture(stream, packets, format, [&](std::uint64_t recordsWritten) {
                     const auto now = std::chrono::steady_clock::now();
-                    if (now - last >= std::chrono::milliseconds(100)) {
-                        emit progress(job, bytes, total);
+                    if (recordsWritten < count &&
+                        now - last >= std::chrono::milliseconds(100)) {
+                        emit progress(job, static_cast<quint64>(recordsWritten), count);
                         last = now;
                     }
                 });
-                std::ostream stream(&buffer);
-                writeCapture(stream, packets, format);
                 stream.flush();
                 if (!stream || !file.commit())
                     throw std::runtime_error("文件保存失败");
                 success = true;
+                emit progress(job, count, count);
             } catch (const std::exception &e) {
                 error = QString::fromUtf8(e.what());
             }
