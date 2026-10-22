@@ -1,4 +1,4 @@
-# EtherScope v2.0.0
+# EtherScope v2.1.0
 
 [English](README.md) | [简体中文](README.zh-CN.md) | 繁體中文
 
@@ -15,12 +15,12 @@ Windows x64 網路協定分析器。
 
 ## 下載
 
-[EtherScope v2.0.0](https://github.com/PomePerilla/EtherScope/releases/tag/v2.0.0)
+[EtherScope v2.1.0](https://github.com/PomePerilla/EtherScope/releases/tag/v2.1.0)
 
 | 檔案 | 用途 |
 |---|---|
-| `EtherScope-2.0.0-windows-x64.zip` | 安裝後使用 |
-| `EtherScope-2.0.0-sourcecode.zip` | 編譯後使用 |
+| `EtherScope-2.1.0-windows-x64.zip` | 安裝後使用 |
+| `EtherScope-2.1.0-sourcecode.zip` | 編譯後使用 |
 
 1. 安裝 [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe)。
 2. 解壓縮程式套件，執行安裝程式。
@@ -30,13 +30,13 @@ Windows x64 網路協定分析器。
 
 | 操作 | 入口 |
 |---|---|
-| 語言 | 更多 > 語言 |
-| 擷取篩選 | 更多 > 擷取篩選 |
-| TCP 分析 | 更多 > TCP 會話 > 串流資料 |
-| 應用層訊息 | 更多 > 應用分析 |
+| 語言 | 更多 > 外觀與語言 > 語言 |
+| 擷取篩選 | 更多 > 擷取設定 > 擷取篩選 |
+| TCP 分析 | 分析 > TCP 會話 > 串流資料 |
+| 應用層訊息 | 分析 > 應用分析 |
 | TLS 金鑰 | 更多 > TLS 金鑰記錄 |
-| 錄製 | 更多 > 錄製設定，錄製至磁碟 |
-| 顯示運算式 | 更多 > 顯示運算式 |
+| 錄製 | 更多 > 擷取設定 > 錄製設定，錄製至磁碟 |
+| 顯示運算式 | 篩選工具列 > 顯示運算式 |
 | 開啟 / 儲存 | Ctrl+O / Ctrl+S |
 | 套用位址條件 | Ctrl+Enter |
 

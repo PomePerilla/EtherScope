@@ -48,6 +48,7 @@
 
 static void initDesktopResources() {
     Q_INIT_RESOURCE(desktop_icons);
+    Q_INIT_RESOURCE(brand_icons);
 }
 namespace etherscope {
 namespace {
@@ -795,6 +796,12 @@ void MainWindow::tryClose() {
     });
 }
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
+    if (event->type() == QEvent::Resize) {
+        if (table_ && watched == table_->viewport() && emptyState_)
+            emptyState_->setGeometry(table_->viewport()->rect());
+        if (fields_ && watched == fields_->viewport() && fieldEmpty_)
+            fieldEmpty_->setGeometry(fields_->viewport()->rect());
+    }
     if (watched == expressionInput_ && event->type() == QEvent::KeyPress &&
         static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
         expressionAction_->setChecked(false);

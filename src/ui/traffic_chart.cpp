@@ -1,5 +1,6 @@
 #include "ui/traffic_chart.h"
 #include "ui/language.h"
+#include "ui/style.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <algorithm>
@@ -31,7 +32,8 @@ void TrafficChart::paintEvent(QPaintEvent *) {
                muted = palette().color(QPalette::PlaceholderText),
                border = palette().color(QPalette::Mid);
     const bool dark = palette().color(QPalette::Base).lightness() < 128;
-    const QColor amber(dark ? "#cca700" : "#886500"), teal(dark ? "#4ec9b0" : "#167b69");
+    const auto colors = style::colors(dark);
+    const QColor amber(colors.accent), teal(colors.success);
     const int third = width() / 3, pad = 12;
     p.setPen(border);
     p.drawLine(third, 0, third, height());

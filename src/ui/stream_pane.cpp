@@ -1,6 +1,7 @@
 #include "ui/stream_pane.h"
 #include "ui/application_view.h"
 #include "ui/style.h"
+#include "ui/icons.h"
 #include "ui/language.h"
 #include <QAbstractTableModel>
 #include <QComboBox>
@@ -59,7 +60,7 @@ class StreamTableModel final : public QAbstractTableModel {
             return {};
         const auto number = [](std::uint64_t n) { return QVariant::fromValue<qulonglong>(n); };
         if (role == Qt::FontRole)
-            return QFontDatabase::systemFont(QFontDatabase::FixedFont);
+            return style::dataFont();
         if (events_) {
             const auto &event = result_->events[index.row()];
             if (role == Qt::UserRole)
@@ -175,7 +176,7 @@ StreamPane::StreamPane(QWidget *parent, StreamDecoder decoder)
     bytes_->setObjectName("streamBytes");
     bytes_->setReadOnly(true);
     bytes_->setLineWrapMode(QPlainTextEdit::NoWrap);
-    bytes_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    bytes_->setFont(style::dataFont());
     split->setSizes({340, 540});
     dataLayout->addWidget(split, 1);
     auto *pager = new QHBoxLayout;
@@ -186,6 +187,9 @@ StreamPane::StreamPane(QWidget *parent, StreamDecoder decoder)
     page_ = new QLabel(dataPage);
     page_->setObjectName("streamPage");
     locate_ = new QPushButton("定位", dataPage);
+    icons::bind(locate_, icons::Id::Locate);
+    icons::bind(start_, icons::Id::Tcp);
+    icons::bind(cancel_, icons::Id::Close);
     locate_->setObjectName("streamLocate");
     pager->addWidget(previous_);
     pager->addWidget(next_);
@@ -208,7 +212,7 @@ StreamPane::StreamPane(QWidget *parent, StreamDecoder decoder)
         table->setShowGrid(false);
         table->setAlternatingRowColors(true);
         table->verticalHeader()->hide();
-        table->verticalHeader()->setDefaultSectionSize(24);
+        table->verticalHeader()->setDefaultSectionSize(style::rowHeight);
         table->setSelectionBehavior(QAbstractItemView::SelectRows);
         table->setSelectionMode(QAbstractItemView::SingleSelection);
         table->setEditTriggers(QAbstractItemView::NoEditTriggers);

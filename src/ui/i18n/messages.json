@@ -3233,5 +3233,145 @@
     "回环首部被截断",
     "Truncated loopback header",
     "回環標頭被截斷"
+  ],
+  [
+    "分析",
+    "Analysis",
+    "分析"
+  ],
+  [
+    "捕获设置",
+    "Capture settings",
+    "擷取設定"
+  ],
+  [
+    "外观与语言",
+    "Appearance and language",
+    "外觀與語言"
+  ],
+  [
+    "已暂停跟随",
+    "Following paused",
+    "已暫停跟隨"
+  ],
+  [
+    "调整筛选",
+    "Adjust filters",
+    "調整篩選"
+  ],
+  [
+    "选择数据包以查看字段和字节",
+    "Select a packet to inspect fields and bytes",
+    "選擇封包以檢視欄位和位元組"
+  ],
+  [
+    "选择数据包后可进行应用分析",
+    "Select a packet to enable application analysis",
+    "選擇封包後可進行應用分析"
+  ],
+  [
+    "开始一次网络观察",
+    "Start observing your network",
+    "開始一次網路觀察"
+  ],
+  [
+    "选择网卡开始捕获，或打开 PCAP / PCAPNG 文件",
+    "Select an interface to capture, or open a PCAP / PCAPNG file",
+    "選擇網卡開始擷取，或開啟 PCAP / PCAPNG 檔案"
+  ],
+  [
+    "选择网卡开始捕获",
+    "Select an interface to capture",
+    "選擇網卡開始擷取"
+  ],
+  [
+    "或打开",
+    "or open",
+    "或開啟"
+  ],
+  [
+    "没有匹配的数据包",
+    "No matching packets",
+    "沒有符合條件的封包"
+  ],
+  [
+    "调整筛选或移除上方条件以查看数据包",
+    "Adjust filters or remove a condition above to see packets",
+    "調整篩選或移除上方條件以檢視封包"
+  ],
+  [
+    "正在准备数据源",
+    "Preparing data source",
+    "正在準備資料來源"
+  ],
+  [
+    "连接完成后将在此显示数据包",
+    "Packets will appear here when connected",
+    "連線完成後將在此顯示封包"
+  ],
+  [
+    "正在停止",
+    "Stopping",
+    "正在停止"
+  ],
+  [
+    "正在处理已接收的数据包",
+    "Finishing received packets",
+    "正在處理已接收的封包"
+  ],
+  [
+    "正在等待数据包",
+    "Waiting for packets",
+    "正在等待封包"
+  ],
+  [
+    "新数据包将在此实时显示",
+    "New packets will appear here in real time",
+    "新封包將在此即時顯示"
+  ],
+  [
+    "没有可用网卡",
+    "No available interfaces",
+    "沒有可用網卡"
+  ],
+  [
+    "刷新接口，或打开捕获文件继续分析",
+    "Refresh interfaces, or open a capture file to continue",
+    "重新整理介面，或開啟擷取檔案繼續分析"
+  ],
+  [
+    "或打开捕获文件继续分析",
+    "or open a capture file to continue",
+    "或開啟擷取檔案繼續分析"
+  ],
+  [
+    "滚动或选择历史数据包会暂停跟随，勾选后恢复",
+    "Scrolling or selecting older packets pauses following. Check to resume.",
+    "捲動或選擇歷史封包會暫停跟隨，勾選後恢復"
+  ],
+  [
+    "滚动或选择历史数据包会暂停跟随",
+    "Scrolling or selecting older packets pauses following",
+    "捲動或選擇歷史封包會暫停跟隨"
+  ],
+  [
+    "勾选后恢复",
+    "Check to resume",
+    "勾選後恢復"
+  ],
+  [
+    "最小化",
+    "Minimize",
+    "最小化"
+  ],
+  [
+    "最大化",
+    "Maximize",
+    "最大化"
+  ],
+  [
+    "还原",
+    "Restore",
+    "還原"
   ]
 ]

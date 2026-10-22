@@ -3,6 +3,9 @@
 #include "ui/style.h"
 #include "ui/language.h"
 #include "ui/helpers.h"
+#include "ui/icons.h"
+#include "ui/flow_layout.h"
+#include "ui/window_title_bar.h"
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
@@ -28,6 +31,7 @@
 #include <QVBoxLayout>
 #include <QStandardItemModel>
 #include <QTreeView>
+#include <QToolButton>
 
 namespace etherscope {
 namespace {
@@ -49,7 +53,14 @@ void addDirections(QComboBox *box) {
 }
 } // namespace
 void MainWindow::buildUi() {
+    setObjectName("mainWindow");
+    setWindowFlags(windowFlags() | Qt::FramelessWindowHint);
     setWindowTitle("EtherScope");
+    QIcon applicationIcon;
+    for (int size : {16, 20, 24, 32, 48, 64, 128, 256})
+        applicationIcon.addFile(QString(":/icons/app-%1.png").arg(size), QSize(size, size));
+    setWindowIcon(applicationIcon);
+    qApp->setWindowIcon(windowIcon());
     setMinimumSize(900, 580);
     resize(1360, 860);
     auto *root = new QWidget(this);
@@ -57,6 +68,8 @@ void MainWindow::buildUi() {
     auto *layout = new QVBoxLayout(root);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
+    titleBar_ = new WindowTitleBar(this, root);
+    layout->addWidget(titleBar_);
     auto *toolbarBar = new QWidget(root);
     toolbarBar->setObjectName("toolbarBar");
     auto *toolbar = new QHBoxLayout(toolbarBar);
@@ -66,7 +79,9 @@ void MainWindow::buildUi() {
     devices_ = new QComboBox(toolbarBar);
     devices_->setObjectName("deviceSelector");
     devices_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    devices_->setMinimumContentsLength(20);
+    devices_->setMinimumContentsLength(12);
+    devices_->setMinimumWidth(150);
+    devices_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     auto *deviceModel = new QStandardItemModel(0, 2, devices_);
     deviceModel->setHorizontalHeaderLabels({"名称", "地址"});
     devices_->setModel(deviceModel);
@@ -90,20 +105,28 @@ void MainWindow::buildUi() {
     auto *more = new QPushButton("更多", toolbarBar);
     more->setObjectName("moreButton");
     auto *menu = new QMenu(more);
-    refresh_ = menu->addAction("刷新接口");
+    auto *captureMenu = menu->addMenu("捕获设置");
+    captureMenu->setObjectName("captureSettingsMenu");
+    refresh_ = captureMenu->addAction("刷新接口");
     refresh_->setObjectName("refreshAction");
     refresh_->setShortcut(QKeySequence(Qt::Key_F5));
     addAction(refresh_);
-    captureFilterAction_ = menu->addAction("捕获过滤");
+    captureFilterAction_ = captureMenu->addAction("捕获过滤");
     captureFilterAction_->setObjectName("captureFilterAction");
     connect(captureFilterAction_, &QAction::triggered, this, &MainWindow::configureCaptureFilter);
-    auto *tcpAction = menu->addAction("TCP 会话");
+    auto *analysis = new QPushButton("分析", toolbarBar);
+    analysis->setObjectName("analysisButton");
+    auto *analysisMenu = new QMenu(analysis);
+    analysisMenu->setObjectName("analysisMenu");
+    analysis->setMenu(analysisMenu);
+    auto *tcpAction = analysisMenu->addAction("TCP 会话");
     tcpAction->setObjectName("tcpConversationsAction");
     connect(tcpAction, &QAction::triggered, this, &MainWindow::showTcpConversations);
-    auto *appAction = menu->addAction("Application analysis");
+    auto *appAction = analysisMenu->addAction("Application analysis");
+    applicationAction_ = appAction;
     appAction->setObjectName("applicationAnalysisAction");
     connect(appAction, &QAction::triggered, this, &MainWindow::showApplicationAnalysis);
-    expressionAction_ = menu->addAction("Display expression");
+    expressionAction_ = new QAction("Display expression", this);
     expressionAction_->setObjectName("expressionAction");
     expressionAction_->setCheckable(true);
     auto *keysMenu = menu->addMenu("TLS key log");
@@ -121,22 +144,23 @@ void MainWindow::buildUi() {
             service->reloadKeyLog();
     });
     connect(keysMenu->addAction("移除"), &QAction::triggered, this, [this] { setTlsKeyLog({}); });
-    recordingAction_ = menu->addAction("Record to disk");
+    recordingAction_ = captureMenu->addAction("Record to disk");
     recordingAction_->setObjectName("recordingAction");
     recordingAction_->setCheckable(true);
     connect(recordingAction_, &QAction::toggled, this,
             [this](bool checked) { recordingOptions_.enabled = checked; });
-    recordingSettingsAction_ = menu->addAction("Recording settings");
+    recordingSettingsAction_ = captureMenu->addAction("Recording settings");
     recordingSettingsAction_->setObjectName("recordingSettingsAction");
     connect(recordingSettingsAction_, &QAction::triggered, this, &MainWindow::configureRecording);
     bpfMarker_ = new QLabel("BPF", toolbarBar);
     bpfMarker_->setObjectName("bpfMarker");
     bpfMarker_->hide();
-    toolbar->addWidget(bpfMarker_);
-    theme_ = menu->addAction("深色主题");
+    auto *appearance = menu->addMenu("外观与语言");
+    appearance->setObjectName("appearanceMenu");
+    theme_ = appearance->addAction("深色主题");
     theme_->setObjectName("darkThemeAction");
     theme_->setCheckable(true);
-    auto *languages = menu->addMenu("语言");
+    auto *languages = appearance->addMenu("语言");
     languages->setObjectName("languageMenu");
     auto *languageGroup = new QActionGroup(languages);
     for (const auto &entry : std::array<std::pair<const char *, const char *>, 3>{
@@ -154,14 +178,46 @@ void MainWindow::buildUi() {
     menu->addAction("EtherScope " + QCoreApplication::applicationVersion())->setEnabled(false);
     more->setMenu(menu);
     toolbar->addWidget(devices_, 1);
-    for (auto *b : {start_, stop_, open_, save_, more})
-        toolbar->addWidget(b);
+    auto *refreshButton = new QToolButton(toolbarBar);
+    refreshButton->setObjectName("refreshButton");
+    refreshButton->setDefaultAction(refresh_);
+    refreshButton->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    refreshButton->setAccessibleName("刷新接口");
+    toolbar->addWidget(refreshButton);
+    auto *toolbarActions = new QWidget(toolbarBar);
+    toolbarActions->setObjectName("toolbarActions");
+    auto *actionFlow = new FlowLayout(toolbarActions, 4);
+    for (auto *b : {start_, stop_, open_, save_, analysis, more})
+        actionFlow->addWidget(b);
+    toolbar->addWidget(toolbarActions);
+    icons::bind(start_, icons::Id::Start, true);
+    icons::bind(stop_, icons::Id::Stop);
+    icons::bind(open_, icons::Id::Open);
+    icons::bind(save_, icons::Id::Save);
+    icons::bind(analysis, icons::Id::Application);
+    icons::bind(more, icons::Id::More);
+    icons::bind(refresh_, icons::Id::Refresh);
+    icons::bind(captureFilterAction_, icons::Id::Filter);
+    icons::bind(tcpAction, icons::Id::Tcp);
+    icons::bind(appAction, icons::Id::Application);
+    icons::bind(expressionAction_, icons::Id::Expression);
+    icons::bind(loadKey, icons::Id::Open);
+    icons::bind(keysMenu->menuAction(), icons::Id::Key);
+    icons::bind(recordingAction_, icons::Id::Record);
+    icons::bind(recordingSettingsAction_, icons::Id::Record);
+    icons::bind(captureMenu->menuAction(), icons::Id::Filter);
+    icons::bind(appearance->menuAction(), icons::Id::Theme);
+    icons::bind(theme_, icons::Id::Theme);
+    icons::bind(languages->menuAction(), icons::Id::Language);
     layout->addWidget(toolbarBar);
 
     auto *sessionStrip = new QWidget(root);
     sessionStrip->setObjectName("sessionStrip");
-    auto *sessionBar = new QHBoxLayout(sessionStrip);
-    sessionBar->setContentsMargins(style::margin, 4, style::margin, 4);
+    auto *sessionLayout = new QVBoxLayout(sessionStrip);
+    sessionLayout->setContentsMargins(style::margin, 4, style::margin, 4);
+    sessionLayout->setSpacing(4);
+    auto *sessionBar = new FlowLayout;
+    sessionLayout->addLayout(sessionBar);
     sessionBar->setSpacing(style::gap);
     modes_ = new QTabBar(sessionStrip);
     modes_->setObjectName("sessionTabs");
@@ -193,6 +249,17 @@ void MainWindow::buildUi() {
     addressToggle_->setObjectName("addressFilterToggle");
     addressToggle_->setCheckable(true);
     sessionBar->addWidget(addressToggle_);
+    icons::bind(addressToggle_, icons::Id::Filter);
+    expressionToggle_ = new QToolButton(sessionStrip);
+    expressionToggle_->setObjectName("expressionToggle");
+    expressionToggle_->setDefaultAction(expressionAction_);
+    expressionToggle_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    sessionBar->addWidget(expressionToggle_);
+    sessionBar->addWidget(bpfMarker_);
+    conditionStrip_ = new QWidget(sessionStrip);
+    conditionStrip_->setObjectName("conditionStrip");
+    auto *conditionFlow = new FlowLayout(conditionStrip_);
+    sessionLayout->addWidget(conditionStrip_);
     protocolChip_ = new FilterChip(sessionStrip);
     protocolChip_->setObjectName("protocolCondition");
     icmpChip_ = new FilterChip(sessionStrip);
@@ -208,13 +275,14 @@ void MainWindow::buildUi() {
     expressionChip_->setMaximumWidth(180);
     for (auto *chip :
          {protocolChip_, icmpChip_, macChip_, ipChip_, conversationChip_, expressionChip_}) {
-        sessionBar->addWidget(chip);
+        conditionFlow->addWidget(chip);
         chip->hide();
     }
-    sessionBar->addStretch();
+    conditionStrip_->hide();
     follow_ = new QCheckBox("跟随", sessionStrip);
     follow_->setObjectName("followLatest");
     follow_->setChecked(true);
+    follow_->setToolTip("滚动或选择历史数据包会暂停跟随，勾选后恢复");
     sessionBar->addWidget(follow_);
     statistics_ = new QCheckBox("统计", sessionStrip);
     statistics_->setObjectName("statisticsToggle");
@@ -306,13 +374,58 @@ void MainWindow::buildUi() {
     table_->setAlternatingRowColors(true);
     table_->setShowGrid(false);
     table_->verticalHeader()->hide();
-    table_->verticalHeader()->setDefaultSectionSize(25);
+    table_->verticalHeader()->setDefaultSectionSize(style::rowHeight);
     table_->horizontalHeader()->setMinimumSectionSize(44);
     table_->horizontalHeader()->setFixedHeight(28);
     const int widths[] = {64, 106, 190, 190, 74, 60, 52, 240};
     for (int i = 0; i < 8; ++i)
         table_->setColumnWidth(i, widths[i]);
     table_->setColumnHidden(6, true);
+    emptyState_ = new QWidget(table_->viewport());
+    emptyState_->setObjectName("packetEmptyState");
+    auto *emptyLayout = new QVBoxLayout(emptyState_);
+    emptyLayout->setContentsMargins(16, 12, 16, 12);
+    emptyLayout->setSpacing(8);
+    emptyLayout->addStretch();
+    emptyTitle_ = new QLabel(emptyState_);
+    emptyTitle_->setObjectName("emptyTitle");
+    emptyTitle_->setAlignment(Qt::AlignCenter);
+    emptyHint_ = new QLabel(emptyState_);
+    emptyHint_->setObjectName("emptyHint");
+    emptyHint_->setWordWrap(true);
+    emptyHint_->setAlignment(Qt::AlignCenter);
+    emptyLayout->addWidget(emptyTitle_);
+    emptyLayout->addWidget(emptyHint_);
+    auto *emptyActions = new QHBoxLayout;
+    emptyActions->addStretch();
+    emptyStart_ = new QPushButton("开始", emptyState_);
+    emptyOpen_ = new QPushButton("打开", emptyState_);
+    emptyRefresh_ = new QPushButton("刷新接口", emptyState_);
+    emptyAdjust_ = new QPushButton("调整筛选", emptyState_);
+    emptyStart_->setObjectName("emptyStart");
+    emptyOpen_->setObjectName("emptyOpen");
+    emptyRefresh_->setObjectName("emptyRefresh");
+    emptyAdjust_->setObjectName("emptyAdjust");
+    for (auto *button : {emptyStart_, emptyOpen_, emptyRefresh_, emptyAdjust_})
+        emptyActions->addWidget(button);
+    emptyActions->addStretch();
+    emptyLayout->addLayout(emptyActions);
+    emptyLayout->addStretch();
+    icons::bind(emptyStart_, icons::Id::Start);
+    icons::bind(emptyOpen_, icons::Id::Open);
+    icons::bind(emptyRefresh_, icons::Id::Refresh);
+    icons::bind(emptyAdjust_, icons::Id::Filter);
+    connect(emptyStart_, &QPushButton::clicked, start_, &QPushButton::click);
+    connect(emptyOpen_, &QPushButton::clicked, open_, &QPushButton::click);
+    connect(emptyRefresh_, &QPushButton::clicked, refresh_, &QAction::trigger);
+    connect(emptyAdjust_, &QPushButton::clicked, this, [this] {
+        addressToggle_->setChecked(true);
+        expressionAction_->setChecked(bool(model_->expression()));
+        if (model_->expression())
+            expressionInput_->setFocus();
+        else
+            ip_->setFocus();
+    });
     table_->horizontalHeader()->setStretchLastSection(true);
     table_->horizontalHeader()->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(table_->horizontalHeader(), &QHeaderView::customContextMenuRequested, this,
@@ -369,6 +482,12 @@ void MainWindow::buildUi() {
     fields_->setColumnWidth(0, 190);
     fields_->setAlternatingRowColors(true);
     fields_->setUniformRowHeights(true);
+    fieldEmpty_ = new QLabel("选择数据包以查看字段和字节", fields_->viewport());
+    fieldEmpty_->setObjectName("fieldEmptyState");
+    fieldEmpty_->setAlignment(Qt::AlignCenter);
+    fieldEmpty_->setWordWrap(true);
+    fieldEmpty_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    fields_->viewport()->installEventFilter(this);
     fields_->header()->setFixedHeight(26);
     panel("字段", fields_, detailSplit);
     auto *bytePanel = new QWidget;
@@ -395,7 +514,8 @@ void MainWindow::buildUi() {
     byteLayout->addWidget(hexPager_);
     hexPager_->hide();
     panel("原始字节", bytePanel, detailSplit);
-    hex_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    hex_->setFont(style::dataFont());
+    hex_->setPlaceholderText(i18n::text("选择数据包以查看字段和字节"));
     detailSplit->setSizes({560, 650});
     lowerLayout->addWidget(detailSplit, 1);
     vertical->addWidget(table_);
@@ -424,7 +544,7 @@ void MainWindow::buildUi() {
         auto *caption = new QLabel(captions[i], diagnosticPanel_);
         auto *value = new QLabel("0", diagnosticPanel_);
         value->setObjectName("diagnostic" + keys[i]);
-        value->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+        value->setFont(style::dataFont());
         diagnosticValues_.append(value);
         diagnosticLayout->addWidget(caption, static_cast<int>(i / 3), static_cast<int>(i % 3) * 2);
         diagnosticLayout->addWidget(value, static_cast<int>(i / 3),
@@ -478,6 +598,9 @@ void MainWindow::buildUi() {
     diagnostics_ = new QPushButton("诊断", this);
     diagnostics_->setObjectName("diagnosticsToggle");
     diagnostics_->setCheckable(true);
+    icons::bind(diagnostics_, icons::Id::Diagnostic);
+    icons::bind(apply_, icons::Id::Filter);
+    icons::bind(clear_, icons::Id::Close);
     statusBar()->addPermanentWidget(diagnostics_);
     connect(diagnostics_, &QPushButton::toggled, diagnosticPanel_, &QWidget::setVisible);
     sourceStatus_[0] = "就绪";
@@ -495,6 +618,7 @@ void MainWindow::buildUi() {
     open_->setToolTip("打开  Ctrl+O");
     save_->setToolTip("保存  Ctrl+S");
     apply_->setToolTip("应用  Ctrl+Enter");
+    connect(follow_, &QCheckBox::toggled, this, &MainWindow::updatePresentation);
     i18n::bind(this);
 }
 void MainWindow::arrangeFilters() {

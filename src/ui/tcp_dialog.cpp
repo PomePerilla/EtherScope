@@ -3,6 +3,7 @@
 #include "ui/style.h"
 #include "ui/language.h"
 #include "ui/stream_pane.h"
+#include "ui/icons.h"
 #include <QAbstractTableModel>
 #include <QDateTime>
 #include <QCloseEvent>
@@ -87,7 +88,7 @@ class TcpTableModel final : public QAbstractTableModel {
         if (role == Qt::DisplayRole || role == Qt::ToolTipRole)
             return row.values[index.column()];
         if (role == Qt::FontRole && index.column() != 5)
-            return QFontDatabase::systemFont(QFontDatabase::FixedFont);
+            return style::dataFont();
         return {};
     }
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override {
@@ -182,7 +183,7 @@ TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
     table_->setShowGrid(false);
     table_->setAlternatingRowColors(true);
     table_->verticalHeader()->hide();
-    table_->verticalHeader()->setDefaultSectionSize(25);
+    table_->verticalHeader()->setDefaultSectionSize(style::rowHeight);
     table_->setSortingEnabled(true);
     table_->sortByColumn(0, Qt::AscendingOrder);
     const int widths[] = {56, 174, 64, 174, 64, 100, 76, 76, 94, 94, 86, 82};
@@ -212,7 +213,7 @@ TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
     events_->setRootIsDecorated(false);
     events_->setAlternatingRowColors(true);
     events_->setSelectionMode(QAbstractItemView::SingleSelection);
-    events_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    events_->setFont(style::dataFont());
     events_->setColumnWidth(0, 70);
     events_->setColumnWidth(1, 130);
     events_->setColumnWidth(2, 88);
@@ -227,10 +228,14 @@ TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
     locate_ = new QPushButton("定位", this);
     locate_->setObjectName("tcpLocateButton");
     auto *close = new QPushButton("关闭", this);
+    icons::bind(filter_, icons::Id::Filter);
+    icons::bind(locate_, icons::Id::Locate);
+    icons::bind(close, icons::Id::Close);
     error_ = new QLabel(this);
     error_->setObjectName("tcpError");
     error_->setProperty("error", true);
     streamButton_ = new QPushButton("流数据", this);
+    icons::bind(streamButton_, icons::Id::Tcp);
     streamButton_->setObjectName("tcpStreamButton");
     streamButton_->setEnabled(false);
     actions->addWidget(filter_);

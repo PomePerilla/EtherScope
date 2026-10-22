@@ -5,17 +5,21 @@ $version = [regex]::Match((Get-Content -LiteralPath (Join-Path $projectRoot 'CMa
 if (-not $version) { throw 'Version missing.' }
 
 $paths = @('.github/workflows/ci.yml', '.clang-format', '.gitattributes', '.gitignore', 'CMakeLists.txt', 'README.md', 'README.zh-CN.md', 'README.zh-TW.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
-    'docs/licenses/GPL-3.0.txt', 'docs/licenses/LGPL-3.0.txt', 'docs/licenses/Inno-Setup.txt', 'docs/licenses/OpenSSL.txt', 'docs/licenses/nghttp2.txt', 'samples/README.md',
+    'docs/licenses/GPL-3.0.txt', 'docs/licenses/LGPL-3.0.txt', 'docs/licenses/Inno-Setup.txt', 'docs/licenses/OpenSSL.txt', 'docs/licenses/nghttp2.txt',
+    'docs/部署说明.md', 'docs/视觉设计规范.md', 'docs/视觉改版验证.md', 'samples/README.md',
     'samples/synthetic-protocols.pcap', 'samples/synthetic-ipv6.pcap')
 foreach ($folder in @('src', 'tests', 'scripts')) {
     foreach ($item in Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -Recurse -Force) {
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Linked path: $($item.FullName)" }
         if ($item.PSIsContainer) { continue }
         if ($item.Extension -eq '.pyc' -and $item.Directory.Name -eq '__pycache__') { continue }
-        if ($item.Extension -notin @('.cpp', '.h', '.inc', '.in', '.xpm', '.ps1', '.py', '.iss', '.isl', '.json')) {
+        $relativePath = $item.FullName.Substring($projectRoot.Length + 1).Replace('\', '/')
+        $iconAsset = $relativePath.StartsWith('src/ui/icons/', [StringComparison]::Ordinal) -and
+            $item.Extension -in @('.png', '.svg', '.ico')
+        if (-not $iconAsset -and $item.Extension -notin @('.cpp', '.h', '.inc', '.in', '.xpm', '.ps1', '.py', '.iss', '.isl', '.json')) {
             throw "Unexpected source file: $($item.FullName)"
         }
-        $paths += $item.FullName.Substring($projectRoot.Length + 1).Replace('\', '/')
+        $paths += $relativePath
     }
 }
 [Array]::Sort($paths, [StringComparer]::Ordinal)

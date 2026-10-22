@@ -267,6 +267,7 @@ void bind(QWidget *root) {
         if (auto *widget = qobject_cast<QWidget *>(object)) {
             property(widget, "windowTitle");
             property(widget, "toolTip");
+            property(widget, "accessibleName");
         }
         if (auto *action = qobject_cast<QAction *>(object))
             property(action, "toolTip");

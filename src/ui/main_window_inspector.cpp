@@ -1,6 +1,7 @@
 #include "ui/main_window.h"
 #include "ui/helpers.h"
 #include "ui/language.h"
+#include "ui/style.h"
 #include <QAction>
 #include <QSettings>
 #include <QLabel>
@@ -47,6 +48,7 @@ void MainWindow::showDetails() {
     details_.cancel();
     detailsPending_ = false;
     selected_ = packetAtRow;
+    updatePresentation();
     QSignalBlocker block(fields_);
     fields_->clear();
     hex_->setExtraSelections({});
@@ -96,7 +98,7 @@ void MainWindow::fillDetails() {
         item->setData(0, Qt::UserRole + 4, q(field.value));
         const auto name = q(field.name);
         if (name.contains("地址") || name.contains("MAC") || q(field.value).startsWith("0x"))
-            item->setFont(1, QFontDatabase::systemFont(QFontDatabase::FixedFont));
+            item->setFont(1, style::dataFont());
         item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(field.offset));
         item->setData(0, Qt::UserRole + 1, QVariant::fromValue<qulonglong>(field.length));
         const auto path =
@@ -189,8 +191,9 @@ void MainWindow::highlightBytes(QTreeWidgetItem *item, bool locate) {
             s.cursor.setPosition(block.position() + 8 + static_cast<int>(o % 16) * 3);
             s.cursor.setPosition(s.cursor.position() + static_cast<int>(n) * 3 - 1,
                                  QTextCursor::KeepAnchor);
-            s.format.setBackground(QColor("#356ed5"));
-            s.format.setForeground(Qt::white);
+            const auto colors = style::colors(dark_);
+            s.format.setBackground(QColor(colors.selection));
+            s.format.setForeground(QColor(colors.text));
             selections.push_back(s);
             o += n;
         }

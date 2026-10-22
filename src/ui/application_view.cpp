@@ -1,5 +1,7 @@
 #include "ui/application_view.h"
 #include "ui/language.h"
+#include "ui/style.h"
+#include "ui/icons.h"
 #include <QComboBox>
 #include <QElapsedTimer>
 #include <QFontDatabase>
@@ -50,6 +52,7 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     state_->setObjectName("applicationState");
     bar->addWidget(state_);
     auto *locate = new QPushButton("定位", this);
+    icons::bind(locate, icons::Id::Locate);
     bar->addWidget(locate);
     layout->addLayout(bar);
     auto *splitter = new QSplitter(Qt::Vertical, this);
@@ -70,7 +73,7 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     bytes_->setObjectName("applicationBytes");
     bytes_->setReadOnly(true);
     bytes_->setLineWrapMode(QPlainTextEdit::NoWrap);
-    bytes_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    bytes_->setFont(style::dataFont());
     layout->addWidget(splitter, 1);
     auto *pager = new QHBoxLayout;
     auto *previous = new QPushButton("上一页", this);

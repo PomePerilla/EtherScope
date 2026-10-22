@@ -6,6 +6,7 @@
 #include <QIcon>
 #include <QGuiApplication>
 #include "ui/style.h"
+#include "ui/icons.h"
 #include "ui/language.h"
 #include <algorithm>
 
@@ -62,28 +63,12 @@ QVariant PacketModel::data(const QModelIndex &i, int role) const {
                (!p.error.empty() ? ", " + i18n::text("异常")
                                  : (p.warnings.empty() ? QString{} : ", " + i18n::text("提示")));
     if (role == Qt::FontRole && i.column() != 4 && i.column() != 6 && i.column() != 7) {
-        static const auto mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        static const auto mono = style::dataFont();
         return mono;
     }
     if (role == Qt::DecorationRole && i.column() == 0 &&
         (!p.error.empty() || !p.warnings.empty())) {
-        auto marker = [](const char *color) {
-            QPixmap dot(10, 10);
-            dot.fill(Qt::transparent);
-            QPainter painter(&dot);
-            painter.setRenderHint(QPainter::Antialiasing);
-            painter.setPen(Qt::NoPen);
-            painter.setBrush(QColor(color));
-            painter.drawEllipse(QRectF(2, 2, 6, 6));
-            return QIcon(dot);
-        };
-        static const auto error = marker(style::danger), darkWarning = marker(style::amber),
-                          lightWarning = marker(style::lightAmber);
-        return !p.error.empty()
-                   ? error
-                   : (QGuiApplication::palette().color(QPalette::Base).lightness() < 128
-                          ? darkWarning
-                          : lightWarning);
+        return icons::icon(!p.error.empty() ? icons::Id::Error : icons::Id::Warning, false, 14);
     }
     if (role != Qt::DisplayRole)
         return {};

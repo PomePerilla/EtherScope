@@ -24,6 +24,7 @@ DisableWelcomePage=yes
 ShowLanguageDialog=no
 DisableDirPage=auto
 WizardStyle=modern
+SetupIconFile=..\src\ui\icons\etherscope.ico
 OutputDir={#ReleaseDirectory}
 OutputBaseFilename=EtherScope-Setup-{#AppVersion}-x64
 Compression=lzma2/max

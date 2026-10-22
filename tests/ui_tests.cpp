@@ -3,6 +3,9 @@
 #include "ui/stream_pane.h"
 #include "ui/application_view.h"
 #include "ui/language.h"
+#include "ui/style.h"
+#include "ui/icons.h"
+#include "ui/window_title_bar.h"
 #include <QCheckBox>
 #include <QAction>
 #include <QDialog>
@@ -40,6 +43,8 @@
 #include <QScrollBar>
 #include <QSplitter>
 #include <QHeaderView>
+#include <QToolButton>
+#include <QDataStream>
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -182,6 +187,257 @@ TcpDialog *startStream(MainWindow &window) {
 class DesktopTests : public QObject {
     Q_OBJECT
   private slots:
+    void framelessWindowControls() {
+        const auto options = testOptions();
+        MainWindow window(nullptr, options);
+        QVERIFY(waitForInterfaces(window));
+        window.show();
+        window.resize(1024, 768);
+        QTest::qWait(20);
+        QVERIFY(window.windowFlags().testFlag(Qt::FramelessWindowHint));
+        QVERIFY(!window.findChild<QWidget *>("brandMark"));
+        QCOMPARE(window.findChildren<QLabel *>("windowBrand").size(), 1);
+        auto *bar = window.findChild<QWidget *>("windowTitleBar");
+        auto *maximize = window.findChild<QAbstractButton *>("windowMaximizeButton");
+        auto *minimize = window.findChild<QAbstractButton *>("windowMinimizeButton");
+        auto *close = window.findChild<QAbstractButton *>("windowCloseButton");
+        QVERIFY(bar && maximize && minimize && close);
+        auto *titleBar = static_cast<WindowTitleBar *>(bar);
+        QVERIFY(titleBar->isDragArea(bar->mapTo(&window, QPoint(200, 16))));
+        QVERIFY(!titleBar->isDragArea(maximize->mapTo(&window, maximize->rect().center())));
+        auto *devices = window.findChild<QComboBox *>("deviceSelector");
+        QVERIFY(!titleBar->isDragArea(devices->mapTo(&window, devices->rect().center())));
+        for (const auto &code : {"en", "zh_CN", "zh_TW"}) {
+            i18n::language().set(code);
+            for (bool dark : {true, false}) {
+                window.setDarkTheme(dark);
+                QCOMPARE(maximize->accessibleName(), i18n::text("最大化"));
+                QTest::mouseClick(maximize, Qt::LeftButton);
+                QTRY_VERIFY(window.isMaximized());
+                QCOMPARE(maximize->accessibleName(), i18n::text("还原"));
+                QTest::mouseClick(maximize, Qt::LeftButton);
+                QTRY_VERIFY(!window.isMaximized());
+                QTest::mouseDClick(bar, Qt::LeftButton, Qt::NoModifier, QPoint(200, 16));
+                QTRY_VERIFY(window.isMaximized());
+                QTest::mouseDClick(bar, Qt::LeftButton, Qt::NoModifier, QPoint(200, 16));
+                QTRY_VERIFY(!window.isMaximized());
+            }
+        }
+        minimize->click();
+        QTRY_VERIFY(window.isMinimized());
+        window.showNormal();
+        QTRY_VERIFY(!window.isMinimized());
+        maximize->click();
+        QTRY_VERIFY(window.isMaximized());
+        close->click();
+        QVERIFY(!window.isVisible());
+        MainWindow restored(nullptr, options);
+        restored.show();
+        QTRY_VERIFY(restored.isMaximized());
+        auto *restore = restored.findChild<QAbstractButton *>("windowMaximizeButton");
+        QCOMPARE(restore->accessibleName(), i18n::text("还原"));
+        restore->click();
+        QTRY_VERIFY(!restored.isMaximized());
+    }
+    void visualSystemLayoutsAndResources() {
+        MainWindow window(nullptr, testOptions());
+        QVERIFY(waitForInterfaces(window));
+        window.show();
+        QVERIFY(!window.windowIcon().isNull());
+        QFile resource(":/icons/etherscope.ico");
+        QVERIFY(resource.open(QIODevice::ReadOnly));
+        QDataStream ico(&resource);
+        ico.setByteOrder(QDataStream::LittleEndian);
+        quint16 reserved, type, count;
+        ico >> reserved >> type >> count;
+        QCOMPARE(reserved, quint16(0));
+        QCOMPARE(type, quint16(1));
+        QCOMPARE(count, quint16(8));
+        for (int size : {16, 20, 24, 32, 48, 64, 128, 256}) {
+            auto image = window.windowIcon().pixmap(size, size).toImage();
+            QVERIFY(!image.isNull());
+            QVERIFY(image.hasAlphaChannel());
+            QCOMPARE(image.pixelColor(0, 0).alpha(), 0);
+        }
+        auto *app = window.findChild<QAction *>("applicationAnalysisAction");
+        QVERIFY(!app->isEnabled());
+        QVERIFY(app->parent() == window.findChild<QMenu *>("analysisMenu"));
+        QVERIFY(window.findChild<QToolButton *>("refreshButton")->defaultAction() ==
+                window.findChild<QAction *>("refreshAction"));
+        QVERIFY(window.findChild<QToolButton *>("expressionToggle")->defaultAction() ==
+                window.findChild<QAction *>("expressionAction"));
+        std::vector<Packet> packets;
+        for (auto raw : fixtures::analysisSamples())
+            packets.push_back(decodeSummary(std::move(raw)));
+        for (auto raw : fixtures::ipv6Samples())
+            packets.push_back(decodeSummary(std::move(raw)));
+        window.ingestBenchmark(std::move(packets));
+        window.selectPacket(0);
+        QVERIFY(waitForDetails(window));
+        QVERIFY(app->isEnabled());
+        auto *tree = window.findChild<QTreeWidget *>("fieldTree");
+        for (QTreeWidgetItemIterator it(tree); *it; ++it)
+            if ((*it)->data(0, Qt::UserRole + 1).toULongLong()) {
+                tree->setCurrentItem(*it);
+                break;
+            }
+        const auto screenshots = qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");
+        for (bool conditions : {false, true}) {
+            if (conditions) {
+                window.findChild<QComboBox *>("protocolFilter")->setCurrentText("ICMP");
+                window.findChild<QComboBox *>("icmpTypeFilter")->setCurrentIndex(1);
+                window.findChild<QLineEdit *>("macInput")->setText("02:00:00:00:00:01");
+                window.findChild<QLineEdit *>("ipInput")->setText(
+                    "2001:db8:1234:5678:abcd:1234:5678:9abc");
+                window.findChild<QPushButton *>("applyFilterButton")->click();
+                QVERIFY(window.applyExpression("tcp.port == 443 or udp.port == 53"));
+            }
+            for (const auto &code : {"zh_CN", "zh_TW", "en"}) {
+                i18n::language().set(code);
+                for (bool dark : {true, false}) {
+                    window.setDarkTheme(dark);
+                    QCOMPARE(qApp->palette().color(QPalette::Base),
+                             QColor(style::colors(dark).base));
+                    for (auto size : {QSize(900, 580), QSize(1024, 768), QSize(1440, 900)}) {
+                        window.resize(size);
+                        QTest::qWait(20);
+                        QCOMPARE(window.size(), size);
+                        QList<QRect> occupied;
+                        for (const auto *name :
+                             {"startButton",       "stopButton",         "openButton",
+                              "saveButton",        "analysisButton",     "moreButton",
+                              "refreshButton",     "deviceSelector",     "sessionTabs",
+                              "protocolFilter",    "icmpTypeGroup",      "addressFilterToggle",
+                              "expressionToggle",  "followLatest",       "statisticsToggle",
+                              "protocolCondition", "icmpCondition",      "macCondition",
+                              "ipCondition",       "expressionCondition"}) {
+                            auto *widget = window.findChild<QWidget *>(name);
+                            if (!widget || !widget->isVisible())
+                                continue;
+                            const QRect bounds(widget->mapTo(&window, QPoint()), widget->size());
+                            QVERIFY2(window.rect().contains(bounds), name);
+                            for (const auto &other : occupied)
+                                QVERIFY2(!bounds.intersects(other), name);
+                            occupied.append(bounds);
+                        }
+                        if (!conditions) {
+                            QVERIFY(!window.findChild<QWidget *>("packetEmptyState")->isVisible());
+                            auto *hex = window.findChild<QPlainTextEdit *>("hexView");
+                            QVERIFY(!hex->extraSelections().empty());
+                            QCOMPARE(hex->extraSelections().front().format.background().color(),
+                                     QColor(style::colors(dark).selection));
+                        } else
+                            QVERIFY(window.findChild<QWidget *>("conditionStrip")->isVisible());
+                        if (!screenshots.isEmpty())
+                            QVERIFY(window.grab().save(
+                                screenshots + QString("/visual-%1-%2-%3-%4.png")
+                                                  .arg(code)
+                                                  .arg(dark ? "dark" : "light")
+                                                  .arg(size.width())
+                                                  .arg(conditions ? "conditions" : "packets")));
+                    }
+                }
+            }
+        }
+    }
+    void visualCaptureAndEmptyStates() {
+        QTemporaryDir directory;
+        auto starting = std::make_shared<Gate>(), stopping = std::make_shared<Gate>(),
+             saving = std::make_shared<Gate>();
+        auto feed = std::make_shared<std::atomic<bool>>(false);
+        auto options = testOptions();
+        options.exportWriter = gatedWriter(saving, true);
+        options.capture.run = [starting, stopping, feed](
+                                  const QString &, bool, std::stop_token stop,
+                                  const CaptureHooks::Sink &sink,
+                                  const CaptureHooks::Opened &opened, const LiveCaptureOptions &) {
+            starting->wait();
+            if (stop.stop_requested())
+                return;
+            opened("捕获中");
+            while (!stop.stop_requested()) {
+                if (*feed)
+                    sink(fixtures::icmp());
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            stopping->wait();
+        };
+        {
+            QSettings settings(options.settingsFile, QSettings::IniFormat);
+            settings.setValue("recording/directory", directory.path());
+        }
+        MainWindow window(nullptr, options);
+        ReleaseGate releaseStart{starting}, releaseStop{stopping}, releaseSave{saving};
+        QVERIFY(waitForInterfaces(window));
+        window.show();
+        window.resize(1024, 768);
+        auto shot = [&](const QString &state) {
+            const auto screenshots = qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");
+            for (bool dark : {true, false}) {
+                window.setDarkTheme(dark);
+                QTest::qWait(10);
+                if (!screenshots.isEmpty())
+                    QVERIFY(window.grab().save(screenshots + "/state-" + state +
+                                               (dark ? "-dark.png" : "-light.png")));
+            }
+        };
+        QVERIFY(window.findChild<QWidget *>("packetEmptyState")->isVisible());
+        shot("idle");
+        window.findChild<QAction *>("recordingAction")->setChecked(true);
+        window.findChild<QPushButton *>("startButton")->click();
+        QTRY_VERIFY(starting->entered.load());
+        QCOMPARE(window.captureState(), MainWindow::CaptureState::Starting);
+        shot("starting");
+        starting->release();
+        QTRY_COMPARE(window.captureState(), MainWindow::CaptureState::Running);
+        QCOMPARE(window.findChild<QLabel *>("emptyTitle")->text(), QString("正在等待数据包"));
+        shot("waiting");
+        *feed = true;
+        QTRY_VERIFY(window.packetModel()->rowCount() > 0);
+        window.selectPacket(0);
+        QVERIFY(waitForDetails(window));
+        QVERIFY(!window.findChild<QWidget *>("packetEmptyState")->isVisible());
+        QTRY_VERIFY(window.recordingStats().written > 0);
+        shot("capturing-recording");
+        window.findChild<QCheckBox *>("followLatest")->setChecked(false);
+        QCOMPARE(window.findChild<QCheckBox *>("followLatest")->text(), QString("已暂停跟随"));
+        window.stopCapture();
+        QTRY_VERIFY(stopping->entered.load());
+        QCOMPARE(window.captureState(), MainWindow::CaptureState::Stopping);
+        shot("stopping");
+        stopping->release();
+        QTRY_VERIFY(!window.busy() && !window.recordingBusy());
+        QSignalSpy done(&window, &MainWindow::saveFinished);
+        QVERIFY(window.saveFile(directory.filePath("error.pcap")));
+        QTRY_VERIFY(saving->entered.load());
+        QVERIFY(window.saving());
+        shot("exporting");
+        saving->release();
+        QTRY_COMPARE(done.size(), 1);
+        QVERIFY(!done[0][0].toBool());
+        QVERIFY(window.findChild<QLabel *>("captureStatus")->property("error").toBool());
+        shot("error");
+        auto offline = testOptions();
+        offline.capture.interfaces = [](QString &error) {
+            error = "Npcap 未安装";
+            return std::vector<CaptureInterface>{};
+        };
+        MainWindow missing(nullptr, offline);
+        missing.show();
+        QVERIFY(waitForInterfaces(missing));
+        QVERIFY(missing.findChild<QPushButton *>("emptyRefresh")->isVisible());
+        QVERIFY(missing.findChild<QPushButton *>("emptyOpen")->isEnabled());
+        QVERIFY(!missing.findChild<QPushButton *>("emptyStart")->isVisible());
+        const auto screenshots = qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");
+        for (bool dark : {true, false}) {
+            missing.setDarkTheme(dark);
+            QTest::qWait(10);
+            if (!screenshots.isEmpty())
+                QVERIFY(
+                    missing.grab().save(screenshots + (dark ? "/state-no-interface-dark.png"
+                                                            : "/state-no-interface-light.png")));
+        }
+    }
     void applicationUpdatesKeepLiveFollowing() {
         auto advance = std::make_shared<std::atomic<bool>>(false);
         auto options = testOptions();
@@ -1741,7 +1997,7 @@ class DesktopTests : public QObject {
         QVERIFY(window.busy());
         auto *engine = window.findChild<CaptureEngine *>();
         QSignalSpy stopped(engine, &CaptureEngine::finished);
-        QVERIFY(!window.close());
+        window.findChild<QAbstractButton *>("windowCloseButton")->click();
         QVERIFY(window.isVisible());
         QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 3000);
         QVERIFY(window.isVisible());

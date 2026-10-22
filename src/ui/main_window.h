@@ -31,10 +31,13 @@ class QCloseEvent;
 class QResizeEvent;
 class QGridLayout;
 class QDialog;
+class QToolButton;
+class QShowEvent;
 
 namespace etherscope {
 class FilterChip;
 class TcpDialog;
+class WindowTitleBar;
 struct MainWindowOptions {
     QString settingsFile;
     QString language;
@@ -123,9 +126,14 @@ class MainWindow final : public QMainWindow {
     void closeEvent(QCloseEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void changeEvent(QEvent *event) override;
+    bool nativeEvent(const QByteArray &type, void *message, qintptr *result) override;
 
   private:
     SessionStore live_, file_;
+    WindowTitleBar *titleBar_{};
+    void configureNativeFrame();
     PreparationService preparation_;
     CaptureEngine engine_;
     ExportEngine exporter_;
@@ -153,6 +161,11 @@ class MainWindow final : public QMainWindow {
     QLineEdit *mac_{}, *ip_{};
     QPushButton *start_{}, *stop_{}, *open_{}, *save_{};
     QAction *refresh_{}, *theme_{}, *captureFilterAction_{};
+    QAction *applicationAction_{};
+    QToolButton *expressionToggle_{};
+    QWidget *conditionStrip_{}, *emptyState_{};
+    QLabel *emptyTitle_{}, *emptyHint_{}, *fieldEmpty_{};
+    QPushButton *emptyStart_{}, *emptyOpen_{}, *emptyRefresh_{}, *emptyAdjust_{};
     QLabel *bpfMarker_{};
     QPointer<QDialog> bpfDialog_;
     QPointer<TcpDialog> tcpDialog_;
@@ -263,6 +276,7 @@ class MainWindow final : public QMainWindow {
     void reportError(const QString &message);
     void updateStatus();
     void updateButtons();
+    void updatePresentation();
     SessionStore &currentStore() {
         return view_ == 0 ? live_ : file_;
     }

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(EtherScope VERSION 2.0.0 LANGUAGES CXX)
+project(EtherScope VERSION 2.1.0 LANGUAGES CXX)
 configure_file(src/version.h.in generated/version.h @ONLY)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,6 +59,9 @@ if(ETHERSCOPE_BUILD_FUZZERS)
 endif()
 if(ETHERSCOPE_BUILD_GUI)
   find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Widgets)
+  add_executable(visual_assets EXCLUDE_FROM_ALL scripts/render_visual_assets.cpp src/ui/icons.cpp)
+  target_include_directories(visual_assets PRIVATE src)
+  target_link_libraries(visual_assets PRIVATE Qt6::Widgets)
   if(BUILD_TESTING)
     find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Test)
   endif()
@@ -71,8 +74,11 @@ if(ETHERSCOPE_BUILD_GUI)
     src/capture/details.cpp
     src/capture/stream.cpp
     src/ui/main_window.cpp
+    src/ui/icons.cpp
     src/ui/language.cpp
     src/ui/main_window_ui.cpp
+    src/ui/main_window_frame.cpp
+    src/ui/window_title_bar.cpp
     src/ui/main_window_theme.cpp
     src/ui/main_window_filter.cpp
     src/ui/main_window_analysis.cpp
@@ -90,11 +96,15 @@ if(ETHERSCOPE_BUILD_GUI)
   target_include_directories(etherscope_desktop PUBLIC src "${CMAKE_CURRENT_BINARY_DIR}/generated")
   target_link_libraries(etherscope_desktop PUBLIC etherscope_core Qt6::Widgets)
   qt_add_resources(etherscope_desktop desktop_icons PREFIX "/icons" BASE "src/ui/icons" FILES src/ui/icons/chevron-down.xpm)
+  qt_add_resources(etherscope_desktop brand_icons PREFIX "/icons" BASE "src/ui/icons" FILES
+    src/ui/icons/app-16.png src/ui/icons/app-20.png src/ui/icons/app-24.png src/ui/icons/app-32.png
+    src/ui/icons/app-48.png src/ui/icons/app-64.png src/ui/icons/app-128.png src/ui/icons/app-256.png
+    src/ui/icons/etherscope.ico)
   qt_add_resources(etherscope_desktop localization PREFIX "/i18n" BASE "src/ui/i18n" FILES src/ui/i18n/messages.json)
   if(WIN32)
     find_path(NPCAP_INCLUDE_DIR pcap/pcap.h HINTS "${NPCAP_SDK_DIR}/Include" "${CMAKE_SOURCE_DIR}/.tools/npcap-sdk/Include" REQUIRED)
     target_include_directories(etherscope_desktop PRIVATE "${NPCAP_INCLUDE_DIR}")
-    target_link_libraries(etherscope_desktop PRIVATE ws2_32)
+    target_link_libraries(etherscope_desktop PRIVATE ws2_32 user32 dwmapi)
   endif()
   qt_add_executable(EtherScope WIN32 src/main.cpp)
   if(WIN32)

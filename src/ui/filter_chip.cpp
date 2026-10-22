@@ -1,5 +1,6 @@
 #include "ui/filter_chip.h"
 #include "ui/language.h"
+#include "ui/style.h"
 #include <QResizeEvent>
 #include <algorithm>
 
@@ -17,10 +18,10 @@ void FilterChip::setCondition(const QString &text) {
     updateGeometry();
 }
 QSize FilterChip::sizeHint() const {
-    return {std::min(260, fontMetrics().horizontalAdvance(condition_) + 36), 28};
+    return {std::min(260, fontMetrics().horizontalAdvance(condition_) + 36), style::controlHeight};
 }
 QSize FilterChip::minimumSizeHint() const {
-    return {52, 28};
+    return {52, style::controlHeight};
 }
 void FilterChip::resizeEvent(QResizeEvent *event) {
     QPushButton::resizeEvent(event);

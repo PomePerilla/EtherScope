@@ -2,6 +2,8 @@
 #include "ui/helpers.h"
 #include "ui/language.h"
 #include "ui/style.h"
+#include "ui/filter_chip.h"
+#include "ui/icons.h"
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
@@ -10,6 +12,9 @@
 #include <QPushButton>
 #include <QTableView>
 #include <QTabBar>
+#include <QToolButton>
+#include <QTreeWidget>
+#include <QPlainTextEdit>
 namespace etherscope {
 void MainWindow::updateStatus() {
     if (!status_)
@@ -31,6 +36,7 @@ void MainWindow::updateStatus() {
         lastStatusError_ = error;
         style::setFlag(status_, "error", error);
     }
+    style::setFlag(status_, "success", !error && view_ == 0 && state_ == CaptureState::Running);
     const auto &s = currentStore();
     const auto &c = counters_[view_];
     const auto drops = c.driverDropped ? QString::number(*c.driverDropped) : i18n::text("未知");
@@ -71,8 +77,10 @@ void MainWindow::updateStatus() {
                                     .arg(recording.unwritten)
                                     .arg(i18n::errorText(recording.error)));
     style::setFlag(diagnostics_, "warning", discarded > 0);
+    icons::bind(diagnostics_, discarded > 0 ? icons::Id::Warning : icons::Id::Diagnostic);
     setWindowTitle("EtherScope");
     modes_->setTabToolTip(1, filePath_);
+    updatePresentation();
 }
 void MainWindow::updateButtons() {
     recordingAction_->setEnabled(!busy() && !recordingBusy() && !closing_);
@@ -91,6 +99,61 @@ void MainWindow::updateButtons() {
     open_->setEnabled(!openingFile_ && state_ != CaptureState::Stopping && !closing_);
     save_->setEnabled(!saving_ && !closing_ && !currentStore().packets().empty());
     follow_->setEnabled(view_ == 0);
+    updatePresentation();
+}
+void MainWindow::updatePresentation() {
+    if (!emptyState_)
+        return;
+    applicationAction_->setEnabled(bool(selected_));
+    applicationAction_->setToolTip(selected_ ? i18n::text("Application analysis")
+                                             : i18n::text("选择数据包后可进行应用分析"));
+    bool conditions = false;
+    for (auto *chip :
+         {protocolChip_, icmpChip_, macChip_, ipChip_, conversationChip_, expressionChip_})
+        conditions |= !chip->isHidden();
+    conditionStrip_->setVisible(conditions);
+    follow_->setText(i18n::text(view_ == 0 && !follow_->isChecked() ? "已暂停跟随" : "跟随"));
+    emptyState_->setGeometry(table_->viewport()->rect());
+    fieldEmpty_->setGeometry(fields_->viewport()->rect());
+    fieldEmpty_->setVisible(!selected_);
+    i18n::setLabel(fieldEmpty_, "选择数据包以查看字段和字节");
+    hex_->setPlaceholderText(i18n::text("选择数据包以查看字段和字节"));
+    emptyState_->setVisible(model_->rowCount() == 0);
+    if (model_->rowCount())
+        return;
+    const bool filtered = !currentStore().packets().empty();
+    const bool waiting = view_ == active_ && state_ == CaptureState::Running;
+    const bool unavailable = view_ == 0 && !discovering() && devices_->count() == 0;
+    QString title, hint;
+    if (filtered) {
+        title = "没有匹配的数据包";
+        hint = "调整筛选或移除上方条件以查看数据包";
+    } else if (view_ == active_ && state_ == CaptureState::Starting) {
+        title = "正在准备数据源";
+        hint = "连接完成后将在此显示数据包";
+    } else if (view_ == active_ && state_ == CaptureState::Stopping) {
+        title = "正在停止";
+        hint = "正在处理已接收的数据包";
+    } else if (waiting) {
+        title = "正在等待数据包";
+        hint = "新数据包将在此实时显示";
+    } else if (unavailable) {
+        title = "没有可用网卡";
+        hint = "刷新接口，或打开捕获文件继续分析";
+    } else {
+        title = "开始一次网络观察";
+        hint = "选择网卡开始捕获，或打开 PCAP / PCAPNG 文件";
+    }
+    i18n::setLabel(emptyTitle_, title);
+    i18n::setLabel(emptyHint_, hint);
+    emptyStart_->setVisible(!filtered && !waiting && !unavailable && view_ == 0 &&
+                            state_ == CaptureState::Idle);
+    emptyOpen_->setVisible(!filtered && !waiting && state_ == CaptureState::Idle);
+    emptyRefresh_->setVisible(unavailable);
+    emptyAdjust_->setVisible(filtered);
+    emptyStart_->setEnabled(start_->isEnabled());
+    emptyOpen_->setEnabled(open_->isEnabled());
+    emptyRefresh_->setEnabled(refresh_->isEnabled());
 }
 void MainWindow::resetRates() {
     chart_->reset();

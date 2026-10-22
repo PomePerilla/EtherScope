@@ -1,4 +1,4 @@
-# EtherScope v2.0.0
+# EtherScope v2.1.0
 
 [English](README.md) | 简体中文 | [繁體中文](README.zh-TW.md)
 
@@ -15,12 +15,12 @@ Windows x64 网络协议分析器。
 
 ## 下载
 
-[EtherScope v2.0.0](https://github.com/PomePerilla/EtherScope/releases/tag/v2.0.0)
+[EtherScope v2.1.0](https://github.com/PomePerilla/EtherScope/releases/tag/v2.1.0)
 
 | 文件 | 用途 |
 |---|---|
-| `EtherScope-2.0.0-windows-x64.zip` | 安装后使用 |
-| `EtherScope-2.0.0-sourcecode.zip` | 编译后使用 |
+| `EtherScope-2.1.0-windows-x64.zip` | 安装后使用 |
+| `EtherScope-2.1.0-sourcecode.zip` | 编译后使用 |
 
 1. 安装 [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe)。
 2. 解压程序包，运行安装器。
@@ -30,13 +30,13 @@ Windows x64 网络协议分析器。
 
 | 操作 | 入口 |
 |---|---|
-| 语言 | 更多 > 语言 |
-| 捕获过滤 | 更多 > 捕获过滤 |
-| TCP 分析 | 更多 > TCP 会话 > 流数据 |
-| 应用层消息 | 更多 > 应用分析 |
+| 语言 | 更多 > 外观与语言 > 语言 |
+| 捕获过滤 | 更多 > 捕获设置 > 捕获过滤 |
+| TCP 分析 | 分析 > TCP 会话 > 流数据 |
+| 应用层消息 | 分析 > 应用分析 |
 | TLS 密钥 | 更多 > TLS 密钥日志 |
-| 录制 | 更多 > 录制设置，录制到磁盘 |
-| 显示表达式 | 更多 > 显示表达式 |
+| 录制 | 更多 > 捕获设置 > 录制设置，录制到磁盘 |
+| 显示表达式 | 筛选工具条 > 显示表达式 |
 | 打开 / 保存 | Ctrl+O / Ctrl+S |
 | 应用地址条件 | Ctrl+Enter |
 

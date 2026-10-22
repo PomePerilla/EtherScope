@@ -1,4 +1,4 @@
-# EtherScope v2.0.0
+# EtherScope v2.1.0
 
 English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
@@ -15,12 +15,12 @@ Windows x64 network protocol analyzer.
 
 ## Download
 
-[EtherScope v2.0.0](https://github.com/PomePerilla/EtherScope/releases/tag/v2.0.0)
+[EtherScope v2.1.0](https://github.com/PomePerilla/EtherScope/releases/tag/v2.1.0)
 
 | File | Use |
 |---|---|
-| `EtherScope-2.0.0-windows-x64.zip` | Install and run |
-| `EtherScope-2.0.0-sourcecode.zip` | Build from source |
+| `EtherScope-2.1.0-windows-x64.zip` | Install and run |
+| `EtherScope-2.1.0-sourcecode.zip` | Build from source |
 
 1. Install [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe).
 2. Extract the program package and run the installer.
@@ -30,13 +30,13 @@ Windows x64 network protocol analyzer.
 
 | Action | Entry |
 |---|---|
-| Language | More > Language |
-| Capture filter | More > Capture filter |
-| TCP analysis | More > TCP conversations > Stream data |
-| Application messages | More > Application analysis |
+| Language | More > Appearance and language > Language |
+| Capture filter | More > Capture settings > Capture filter |
+| TCP analysis | Analysis > TCP conversations > Stream data |
+| Application messages | Analysis > Application analysis |
 | TLS keys | More > TLS key log |
-| Recording | More > Recording settings, Record to disk |
-| Display expression | More > Display expression |
+| Recording | More > Capture settings > Recording settings, Record to disk |
+| Display expression | Filter toolbar > Display expression |
 | Open / Save | Ctrl+O / Ctrl+S |
 | Apply addresses | Ctrl+Enter |
 
