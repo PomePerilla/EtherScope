@@ -309,8 +309,11 @@ void TcpDialog::refresh(const SessionStore &store, const QString &mode) {
     generation_ = store.tcp().generation();
     revision_ = store.tcp().revision();
     i18n::setLabel(mode_, mode);
+    const auto sortColumn = table_->horizontalHeader()->sortIndicatorSection();
+    const auto sortOrder = table_->horizontalHeader()->sortIndicatorOrder();
     refreshing_ = true;
     model_->refresh(store.tcp());
+    table_->sortByColumn(sortColumn, sortOrder);
     table_->clearSelection();
     table_->setCurrentIndex({});
     selectConversation(selected);

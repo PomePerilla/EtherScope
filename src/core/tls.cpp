@@ -62,8 +62,8 @@ struct Decoder {
             throw std::runtime_error("Invalid TLS extensions length");
         std::set<std::uint64_t> seen;
         while (cursor < bytes.size()) {
-            const auto kind = view.integer(cursor, 2),
-                       n = static_cast<std::size_t>(view.integer(cursor + 2, 2));
+            const auto kind = view.integer(cursor, 2);
+            const auto n = static_cast<std::size_t>(view.integer(cursor + 2, 2));
             cursor += 4;
             const auto end = cursor + n;
             view.slice(cursor, n);
@@ -75,8 +75,8 @@ struct Decoder {
                 if (length != end - at)
                     throw std::runtime_error("Invalid TLS server name list");
                 while (at < end) {
-                    const auto type = view.integer(at, 1),
-                               count = static_cast<std::size_t>(view.integer(at + 1, 2));
+                    const auto type = view.integer(at, 1);
+                    const auto count = static_cast<std::size_t>(view.integer(at + 1, 2));
                     at += 3;
                     if (at > end || count > end - at)
                         throw std::runtime_error("Invalid TLS server name");

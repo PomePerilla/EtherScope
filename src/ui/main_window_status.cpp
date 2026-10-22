@@ -40,6 +40,7 @@ void MainWindow::updateStatus() {
     const auto &s = currentStore();
     const auto &c = counters_[view_];
     const auto drops = c.driverDropped ? QString::number(*c.driverDropped) : i18n::text("未知");
+    const auto discarded = dropCountDisplay(c.queueDropped, c.driverDropped, i18n::text("未知"));
     const QStringList values = {
         QString::number(c.received),
         QString::number(s.stats().received),
@@ -60,9 +61,8 @@ void MainWindow::updateStatus() {
             diagnosticValues_[i]->setText(values[i]);
     capturedLabel_->setText(QString::number(c.received));
     displayedLabel_->setText(QString::number(model_->rowCount()));
-    const auto discarded = c.queueDropped + c.driverDropped.value_or(0);
-    droppedLabel_->setText(QString::number(discarded));
-    style::setFlag(droppedLabel_, "warning", discarded > 0);
+    droppedLabel_->setText(discarded.text);
+    style::setFlag(droppedLabel_, "warning", discarded.warning);
     const auto recording = recording_.stats();
     recordingLabel_->setVisible(recordingSession_);
     recordingLabel_->setText(recording.failed ? i18n::text("Recording failed")
@@ -76,8 +76,8 @@ void MainWindow::updateStatus() {
                                     .arg(i18n::text("Unwritten"))
                                     .arg(recording.unwritten)
                                     .arg(i18n::errorText(recording.error)));
-    style::setFlag(diagnostics_, "warning", discarded > 0);
-    icons::bind(diagnostics_, discarded > 0 ? icons::Id::Warning : icons::Id::Diagnostic);
+    style::setFlag(diagnostics_, "warning", discarded.warning);
+    icons::bind(diagnostics_, discarded.warning ? icons::Id::Warning : icons::Id::Diagnostic);
     setWindowTitle("EtherScope");
     modes_->setTabToolTip(1, filePath_);
     updatePresentation();

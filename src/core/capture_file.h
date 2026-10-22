@@ -2,6 +2,7 @@
 #include "core/packet.h"
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <ostream>
 #include <span>
@@ -58,6 +59,8 @@ class CaptureWriter {
     void block(std::uint32_t type, std::span<const std::uint8_t> body);
     void output(std::span<const std::uint8_t> bytes);
 };
+// Optional callback runs once after each packet record is accepted by the output stream.
+using CaptureWriteProgress = std::function<void(std::uint64_t recordsWritten)>;
 void writeCapture(std::ostream &stream, std::span<const Packet *const> packets,
-                  CaptureFormat format);
+                  CaptureFormat format, CaptureWriteProgress progress = {});
 } // namespace etherscope

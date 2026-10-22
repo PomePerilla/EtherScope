@@ -200,21 +200,26 @@ void MainWindow::showApplicationAnalysis() {
     view->setResults(applicationIndex_[view_].results(selected_->id));
     layout->addWidget(view);
     const auto session = view_;
+    const auto *store = session == 0 ? &live_ : &file_;
     const auto packet = selected_->id, generation = applications_[session]->generation();
     connect(&applicationTimer_, &QTimer::timeout, view, [this, view, session, packet, generation] {
         view->setResults(generation == applications_[session]->generation()
                              ? applicationIndex_[session].results(packet)
                              : std::vector<std::shared_ptr<const ApplicationResult>>{});
     });
-    connect(view, &ApplicationView::locateRequested, this, [this](quint64 id) {
-        const auto row = model_->rowForId(id);
-        if (row < 0) {
-            reportError("Packet is no longer visible");
-            return;
-        }
-        selectPacket(row);
-        table_->scrollTo(model_->index(row, 0));
-    });
+    connect(view, &ApplicationView::locateRequested, this,
+            [this, session, store, generation](quint64 id) {
+                if (closing_ || view_ != session || &currentStore() != store ||
+                    applications_[session]->generation() != generation)
+                    return;
+                const auto row = model_->rowForId(id);
+                if (row < 0) {
+                    reportError("Packet is no longer visible");
+                    return;
+                }
+                selectPacket(row);
+                table_->scrollTo(model_->index(row, 0));
+            });
     i18n::bind(dialog);
     dialog->show();
 }
