@@ -36,6 +36,7 @@ void MainWindow::applyFilter() {
     commitFilter(std::move(filter));
 }
 void MainWindow::commitFilter(FilterSpec filter) {
+    rememberFilter(filter, model_->expression() ? q(model_->expression()->source()) : QString{});
     const auto selectedId = selected_ ? selected_->id : 0;
     {
         QScopedValueRollback<bool> changing(updatingSelection_, true);
@@ -47,6 +48,21 @@ void MainWindow::commitFilter(FilterSpec filter) {
     updateFilterStatus();
     showDetails();
     updateStatus();
+}
+void MainWindow::syncFilterInputs() {
+    const auto &f = model_->filter();
+    {
+        const QSignalBlocker bp(protocol_), bm(macDirection_), bi(ipDirection_);
+        protocol_->setCurrentIndex(f.protocol.empty() ? 0 : protocol_->findText(q(f.protocol)));
+        macDirection_->setCurrentIndex(int(f.macDirection));
+        ipDirection_->setCurrentIndex(int(f.ipDirection));
+        mac_->setText(f.mac ? q(formatMac(*f.mac)) : QString{});
+        ip_->setText(f.ip ? q(formatIp(*f.ip)) : (f.ipv6 ? q(formatIpv6(*f.ipv6)) : QString{}));
+    }
+    macError_->hide();
+    ipError_->hide();
+    style::setFlag(mac_, "invalid", false);
+    style::setFlag(ip_, "invalid", false);
 }
 void MainWindow::updateFilterStatus() {
     const auto &f = model_->filter();

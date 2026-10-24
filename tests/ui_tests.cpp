@@ -1,5 +1,9 @@
 #include "ui/main_window.h"
 #include "ui/tcp_dialog.h"
+#include "ui/analysis_dock.h"
+#include "ui/learning.h"
+#include <QClipboard>
+#include <QDockWidget>
 #include "ui/stream_pane.h"
 #include "ui/application_view.h"
 #include "ui/language.h"
@@ -176,9 +180,9 @@ void ingestStream(MainWindow &window) {
         packets.push_back(decodeSummary(std::move(raw)));
     window.ingestBenchmark(std::move(packets));
 }
-TcpDialog *startStream(MainWindow &window) {
+TcpPanel *startStream(MainWindow &window) {
     window.findChild<QAction *>("tcpConversationsAction")->trigger();
-    auto *dialog = window.findChild<TcpDialog *>();
+    auto *dialog = window.findChild<TcpPanel *>();
     dialog->selectConversation(1);
     dialog->findChild<QPushButton *>("tcpStreamButton")->click();
     return dialog;
@@ -187,6 +191,330 @@ TcpDialog *startStream(MainWindow &window) {
 class DesktopTests : public QObject {
     Q_OBJECT
   private slots:
+    void packetActionsCopyFilterUndoAndFreezeTarget() {
+        MainWindow window(nullptr, testOptions());
+        QVERIFY(waitForInterfaces(window));
+        window.show();
+        ingestStream(window);
+        auto *table = window.findChild<QTableView *>("packetTable");
+        auto *model = window.packetModel();
+        table->setColumnHidden(3, true);
+        table->setCurrentIndex(model->index(1, 2));
+        emit table->customContextMenuRequested(QPoint(-1, -1));
+        auto *menu = window.findChild<QMenu *>("packetContextMenu");
+        QVERIFY(menu);
+        const auto expected = model->index(1, 2).data().toString();
+        table->setCurrentIndex(model->index(0, 0));
+        menu->findChild<QAction *>("copyPacketCell")->trigger();
+        QCOMPARE(qApp->clipboard()->text(), expected);
+        menu->findChild<QAction *>("copyPacketRow")->trigger();
+        QCOMPARE(qApp->clipboard()->text().split('\t').size(), 6);
+        QVERIFY(window.applyExpression("tcp.port == 50000"));
+        menu->findChild<QAction *>("packetSourceFilterAdd")->trigger();
+        const auto expression = QString::fromStdString(model->expression()->source());
+        QVERIFY(expression.startsWith("(tcp.port == 50000) and (ip.src == "));
+        QCOMPARE(window.findChild<QLineEdit *>("expressionInput")->text(), expression);
+        window.findChild<QAction *>("undoDisplayFilter")->trigger();
+        QCOMPARE(model->expression()->source(), std::string("tcp.port == 50000"));
+        menu->findChild<QAction *>("packetSourceFilterOnly")->trigger();
+        QVERIFY(model->filter().protocol.empty());
+        QVERIFY(!model->filter().ip && !model->filter().tcpConversationId);
+        QVERIFY(QString::fromStdString(model->expression()->source()).startsWith("ip.src == "));
+        menu->findChild<QAction *>("packetConversationFilterOnly")->trigger();
+        QCOMPARE(model->filter().tcpConversationId, std::optional<std::uint64_t>(1));
+        QVERIFY(!model->expression());
+        window.findChild<QTabBar *>("sessionTabs")->setCurrentIndex(0);
+        QVERIFY(!model->filter().tcpConversationId && !model->expression());
+        menu->close();
+    }
+    void staleMenusAndBoundedHistory() {
+        MainWindow window(nullptr, testOptions());
+        QVERIFY(waitForInterfaces(window));
+        window.show();
+        window.ingestBenchmark({decodeSummary(fixtures::icmp())});
+        auto *table = window.findChild<QTableView *>("packetTable");
+        table->setCurrentIndex(window.packetModel()->index(0, 2));
+        emit table->customContextMenuRequested(QPoint(-1, -1));
+        auto *menu = window.findChild<QMenu *>("packetContextMenu");
+        QVERIFY(menu);
+        qApp->clipboard()->setText("unchanged");
+        window.findChild<QTabBar *>("sessionTabs")->setCurrentIndex(0);
+        menu->findChild<QAction *>("copyPacketCell")->trigger();
+        QCOMPARE(qApp->clipboard()->text(), QString("unchanged"));
+        QVERIFY(!window.packetModel()->expression());
+        menu->findChild<QAction *>("packetSourceFilterOnly")->trigger();
+        QVERIFY(!window.packetModel()->expression());
+        menu->close();
+        window.findChild<QTabBar *>("sessionTabs")->setCurrentIndex(1);
+        for (int i = 0; i < 25; ++i)
+            QVERIFY(window.applyExpression(QString("frame.number == %1").arg(i + 1)));
+        auto *undo = window.findChild<QAction *>("undoDisplayFilter");
+        for (int i = 0; i < 20; ++i) { QVERIFY(undo->isEnabled()); undo->trigger(); }
+        QVERIFY(!undo->isEnabled());
+        QCOMPARE(window.packetModel()->expression()->source(), std::string("frame.number == 5"));
+        auto *recent = window.findChild<QMenu *>("recentFiltersMenu");
+        QCOMPARE(recent->actions().size(), 20);
+        const auto before = window.packetModel()->expression();
+        QVERIFY(!window.applyExpression("tcp &&"));
+        QCOMPARE(window.packetModel()->expression(), before);
+        window.findChild<QTabBar *>("sessionTabs")->setCurrentIndex(0);
+        QVERIFY(!undo->isEnabled());
+        for (auto *action : recent->actions()) QVERIFY(!action->isEnabled());
+    }
+    void ipv6AndKeyboardContextActions() {
+        MainWindow window(nullptr, testOptions());
+        QVERIFY(waitForInterfaces(window));
+        window.show();
+        window.ingestBenchmark({decodeSummary(fixtures::tcp(16, 1, 1, false, 50000, true))});
+        auto *table = window.findChild<QTableView *>("packetTable");
+        table->setCurrentIndex(window.packetModel()->index(0, 2));
+        window.activateWindow();
+        table->setFocus();
+        QTest::qWait(20);
+        QTest::keyClick(table, Qt::Key_C, Qt::ControlModifier);
+        QCOMPARE(qApp->clipboard()->text(), window.packetModel()->index(0, 2).data().toString());
+        QTest::keyClick(table, Qt::Key_F10, Qt::ShiftModifier);
+        auto *menu = window.findChild<QMenu *>("packetContextMenu");
+        QVERIFY(menu);
+        menu->findChild<QAction *>("packetSourceFilterOnly")->trigger();
+        QVERIFY(window.packetModel()->expression()->source().starts_with("ipv6.src == "));
+        QCOMPARE(window.packetModel()->rowCount(), 1);
+        menu->close();
+        auto *input = window.findChild<QLineEdit *>("expressionInput");
+        input->setFocus();
+        input->setText("draft-only");
+        input->selectAll();
+        QTest::keyClick(input, Qt::Key_C, Qt::ControlModifier);
+        QCOMPARE(qApp->clipboard()->text(), QString("draft-only"));
+    }
+    void fieldActionsUseStableKeysAndExactBytes() {
+        MainWindow window(nullptr, testOptions());
+        QVERIFY(waitForInterfaces(window));
+        window.show();
+        window.ingestBenchmark({decodeSummary(fixtures::icmp())});
+        window.selectPacket(0);
+        QVERIFY(waitForDetails(window));
+        auto *tree = window.findChild<QTreeWidget *>("fieldTree");
+        QTreeWidgetItem *source = nullptr;
+        for (QTreeWidgetItemIterator it(tree); *it; ++it)
+            if ((*it)->data(0, Qt::UserRole + 5).toString() == "ip.src") source = *it;
+        QVERIFY(source);
+        tree->setCurrentItem(source);
+        window.findChild<QPushButton *>("fieldHelpToggle")->click();
+        auto *help = window.findChild<QLabel *>("fieldExplanation");
+        QVERIFY(help->isVisible());
+        QVERIFY(help->text().contains("NAT"));
+        emit tree->customContextMenuRequested(QPoint(-1, -1));
+        auto *menu = window.findChild<QMenu *>("fieldContextMenu");
+        QVERIFY(menu);
+        menu->findChild<QAction *>("copyFieldBytes")->trigger();
+        QCOMPARE(qApp->clipboard()->text(), QString("c0 00 02 01"));
+        menu->findChild<QAction *>("copyFieldValue")->trigger();
+        QCOMPARE(qApp->clipboard()->text(), QString("192.0.2.1"));
+        menu->findChild<QAction *>("fieldFilterOnly")->trigger();
+        QCOMPARE(window.packetModel()->expression()->source(), std::string("ip.src == 192.0.2.1"));
+        menu->close();
+        i18n::language().set("en");
+        QVERIFY(help->text().contains("Current value"));
+        QCOMPARE(source->data(0, Qt::UserRole + 5).toString(), QString("ip.src"));
+        QVERIFY(learning::fieldExplanation("tcp.seq", "100").contains("absolute"));
+        const auto escaped = learning::fieldPredicate("http.host", std::string("a\"b\\c"));
+        QVERIFY(compileDisplayFilter(escaped.toStdString()).value);
+        QVERIFY(escaped.contains("\\\"") && escaped.contains("\\\\"));
+        i18n::language().set("zh_CN");
+        QTreeWidgetItem *icmpType = nullptr;
+        for (QTreeWidgetItemIterator it(tree); *it; ++it)
+            if ((*it)->data(0, Qt::UserRole + 5).toString() == "icmp.type") icmpType = *it;
+        QVERIFY(icmpType);
+        tree->setCurrentItem(icmpType);
+        i18n::language().set("en");
+        QVERIFY(help->text().startsWith("Current value: " + icmpType->text(1)));
+    }
+    void expressionExamplesRemainDrafts() {
+        MainWindow window(nullptr, testOptions());
+        QVERIFY(waitForInterfaces(window));
+        window.show();
+        window.ingestBenchmark({decodeSummary(fixtures::icmp())});
+        QVERIFY(window.applyExpression("icmp"));
+        window.findChild<QPushButton *>("expressionHelpButton")->click();
+        auto *dialog = window.findChild<QDialog *>("expressionHelpDialog");
+        QVERIFY(dialog);
+        int examples = 0;
+        for (auto *button : dialog->findChildren<QPushButton *>()) {
+            if (!button->property("expressionExample").toBool()) continue;
+            QVERIFY(compileDisplayFilter(button->text().toStdString()).value);
+            button->click();
+            ++examples;
+            QCOMPARE(window.packetModel()->expression()->source(), std::string("icmp"));
+            QCOMPARE(window.packetModel()->rowCount(), 1);
+        }
+        QCOMPARE(examples, 8);
+        dialog->close();
+    }
+    void dockTransitionsKeepOneRunningAnalysis() {
+        auto gate = std::make_shared<Gate>();
+        auto calls = std::make_shared<std::atomic<int>>(0);
+        auto options = testOptions();
+        options.streamDecoder = [gate, calls](const TcpStreamRequest &request, std::stop_token stop) {
+            ++*calls;
+            gate->wait();
+            return reassembleTcp(request, stop);
+        };
+        ReleaseGate release{gate};
+        MainWindow window(nullptr, options);
+        QVERIFY(waitForInterfaces(window));
+        window.resize(1440, 900);
+        window.show();
+        QTest::qWait(20);
+        ingestStream(window);
+        auto *panel = startStream(window);
+        auto *pane = panel->findChild<StreamPane *>();
+        auto *dock = window.findChild<AnalysisDock *>("tcpAnalysisDock");
+        QVERIFY(dock && !dock->isFloating());
+        QTRY_VERIFY(gate->entered.load());
+        dock->setFloating(true);
+        dock->setFloating(false);
+        QCOMPARE(calls->load(), 1);
+        QVERIFY(pane->busy());
+        gate->release();
+        QTRY_VERIFY(pane->ready());
+        const auto text = pane->findChild<QPlainTextEdit *>("streamBytes")->toPlainText();
+        window.resize(900, 580);
+        QTRY_VERIFY(dock->isFloating());
+        QCOMPARE(window.size(), QSize(900, 580));
+        window.resize(1440, 900);
+        QTRY_VERIFY(!dock->isFloating());
+        QCOMPARE(calls->load(), 1);
+        QCOMPARE(pane->findChild<QPlainTextEdit *>("streamBytes")->toPlainText(), text);
+    }
+    void analysisLayoutRestoresAndResets() {
+        auto options = testOptions();
+        {
+            MainWindow window(nullptr, options);
+            QVERIFY(waitForInterfaces(window));
+            window.show();
+            ingestStream(window);
+            window.findChild<QAction *>("tcpConversationsAction")->trigger();
+            auto *dock = window.findChild<AnalysisDock *>("tcpAnalysisDock");
+            // A real user transition establishes a preference, unlike automatic small-screen floating.
+            dock->setFloating(false);
+            dock->setFloating(true);
+            dock->resize(820, 500);
+            QVERIFY(window.close());
+        }
+        {
+            MainWindow window(nullptr, options);
+            QVERIFY(waitForInterfaces(window));
+            window.resize(1440, 900);
+            window.show();
+            QTest::qWait(20);
+            ingestStream(window);
+            window.findChild<QAction *>("tcpConversationsAction")->trigger();
+            auto *dock = window.findChild<AnalysisDock *>("tcpAnalysisDock");
+            QVERIFY(dock->isFloating());
+            QCOMPARE(dock->width(), std::max(480, std::min(820, QGuiApplication::primaryScreen()->availableGeometry().width() - 16)));
+            window.findChild<QAction *>("resetAnalysisLayout")->trigger();
+            QTRY_VERIFY(!dock->isFloating());
+        }
+        QSettings saved(options.settingsFile, QSettings::IniFormat);
+        for (const auto &key : saved.allKeys()) QVERIFY(!key.contains("history", Qt::CaseInsensitive));
+    }
+    void workspaceLayoutsAndLearning() {
+        MainWindow window(nullptr, testOptions());
+        QVERIFY(waitForInterfaces(window));
+        window.show();
+        const std::string request = "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        std::vector<Packet> packets;
+        for (auto raw : {fixtures::tcp(2, 99), fixtures::tcp(18, 499, 100, true), fixtures::tcp(16, 100, 500),
+                         fixtures::tcp(24, 100, 500, false, 50000, false, {request.begin(), request.end()})})
+            packets.push_back(decodeSummary(std::move(raw)));
+        window.ingestBenchmark(std::move(packets));
+        window.selectPacket(3);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.applicationBusy(), 5000);
+        window.findChild<QAction *>("tcpConversationsAction")->trigger();
+        window.findChild<QAction *>("applicationAnalysisAction")->trigger();
+        auto *tcp = window.findChild<AnalysisDock *>("tcpAnalysisDock");
+        auto *application = window.findChild<AnalysisDock *>("applicationAnalysisDock");
+        QVERIFY(tcp && application);
+        auto *messages = application->findChild<QTreeWidget *>("applicationMessages");
+        QTRY_VERIFY_WITH_TIMEOUT(messages->topLevelItemCount() > 0, 5000);
+        for (const auto *language : {"zh_CN", "zh_TW", "en"}) {
+            i18n::language().set(language);
+            for (bool dark : {true, false}) {
+                window.setDarkTheme(dark);
+                for (const auto size : {QSize(900, 580), QSize(1024, 768), QSize(1440, 900)}) {
+                    window.resize(size);
+                    QTest::qWait(20);
+                    window.findChild<QAction *>("resetAnalysisLayout")->trigger();
+                    QTest::qWait(20);
+                    QCOMPARE(window.size(), size);
+                    QCOMPARE(window.findChild<QLabel *>("detailPacketId")->text(), QString("#4"));
+                    QCOMPARE(window.findChild<QLabel *>("detailCaptured")->text(), QString("91 B"));
+                    QCOMPARE(window.findChild<QLabel *>("detailOriginal")->text(), QString("91 B"));
+                    QList<QRect> controls;
+                    for (const auto *name : {"startButton", "stopButton", "openButton", "saveButton", "analysisButton", "windowTitleBar", "undoFilterButton", "recentFiltersButton"}) {
+                        auto *control = window.findChild<QWidget *>(name);
+                        QVERIFY(control && control->isVisible());
+                        const QRect rect(control->mapTo(&window, QPoint{}), control->size());
+                        QVERIFY2(window.rect().contains(rect), name);
+                        for (const auto &previous : controls) QVERIFY2(!previous.intersects(rect), name);
+                        controls.append(rect);
+                    }
+                    const auto screenshots = qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");
+                    if (!screenshots.isEmpty()) {
+                        QDir().mkpath(screenshots);
+                        const auto suffix = QString("-%1-%2-%3.png").arg(language).arg(dark ? "dark" : "light").arg(size.width());
+                        QVERIFY(window.grab().save(screenshots + "/workspace" + suffix));
+                        QVERIFY(application->grab().save(screenshots + "/analysis-panel" + suffix));
+                    }
+                }
+            }
+        }
+        i18n::language().set("zh_CN");
+        window.setDarkTheme(true);
+        auto *applicationFields = application->findChild<QTreeWidget *>("applicationFields");
+        QTRY_VERIFY(applicationFields->topLevelItemCount() >= 3);
+        for (int i = 0; i < applicationFields->topLevelItemCount(); ++i)
+            if (applicationFields->topLevelItem(i)->data(0, Qt::UserRole + 5).toString() == "http.host")
+                applicationFields->setCurrentItem(applicationFields->topLevelItem(i));
+        application->findChild<QPushButton *>("applicationFieldHelpToggle")->click();
+        application->findChild<QPushButton *>("analysisStatusHelpToggle")->click();
+        QVERIFY(application->findChild<QLabel *>("applicationFieldExplanation")->text().contains("Host"));
+        const auto learningShots = qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");
+        if (!learningShots.isEmpty()) {
+            QTest::qWait(20);
+            QVERIFY(window.grab().save(learningShots + "/workspace-learning.png"));
+        }
+        for (auto status : {AnalysisStatus::Pending, AnalysisStatus::Complete, AnalysisStatus::Incomplete,
+                            AnalysisStatus::Limited, AnalysisStatus::MissingKeys, AnalysisStatus::Unsupported,
+                            AnalysisStatus::AuthenticationFailed})
+            QVERIFY(!learning::statusExplanation(status).isEmpty());
+    }
+    void pinnedAnalysisKeepsOriginalFileName() {
+        QTemporaryDir directory;
+        const auto first = sampleFile(directory), second = directory.filePath("replacement.pcap");
+        QVERIFY(QFile::copy(first, second));
+        MainWindow window(nullptr, testOptions());
+        QVERIFY(waitForInterfaces(window));
+        window.show();
+        QSignalSpy opened(&window, &MainWindow::fileOpenFinished);
+        QVERIFY(window.openFile(first));
+        QTRY_COMPARE(opened.count(), 1);
+        window.selectPacket(0);
+        window.findChild<QAction *>("tcpConversationsAction")->trigger();
+        window.findChild<QAction *>("applicationAnalysisAction")->trigger();
+        QVERIFY(window.openFile(second));
+        QTRY_COMPARE(opened.count(), 2);
+        auto *tcpSource = window.findChild<QLabel *>("tcpAnalysisDockSource");
+        auto *appSource = window.findChild<QLabel *>("applicationAnalysisDockSource");
+        QVERIFY(tcpSource->toolTip().contains("input.pcap"));
+        QVERIFY(appSource->toolTip().contains("input.pcap"));
+        QVERIFY(!tcpSource->toolTip().contains("replacement.pcap"));
+        QVERIFY(!window.findChild<QPushButton *>("applicationLocate")->isEnabled());
+        QVERIFY(window.findChild<QLabel *>("applicationAnalysisDockError")->isVisible());
+        window.findChild<QPushButton *>("applicationAnalysisDockRebind")->click();
+        QVERIFY(appSource->toolTip().contains("replacement.pcap"));
+    }
     void framelessWindowControls() {
         const auto options = testOptions();
         MainWindow window(nullptr, options);
@@ -644,7 +972,7 @@ class DesktopTests : public QObject {
             window.findChild<QTreeWidget *>("applicationMessages")->topLevelItemCount() > 0, 5000);
         QVERIFY(
             window.findChild<QPlainTextEdit *>("applicationBytes")->toPlainText().contains("GET"));
-        auto *dialog = window.findChild<QDialog *>("applicationDialog");
+        auto *dialog = window.findChild<AnalysisDock *>("applicationAnalysisDock");
         QVERIFY(dialog);
         for (const auto &language : {"en", "zh_CN", "zh_TW"})
             for (bool dark : {false, true})
@@ -724,7 +1052,7 @@ class DesktopTests : public QObject {
         QTRY_VERIFY_WITH_TIMEOUT(!window.busy(), 3000);
         window.selectPacket(0);
         window.findChild<QAction *>("applicationAnalysisAction")->trigger();
-        auto *dialog = window.findChild<QDialog *>("applicationDialog");
+        auto *dialog = window.findChild<AnalysisDock *>("applicationAnalysisDock");
         QVERIFY(dialog);
         auto *analysis = dialog->findChild<ApplicationView *>();
         QVERIFY(analysis);
@@ -739,8 +1067,8 @@ class DesktopTests : public QObject {
         window.selectPacket(1);
         emit analysis->locateRequested(1);
         QCOMPARE(table->currentIndex().row(), 1);
-        QCOMPARE(window.findChild<QLabel *>("captureStatus")->text(),
-                 i18n::text("分析来源已变化，请重新打开应用分析"));
+        QCOMPARE(window.findChild<QLabel *>("applicationAnalysisDockError")->text(),
+                 i18n::text("分析来源已变化，请切回来源或重新分析"));
 
         tabs->setCurrentIndex(0);
         window.selectPacket(1);
@@ -755,8 +1083,8 @@ class DesktopTests : public QObject {
         window.selectPacket(1);
         emit analysis->locateRequested(1);
         QCOMPARE(table->currentIndex().row(), 1);
-        QCOMPARE(window.findChild<QLabel *>("captureStatus")->text(),
-                 i18n::text("分析来源已变化，请重新打开应用分析"));
+        QCOMPARE(window.findChild<QLabel *>("applicationAnalysisDockError")->text(),
+                 i18n::text("分析来源已变化，请切回来源或重新分析"));
     }
     void queueDropStatusDistinguishesUnknownDriver() {
         MainWindow window(nullptr, testOptions());
@@ -794,7 +1122,7 @@ class DesktopTests : public QObject {
         for (unsigned i = 0; i < TcpConversations::connectionLimit; ++i)
             append(static_cast<std::uint16_t>(1000 + i), 1);
         append(1000, 9);
-        TcpDialog dialog;
+        TcpPanel dialog;
         dialog.refresh(store, "实时");
         auto *table = dialog.findChild<QTableView *>("tcpTable");
         table->sortByColumn(column, order);
@@ -1130,7 +1458,7 @@ class DesktopTests : public QObject {
         QVERIFY(conflict.isValid());
         QCOMPARE(conflict.data().toULongLong(), qulonglong(6));
         emit events->doubleClicked(conflict);
-        QTRY_VERIFY(!window.findChild<TcpDialog *>());
+        QVERIFY(window.findChild<TcpPanel *>());
         QVERIFY(waitForDetails(window));
         QCOMPARE(window.findChild<QLabel *>("detailPacketId")->text(), QString("#6"));
     }
@@ -1216,7 +1544,7 @@ class DesktopTests : public QObject {
             QVERIFY(waitForInterfaces(window));
             window.show();
             ingestStream(window);
-            QPointer<TcpDialog> dialog = startStream(window);
+            QPointer<TcpPanel> dialog = startStream(window);
             QTRY_VERIFY(gate->entered.load());
             int beats = 0;
             QTimer timer;
@@ -1230,9 +1558,9 @@ class DesktopTests : public QObject {
                 QTest::keyClick(dialog, Qt::Key_Escape);
             QVERIFY(window.isVisible());
             QVERIFY(dialog);
-            QVERIFY(cancelled->load());
+            QTRY_VERIFY_WITH_TIMEOUT(cancelled->load(), 1000);
             gate->release();
-            QTRY_VERIFY(!dialog);
+            QTRY_VERIFY(!dialog->isVisible());
             if (mainExit)
                 QTRY_VERIFY(!window.isVisible());
             else
@@ -1304,7 +1632,7 @@ class DesktopTests : public QObject {
         window.ingestBenchmark(std::move(packets));
         window.findChild<QLineEdit *>("ipInput")->setText("invalid draft");
         window.findChild<QAction *>("tcpConversationsAction")->trigger();
-        auto *dialog = window.findChild<TcpDialog *>();
+        auto *dialog = window.findChild<TcpPanel *>();
         QVERIFY(dialog);
         auto *table = dialog->findChild<QTableView *>("tcpTable");
         QAbstractItemModelTester tester(table->model(),
@@ -1313,13 +1641,13 @@ class DesktopTests : public QObject {
         QCOMPARE(table->model()->index(0, 5).data().toString(), QString("FIN 已确认"));
         QCOMPARE(table->model()->index(0, 10).data().toDouble(), 30.0);
         QCOMPARE(dialog->findChild<QLabel *>("tcpMetric2")->text(), QString("1"));
-        QCOMPARE(dialog->findChild<QLabel *>("tcpMode")->text(), QString("文件"));
+        QVERIFY(dialog->findChild<QLabel *>("tcpMode")->text().startsWith("文件"));
         dialog->selectConversation(2);
         QCOMPARE(table->currentIndex().data(Qt::UserRole).toULongLong(), qulonglong(2));
         QCOMPARE(dialog->findChild<QLabel *>("tcpMetric3")->text(), QString("1"));
         dialog->selectConversation(1);
         dialog->findChild<QPushButton *>("tcpFilterButton")->click();
-        QTRY_VERIFY(!window.findChild<TcpDialog *>());
+        QVERIFY(window.findChild<TcpPanel *>());
         QCOMPARE(window.packetModel()->rowCount(), 10);
         QCOMPARE(window.packetModel()->filter().tcpConversationId, std::optional<std::uint64_t>(1));
         QCOMPARE(window.findChild<QLineEdit *>("ipInput")->text(), QString("invalid draft"));
@@ -1328,10 +1656,10 @@ class DesktopTests : public QObject {
         QCOMPARE(window.packetModel()->rowCount(), 15);
         QVERIFY(!window.packetModel()->filter().tcpConversationId);
         window.findChild<QAction *>("tcpConversationsAction")->trigger();
-        dialog = window.findChild<TcpDialog *>();
+        dialog = window.findChild<TcpPanel *>();
         dialog->selectConversation(1);
         dialog->findChild<QPushButton *>("tcpFilterButton")->click();
-        QTRY_VERIFY(!window.findChild<TcpDialog *>());
+        QVERIFY(window.findChild<TcpPanel *>());
         auto *protocol = window.findChild<QComboBox *>("protocolFilter");
         protocol->setCurrentText("ICMP");
         QVERIFY(!window.packetModel()->filter().tcpConversationId);
@@ -1346,7 +1674,7 @@ class DesktopTests : public QObject {
             packets.push_back(decodeSummary(std::move(raw)));
         window.ingestBenchmark(std::move(packets));
         window.findChild<QAction *>("tcpConversationsAction")->trigger();
-        auto *dialog = window.findChild<TcpDialog *>();
+        auto *dialog = window.findChild<TcpPanel *>();
         dialog->selectConversation(1);
         auto *events = dialog->findChild<QTreeWidget *>("tcpEvents");
         QTreeWidgetItem *handshake = nullptr;
@@ -1356,12 +1684,12 @@ class DesktopTests : public QObject {
         QVERIFY(handshake);
         events->setCurrentItem(handshake);
         dialog->findChild<QPushButton *>("tcpLocateButton")->click();
-        QTRY_VERIFY(!window.findChild<TcpDialog *>());
+        QVERIFY(window.findChild<TcpPanel *>());
         QVERIFY(waitForDetails(window));
         QCOMPARE(window.findChild<QLabel *>("detailPacketId")->text(), QString("#4"));
         window.findChild<QComboBox *>("protocolFilter")->setCurrentText("ICMP");
         window.findChild<QAction *>("tcpConversationsAction")->trigger();
-        dialog = window.findChild<TcpDialog *>();
+        dialog = window.findChild<TcpPanel *>();
         dialog->selectConversation(1);
         dialog->findChild<QPushButton *>("tcpLocateButton")->click();
         QCOMPARE(dialog->findChild<QLabel *>("tcpError")->text(), QString("报文已被筛选"));
@@ -1375,9 +1703,9 @@ class DesktopTests : public QObject {
         dialog->findChild<QPushButton *>("tcpFilterButton")->click();
         QCOMPARE(dialog->findChild<QLabel *>("tcpError")->text(), QString("无匹配报文"));
         QVERIFY(!window.packetModel()->filter().tcpConversationId);
-        QPointer<TcpDialog> tracked = dialog;
+        QPointer<TcpPanel> tracked = dialog;
         window.close();
-        QTRY_VERIFY(!tracked);
+        QTRY_VERIFY(!tracked->isVisible());
         QVERIFY(!window.isVisible());
     }
     void tcpLiveFileIsolationAndSettings() {
@@ -1400,22 +1728,24 @@ class DesktopTests : public QObject {
             QTRY_COMPARE(window.sessionStats().received, std::uint64_t(15));
             QCOMPARE(window.packetModel()->rowCount(), 0);
             window.findChild<QAction *>("tcpConversationsAction")->trigger();
-            auto *dialog = window.findChild<TcpDialog *>();
+            auto *dialog = window.findChild<TcpPanel *>();
             QCOMPARE(dialog->findChild<QLabel *>("tcpCount")->text(), QString("4"));
-            QCOMPARE(dialog->findChild<QLabel *>("tcpMode")->text(), QString("实时"));
+            QVERIFY(dialog->findChild<QLabel *>("tcpMode")->text().startsWith("实时"));
             window.stopCapture();
             QTRY_VERIFY(!window.busy());
             window.findChild<QTabBar *>("sessionTabs")->setCurrentIndex(1);
-            QCOMPARE(dialog->findChild<QTableView *>("tcpTable")->model()->rowCount(), 0);
+            QCOMPARE(dialog->findChild<QTableView *>("tcpTable")->model()->rowCount(), 4);
+            QVERIFY(!dialog->findChild<QPushButton *>("tcpFilterButton")->isEnabled());
             std::vector<Packet> packets;
             for (auto raw : fixtures::tcpConversationSamples())
                 packets.push_back(decodeSummary(std::move(raw)));
             window.ingestBenchmark(std::move(packets));
             QTRY_COMPARE_WITH_TIMEOUT(
                 dialog->findChild<QTableView *>("tcpTable")->model()->rowCount(), 4, 2000);
+            window.findChild<QPushButton *>("tcpAnalysisDockRebind")->click();
             dialog->selectConversation(2);
             dialog->findChild<QPushButton *>("tcpFilterButton")->click();
-            QTRY_VERIFY(!window.findChild<TcpDialog *>());
+            QVERIFY(window.findChild<TcpPanel *>());
             QCOMPARE(window.packetModel()->rowCount(), 2);
             QVERIFY(window.packetModel()->filter().tcpConversationId);
             window.findChild<QTabBar *>("sessionTabs")->setCurrentIndex(0);
@@ -1436,12 +1766,13 @@ class DesktopTests : public QObject {
             packets.push_back(decodeSummary(std::move(raw)));
         window.ingestBenchmark(std::move(packets));
         window.findChild<QAction *>("tcpConversationsAction")->trigger();
-        auto *dialog = window.findChild<TcpDialog *>();
+        auto *dialog = window.findChild<TcpPanel *>();
         for (bool dark : {false, true})
             for (const auto size : {QSize(1024, 640), QSize(1440, 800)}) {
                 window.setDarkTheme(dark);
                 dialog->resize(size);
-                dialog->selectConversation(2);
+                window.findChild<QPushButton *>("tcpAnalysisDockRebind")->click();
+            dialog->selectConversation(2);
                 QTest::qWait(10);
                 auto *table = dialog->findChild<QTableView *>("tcpTable");
                 QVERIFY(table->width() <= dialog->width());
@@ -1471,17 +1802,17 @@ class DesktopTests : public QObject {
             packets.push_back(decodeSummary(std::move(raw)));
         window.ingestBenchmark(std::move(packets));
         window.findChild<QAction *>("tcpConversationsAction")->trigger();
-        auto *dialog = window.findChild<TcpDialog *>();
+        auto *dialog = window.findChild<TcpPanel *>();
         dialog->selectConversation(1);
         const SessionStore *oldStore = nullptr;
         quint64 oldGeneration = 0;
-        connect(dialog, &TcpDialog::filterRequested, this,
+        connect(dialog, &TcpPanel::filterRequested, this,
                 [&](quint64, quint64 generation, const SessionStore *store) {
                     oldStore = store;
                     oldGeneration = generation;
                 });
         dialog->findChild<QPushButton *>("tcpFilterButton")->click();
-        QTRY_VERIFY(!window.findChild<TcpDialog *>());
+        QVERIFY(window.findChild<TcpPanel *>());
         QVERIFY(oldStore);
         QCOMPARE(window.packetModel()->rowCount(), 10);
         const auto path = directory.filePath("tcp.pcap");
@@ -1496,8 +1827,9 @@ class DesktopTests : public QObject {
         QCOMPARE(window.packetModel()->rowCount(), 15);
         QCOMPARE(window.tcpConversations().items().size(), std::size_t(4));
         window.findChild<QAction *>("tcpConversationsAction")->trigger();
-        dialog = window.findChild<TcpDialog *>();
+        dialog = window.findChild<TcpPanel *>();
         const auto before = window.findChild<QTableView *>("packetTable")->currentIndex();
+        window.findChild<QPushButton *>("tcpAnalysisDockRebind")->click();
         emit dialog->filterRequested(1, oldGeneration, oldStore);
         emit dialog->locateRequested(1, oldGeneration, oldStore);
         QVERIFY(!window.packetModel()->filter().tcpConversationId);

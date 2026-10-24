@@ -92,6 +92,7 @@ void MainWindow::restoreSettings() {
     updateFilterStatus();
 }
 void MainWindow::saveSettings() {
+    saveAnalysisLayout();
     settings_->setValue("ui/dark", dark_);
     settings_->setValue("ui/geometry", saveGeometry());
     settings_->setValue("ui/columns/v2", table_->horizontalHeader()->saveState());

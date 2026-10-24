@@ -1,4 +1,7 @@
 #include "ui/main_window.h"
+#include "ui/analysis_dock.h"
+#include <QMenu>
+#include <QTableView>
 #include "ui/tcp_dialog.h"
 #include "ui/stream_pane.h"
 #include "ui/language.h"
@@ -206,7 +209,8 @@ int main(int argc, char **argv) {
         settings.sync();
     }
     MainWindow window(nullptr, options);
-    window.resize(1280, 820);
+    window.resize(args.contains("--workspace-interactions") ? 1440 : 1280,
+                  args.contains("--workspace-interactions") ? 900 : 820);
     window.show();
     const auto expression =
         args.contains("--application-filter") ? compileDisplayFilter("http.host").value : nullptr;
@@ -219,6 +223,9 @@ int main(int argc, char **argv) {
         window.findChild<QAction *>("recordingAction")->setChecked(true);
     if (args.contains("--tcp-panel") || streamLoad)
         window.findChild<QAction *>("tcpConversationsAction")->trigger();
+    bool panelBound = false;
+    int workspaceInteractions = 0;
+    qint64 nextWorkspaceInteraction = 5000;
     StreamPane *streamPane = nullptr;
     int streamRequests = 0, streamCompleted = 0;
     bool streamValid = true;
@@ -335,9 +342,29 @@ int main(int argc, char **argv) {
             ++languageChanges;
             nextLanguage += 10000;
         }
+        if (!panelBound && c.enqueued > 0 && window.findChild<TcpPanel *>()) {
+            window.findChild<QPushButton *>("tcpAnalysisDockRebind")->click();
+            panelBound = true;
+        }
+        if (args.contains("--workspace-interactions") && now >= nextWorkspaceInteraction &&
+            window.packetModel()->rowCount() > 0 && panelBound) {
+            auto *table = window.findChild<QTableView *>("packetTable");
+            table->setCurrentIndex(window.packetModel()->index(window.packetModel()->rowCount() - 1, 2));
+            emit table->customContextMenuRequested(QPoint(-1, -1));
+            if (auto *menu = window.findChild<QMenu *>("packetContextMenu")) {
+                menu->findChild<QAction *>("copyPacketCell")->trigger();
+                menu->close();
+            }
+            auto *dock = window.findChild<AnalysisDock *>("tcpAnalysisDock");
+            const auto floating = dock->isFloating();
+            dock->setFloating(!floating);
+            dock->setFloating(floating);
+            ++workspaceInteractions;
+            nextWorkspaceInteraction = now + 10000;
+        }
         if (streamLoad && now >= nextStream && now < seconds * 1000 && c.enqueued > 0 &&
             !window.tcpConversations().items().empty()) {
-            auto *dialog = window.findChild<TcpDialog *>();
+            auto *dialog = window.findChild<TcpPanel *>();
             dialog->selectConversation(window.tcpConversations().items().back().id);
             dialog->findChild<QPushButton *>("tcpStreamButton")->click();
             ++streamRequests;
@@ -510,6 +537,7 @@ int main(int argc, char **argv) {
                 window.retainedRawBytes() == expectedRaw &&
                 window.retainedEstimatedBytes() <= 64 * 1024 * 1024 && resets == 0 &&
                 saveRequests == 2 && exports.size() == 2 && saveValid && streamValid &&
+                (!args.contains("--workspace-interactions") || (panelBound && workspaceInteractions >= 5)) &&
                 (!streamLoad || streamCompleted == streamRequests) &&
                 (!languageCycle || languageChanges >= (seconds - 1) / 10);
             QJsonObject report{
@@ -523,6 +551,8 @@ int main(int argc, char **argv) {
                 {"tcp_fixture", args.contains("--tcp")},
                 {"tcp_panel", args.contains("--tcp-panel")},
                 {"stream_load", streamLoad},
+                {"analysis_panel_bound", panelBound},
+                {"workspace_interactions", workspaceInteractions},
                 {"stream_requests", streamRequests},
                 {"stream_completed", streamCompleted},
                 {"language_cycle", languageCycle},

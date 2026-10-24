@@ -4,6 +4,7 @@
 #include "ui/language.h"
 #include "ui/stream_pane.h"
 #include "ui/icons.h"
+#include "ui/flow_layout.h"
 #include <QAbstractTableModel>
 #include <QDateTime>
 #include <QCloseEvent>
@@ -18,6 +19,8 @@
 #include <QTableView>
 #include <QTabWidget>
 #include <QTimer>
+#include <QShortcut>
+#include <QKeyEvent>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -140,16 +143,15 @@ class TcpTableModel final : public QAbstractTableModel {
   private:
     std::vector<Row> rows_;
 };
-TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
+TcpPanel::TcpPanel(QWidget *parent, StreamDecoder decoder) : QWidget(parent) {
     setObjectName("tcpDialog");
     setWindowTitle("TCP 会话");
-    setAttribute(Qt::WA_DeleteOnClose);
     resize(1200, 640);
-    setMinimumSize(720, 420);
+    setMinimumSize(460, 260);
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(style::margin, style::margin, style::margin, style::margin);
     layout->setSpacing(style::gap);
-    auto *summary = new QHBoxLayout;
+    auto *summary = new FlowLayout;
     summary->setSpacing(12);
     mode_ = new QLabel(this);
     mode_->setObjectName("tcpMode");
@@ -165,7 +167,6 @@ TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
     overwritten_ = cell("覆盖", "tcpOverwritten");
     skipped_ = cell("跳过", "tcpSkipped");
     memory_ = cell("占用", "tcpMemory");
-    summary->addStretch();
     layout->addLayout(summary);
     auto *splitter = new QSplitter(Qt::Vertical, this);
     splitter->setChildrenCollapsible(false);
@@ -193,15 +194,18 @@ TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
     auto *details = new QVBoxLayout(lower);
     details->setContentsMargins(0, 0, 0, 0);
     details->setSpacing(style::gap);
-    auto *metrics = new QGridLayout;
-    metrics->setHorizontalSpacing(12);
+    auto *metrics = new FlowLayout;
     const QStringList titles = {"SYN 应答 ms", "握手 ms",    "SYN 重复",   "RST",
                                 "VLAN",        "A 载荷字节", "B 载荷字节", "事件覆盖"};
     for (int i = 0; i < 8; ++i) {
-        metrics->addWidget(new QLabel(titles[i], lower), i / 4, (i % 4) * 2);
+        auto *pair = new QWidget(lower);
+        auto *pairLayout = new QHBoxLayout(pair);
+        pairLayout->setContentsMargins(0, 0, 0, 0);
+        pairLayout->addWidget(new QLabel(titles[i], pair));
         metrics_[i] = new QLabel("-", lower);
         metrics_[i]->setObjectName("tcpMetric" + QString::number(i));
-        metrics->addWidget(metrics_[i], i / 4, (i % 4) * 2 + 1);
+        pairLayout->addWidget(metrics_[i]);
+        metrics->addWidget(pair);
     }
     details->addLayout(metrics);
     tabs_ = new QTabWidget(lower);
@@ -222,7 +226,7 @@ TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
     stream_ = new StreamPane(tabs_, std::move(decoder));
     tabs_->addTab(stream_, "流数据");
     splitter->setSizes({300, 260});
-    auto *actions = new QHBoxLayout;
+    auto *actions = new FlowLayout;
     filter_ = new QPushButton("查看报文", this);
     filter_->setObjectName("tcpFilterButton");
     locate_ = new QPushButton("定位", this);
@@ -234,6 +238,8 @@ TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
     error_ = new QLabel(this);
     error_->setObjectName("tcpError");
     error_->setProperty("error", true);
+    error_->setWordWrap(true);
+    error_->setMaximumWidth(420);
     streamButton_ = new QPushButton("流数据", this);
     icons::bind(streamButton_, icons::Id::Tcp);
     streamButton_->setObjectName("tcpStreamButton");
@@ -241,7 +247,7 @@ TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
     actions->addWidget(filter_);
     actions->addWidget(locate_);
     actions->addWidget(streamButton_);
-    actions->addWidget(error_, 1);
+    actions->addWidget(error_);
     actions->addWidget(close);
     layout->addLayout(actions);
     connect(table_->selectionModel(), &QItemSelectionModel::currentRowChanged, this, [this] {
@@ -252,16 +258,16 @@ TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
         if (store_ && selectedId())
             emit filterRequested(selectedId(), generation_, store_);
     });
-    connect(locate_, &QPushButton::clicked, this, &TcpDialog::locate);
+    connect(locate_, &QPushButton::clicked, this, &TcpPanel::locate);
     connect(events_, &QTreeWidget::itemDoubleClicked, this, [this] { locate(); });
     connect(events_, &QTreeWidget::currentItemChanged, this, [this] {
-        locate_->setEnabled(tabs_->currentIndex() == 0 && events_->currentItem() != nullptr);
+        locate_->setEnabled(navigationEnabled_ && tabs_->currentIndex() == 0 && events_->currentItem() != nullptr);
     });
     connect(tabs_, &QTabWidget::currentChanged, this, [this](int index) {
         locate_->setVisible(index == 0);
-        locate_->setEnabled(index == 0 && events_->currentItem() != nullptr);
+        locate_->setEnabled(navigationEnabled_ && index == 0 && events_->currentItem() != nullptr);
     });
-    connect(close, &QPushButton::clicked, this, &QDialog::close);
+    connect(close, &QPushButton::clicked, this, &QWidget::close);
     filter_->setEnabled(false);
     locate_->setEnabled(false);
     connect(streamButton_, &QPushButton::clicked, this, [this, splitter] {
@@ -281,6 +287,11 @@ TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
         if (closing_ && !stream_->busy())
             QTimer::singleShot(0, this, &QWidget::close);
     });
+    connect(stream_, &StreamPane::filterRequested, this, &TcpPanel::expressionRequested);
+    connect(stream_, &StreamPane::analysisHelpRequested, this, &TcpPanel::analysisHelpRequested);
+    auto *escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+    escape->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(escape, &QShortcut::activated, this, &QWidget::close);
     i18n::bind(this);
     connect(&i18n::language(), &i18n::Language::changed, this, [this] {
         if (store_) {
@@ -289,13 +300,13 @@ TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
         }
     });
 }
-std::uint64_t TcpDialog::selectedId() const {
+std::uint64_t TcpPanel::selectedId() const {
     return table_->currentIndex().data(Qt::UserRole).toULongLong();
 }
-void TcpDialog::setApplicationIndex(const ApplicationIndex *index) {
+void TcpPanel::setApplicationIndex(const ApplicationIndex *index) {
     stream_->setApplicationIndex(index);
 }
-void TcpDialog::refresh(const SessionStore &store, const QString &mode) {
+void TcpPanel::refresh(const SessionStore &store, const QString &mode) {
     if (store_ == &store && generation_ == store.tcp().generation() &&
         revision_ == store.tcp().revision())
         return;
@@ -323,7 +334,7 @@ void TcpDialog::refresh(const SessionStore &store, const QString &mode) {
     memory_->setText(QString::number(double(store.tcp().estimatedBytes()) / 1024, 'f', 1) + " KiB");
     renderSelection();
 }
-void TcpDialog::selectConversation(std::uint64_t id) {
+void TcpPanel::selectConversation(std::uint64_t id) {
     if (!id)
         return;
     for (int row = 0; row < table_->model()->rowCount(); ++row)
@@ -332,7 +343,7 @@ void TcpDialog::selectConversation(std::uint64_t id) {
             return;
         }
 }
-void TcpDialog::renderSelection() {
+void TcpPanel::renderSelection() {
     i18n::setLabel(error_, {});
     const auto *item = store_ ? store_->tcp().find(selectedId()) : nullptr;
     const auto selectedEvent =
@@ -342,7 +353,7 @@ void TcpDialog::renderSelection() {
     stream_->setSelection(store_, item ? item->id : 0);
     streamButton_->setEnabled(item != nullptr);
     events_->clear();
-    filter_->setEnabled(item != nullptr);
+    filter_->setEnabled(navigationEnabled_ && item != nullptr);
     locate_->setEnabled(false);
     for (auto *metric : metrics_)
         metric->setText("-");
@@ -376,21 +387,39 @@ void TcpDialog::renderSelection() {
     if (!events_->currentItem() && events_->topLevelItemCount())
         events_->setCurrentItem(events_->topLevelItem(0));
 }
-void TcpDialog::locate() {
-    if (store_ && events_->currentItem())
+void TcpPanel::locate() {
+    if (navigationEnabled_ && store_ && events_->currentItem())
         emit locateRequested(events_->currentItem()->data(0, Qt::UserRole).toULongLong(),
                              generation_, store_);
 }
-void TcpDialog::showError(const QString &error) {
+void TcpPanel::showError(const QString &error) {
     i18n::setLabel(error_, error);
 }
-bool TcpDialog::streamBusy() const {
+bool TcpPanel::streamBusy() const {
     return stream_->busy();
 }
-void TcpDialog::reject() {
-    close();
+void TcpPanel::setSourceContext(SourceContext context) { stream_->setSourceContext(context); }
+void TcpPanel::invalidate() {
+    stream_->setSelection(nullptr, 0);
+    store_ = nullptr;
+    TcpConversations empty;
+    model_->refresh(empty);
+    renderSelection();
+    count_->setText("0");
 }
-void TcpDialog::closeEvent(QCloseEvent *event) {
+void TcpPanel::setNavigationEnabled(bool enabled) {
+    navigationEnabled_ = enabled;
+    filter_->setEnabled(enabled && selectedId());
+    locate_->setEnabled(enabled && tabs_->currentIndex() == 0 && events_->currentItem());
+    stream_->setNavigationEnabled(enabled);
+}
+void TcpPanel::keyPressEvent(QKeyEvent *event) {
+    if (event->key() == Qt::Key_Escape) {
+        close();
+        event->accept();
+    } else QWidget::keyPressEvent(event);
+}
+void TcpPanel::closeEvent(QCloseEvent *event) {
     if (stream_->busy()) {
         event->ignore();
         closing_ = true;
@@ -398,6 +427,9 @@ void TcpDialog::closeEvent(QCloseEvent *event) {
         stream_->cancel();
         return;
     }
+    closing_ = false;
+    setEnabled(true);
     event->accept();
+    emit closed();
 }
 } // namespace etherscope

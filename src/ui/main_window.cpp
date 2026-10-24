@@ -92,6 +92,7 @@ MainWindow::MainWindow(QWidget *parent, MainWindowOptions options)
         i18n::language().set("en");
     buildUi();
     initializeAnalysis(options);
+    initializeInteractions();
     connect(&i18n::language(), &i18n::Language::changed, this, &MainWindow::retranslate);
     connect(theme_, &QAction::toggled, this, &MainWindow::setDarkTheme);
     connect(refresh_, &QAction::triggered, this, &MainWindow::refreshInterfaces);
@@ -317,6 +318,7 @@ MainWindow::MainWindow(QWidget *parent, MainWindowOptions options)
                 return;
             liveStarting_ = false;
             model_->clear();
+            sourceNames_[0] = devices_->currentText();
             resetApplications(0);
             updateFilterStatus();
             selected_.reset();
@@ -406,12 +408,17 @@ MainWindow::MainWindow(QWidget *parent, MainWindowOptions options)
     rateTimer_.start(1000);
     setDarkTheme(true);
     restoreSettings();
+    historyReady_ = true;
+    filterUndo_.clear();
+    filterRecent_.clear();
+    refreshFilterHistory();
     retranslate();
     refreshInterfaces();
     updateStatus();
     updateButtons();
 }
 MainWindow::~MainWindow() {
+    analysisWorkspace_->removeEventFilter(this);
     details_.requestStop();
     engine_.stop();
     for (auto &service : applications_)
@@ -640,6 +647,8 @@ void MainWindow::showMode(int index) {
         return;
     actionError_.clear();
     view_ = index;
+    filterUndo_.clear();
+    refreshFilterHistory();
     selected_.reset();
     model_->setApplicationIndex(&applicationIndex_[view_]);
     model_->setStore(&currentStore());
@@ -692,6 +701,7 @@ void MainWindow::beginFile(const QString &path, PreparedFile reader) {
     counters_[1] = {};
     sourceStatus_[1] = "读取中";
     fileName_ = QFileInfo(path).fileName();
+    sourceNames_[1] = fileName_;
     filePath_ = path;
     active_ = 1;
     producerFinished_ = false;
@@ -798,6 +808,8 @@ void MainWindow::tryClose() {
 }
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
     if (event->type() == QEvent::Resize) {
+        if (watched == analysisWorkspace_)
+            QTimer::singleShot(0, this, &MainWindow::arrangeAnalysisDocks);
         if (table_ && watched == table_->viewport() && emptyState_)
             emptyState_->setGeometry(table_->viewport()->rect());
         if (fields_ && watched == fields_->viewport() && fieldEmpty_)
@@ -817,8 +829,8 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
             return true;
         }
     }
-    const bool tableInput = watched == table_ || watched == table_->viewport() ||
-                            watched == table_->verticalScrollBar();
+    const bool tableInput = table_ && (watched == table_ || watched == table_->viewport() ||
+                            watched == table_->verticalScrollBar());
     bool navigation = false, wheel = false;
     if (event->type() == QEvent::KeyPress) {
         const auto key = static_cast<QKeyEvent *>(event)->key();

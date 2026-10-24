@@ -1,5 +1,6 @@
 #pragma once
 #include "core/application.h"
+#include "ui/source_context.h"
 #include <QWidget>
 #include <QTimer>
 class QComboBox;
@@ -7,15 +8,24 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QPlainTextEdit;
 class QLabel;
+class QPushButton;
+class QSplitter;
+class QResizeEvent;
 namespace etherscope {
 class ApplicationView final : public QWidget {
     Q_OBJECT
   public:
     explicit ApplicationView(QWidget *parent = nullptr);
     ~ApplicationView() override;
+    void setNavigationEnabled(bool enabled);
+    void setSourceContext(SourceContext context) { context_ = context; }
     void setResults(std::vector<std::shared_ptr<const ApplicationResult>> results);
   signals:
     void locateRequested(quint64 packet);
+    void analysisHelpRequested(etherscope::AnalysisStatus status);
+    void filterRequested(const QString &predicate, bool unique, etherscope::SourceContext context);
+  protected:
+    void resizeEvent(QResizeEvent *event) override;
 
   private:
     std::vector<std::shared_ptr<const ApplicationResult>> results_;
@@ -25,6 +35,13 @@ class ApplicationView final : public QWidget {
     QComboBox *sources_{}, *packets_{};
     QPlainTextEdit *bytes_{};
     QLabel *page_{}, *state_{};
+    QPushButton *locate_{}, *fieldHelpToggle_{}, *statusHelpToggle_{}, *nextStep_{};
+    QLabel *fieldHelp_{}, *statusHelp_{};
+    QSplitter *lower_{};
+    bool navigationEnabled_{true};
+    SourceContext context_;
+    AnalysisStatus status_{AnalysisStatus::Pending};
+    void updateHelp();
     QTimer fillTimer_;
     std::size_t filled_{}, fieldFilled_{}, offset_{}, preferredMessage_{};
     void rebuild();

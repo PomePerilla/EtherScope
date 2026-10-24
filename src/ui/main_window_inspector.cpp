@@ -63,10 +63,10 @@ void MainWindow::showDetails() {
         return;
     }
     const auto &packet = *selected_;
-    detailId_->setText(QString("#%1").arg(packet.id));
+    i18n::setLabel(detailId_, QString("#%1").arg(packet.id));
     i18n::setLabel(detailProtocol_, q(packet.protocol));
-    detailCaptured_->setText(QString("%1 B").arg(packet.raw.bytes.size()));
-    detailOriginal_->setText(QString("%1 B").arg(packet.raw.originalLength));
+    i18n::setLabel(detailCaptured_, QString("%1 B").arg(packet.raw.bytes.size()));
+    i18n::setLabel(detailOriginal_, QString("%1 B").arg(packet.raw.originalLength));
     QStringList issues;
     if (!packet.error.empty())
         issues << q(packet.error);
@@ -96,6 +96,7 @@ void MainWindow::fillDetails() {
         item->setToolTip(1, item->text(1));
         item->setData(0, Qt::UserRole + 3, q(field.name));
         item->setData(0, Qt::UserRole + 4, q(field.value));
+        item->setData(0, Qt::UserRole + 5, q(field.key));
         const auto name = q(field.name);
         if (name.contains("地址") || name.contains("MAC") || q(field.value).startsWith("0x"))
             item->setFont(1, style::dataFont());
@@ -155,12 +156,15 @@ void MainWindow::retranslate() {
     updateFilterStatus();
     updateStatus();
     chart_->update();
+    refreshFilterHistory();
+    refreshAnalysisSources();
     for (QTreeWidgetItemIterator item(fields_); *item; ++item) {
         (*item)->setText(0, i18n::text((*item)->data(0, Qt::UserRole + 3).toString()));
         (*item)->setText(1, fieldText((*item)->data(0, Qt::UserRole + 4).toString().toStdString()));
         (*item)->setToolTip(0, (*item)->text(0));
         (*item)->setToolTip(1, (*item)->text(1));
     }
+    updateFieldHelp();
     if (selected_) {
         QStringList issues;
         if (!selected_->error.empty())

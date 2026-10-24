@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <charconv>
 #include <span>
+#include <map>
 
 namespace etherscope {
 namespace {
@@ -19,6 +20,42 @@ std::string hex(std::uint64_t value, int width = 2) {
         result.append(static_cast<std::size_t>(width) - length, '0');
     result.append(digits.data(), length);
     return result;
+}
+std::string fieldKey(const std::string &parent, const std::string &name) {
+    static const std::map<std::pair<std::string, std::string>, std::string> keys = {
+        {{"Ethernet II", "源 MAC"}, "eth.src"},
+        {{"Ethernet II", "目的 MAC"}, "eth.dst"},
+        {{"Ethernet II", "类型/长度"}, "eth.type"},
+        {{"802.1Q", "VLAN ID"}, "vlan.id"},
+        {{"IPv4", "源地址"}, "ip.src"},
+        {{"IPv4", "目的地址"}, "ip.dst"},
+        {{"IPv4", "生存时间 TTL"}, "ip.ttl"},
+        {{"IPv4", "总长度"}, "ip.len"},
+        {{"IPv4", "首部检验和"}, "ip.checksum"},
+        {{"IPv6", "源地址"}, "ipv6.src"},
+        {{"IPv6", "目的地址"}, "ipv6.dst"},
+        {{"IPv6", "跳数限制"}, "ipv6.hlim"},
+        {{"IPv6", "载荷长度"}, "ipv6.plen"},
+        {{"IPv6", "有效载荷长度"}, "ipv6.plen"},
+        {{"TCP", "源端口"}, "tcp.srcport"},
+        {{"TCP", "目的端口"}, "tcp.dstport"},
+        {{"TCP", "序列号"}, "tcp.seq"},
+        {{"TCP", "确认号"}, "tcp.ack"},
+        {{"TCP", "标志"}, "tcp.flags"},
+        {{"TCP", "窗口"}, "tcp.window_size"},
+        {{"TCP", "检验和"}, "tcp.checksum"},
+        {{"UDP", "源端口"}, "udp.srcport"},
+        {{"UDP", "目的端口"}, "udp.dstport"},
+        {{"UDP", "长度"}, "udp.length"},
+        {{"UDP", "检验和"}, "udp.checksum"},
+        {{"ICMP", "类型"}, "icmp.type"},
+        {{"ICMP", "代码"}, "icmp.code"},
+        {{"ICMP", "检验和"}, "icmp.checksum"},
+        {{"ICMPv6", "类型"}, "icmpv6.type"},
+        {{"ICMPv6", "代码"}, "icmpv6.code"},
+        {{"ICMPv6", "检验和"}, "icmpv6.checksum"}};
+    const auto found = keys.find({parent, name});
+    return found == keys.end() ? std::string{} : found->second;
 }
 struct Decoder {
     Packet p;
@@ -82,8 +119,11 @@ struct Decoder {
         ++fieldCount_;
         parent.nodes += value.nodes;
         parent.lastChildNodes = value.nodes;
-        if (full_)
+        if (full_) {
+            if (value.field->key.empty())
+                value.field->key = fieldKey(parent.field->name, value.field->name);
             parent.field->children.push_back(std::move(*value.field));
+        }
     }
     template <class Factory> void emitField(Node &parent, Factory factory) {
         append(parent, node(factory));
@@ -188,7 +228,7 @@ std::size_t stringBytes(const std::string &value) {
 std::size_t fieldsBytes(const std::vector<Field> &fields) {
     std::size_t total = fields.capacity() * sizeof(Field);
     for (const auto &field : fields)
-        total += stringBytes(field.name) + stringBytes(field.value) + fieldsBytes(field.children);
+        total += stringBytes(field.name) + stringBytes(field.value) + stringBytes(field.key) + fieldsBytes(field.children);
     return total;
 }
 } // namespace

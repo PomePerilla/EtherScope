@@ -14,6 +14,7 @@ struct Field {
     std::size_t offset{};
     std::size_t length{};
     std::vector<Field> children;
+    std::string key;
 };
 struct CaptureInterfaceInfo {
     std::string name, description;

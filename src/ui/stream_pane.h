@@ -1,6 +1,7 @@
 #pragma once
 #include "capture/stream.h"
 #include "core/session.h"
+#include "ui/source_context.h"
 #include "core/application_index.h"
 #include <QWidget>
 class QLabel;
@@ -19,6 +20,8 @@ class StreamPane final : public QWidget {
     void setSelection(const SessionStore *store, std::uint64_t id);
     void start();
     void cancel();
+    void setNavigationEnabled(bool enabled);
+    void setSourceContext(SourceContext context);
     bool busy() const {
         return service_.busy();
     }
@@ -28,10 +31,13 @@ class StreamPane final : public QWidget {
     void setApplicationIndex(const ApplicationIndex *index);
   signals:
     void workChanged();
+    void analysisHelpRequested(etherscope::AnalysisStatus status);
+    void filterRequested(const QString &predicate, bool unique, etherscope::SourceContext context);
     void analysisFinished(quint64 request, bool success);
     void locateRequested(quint64 packetId);
 
   private:
+    bool navigationEnabled_{true};
     StreamService service_;
     const ApplicationIndex *applicationIndex_{};
     ApplicationView *applicationView_{};

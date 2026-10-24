@@ -8,6 +8,7 @@
 #include "capture/recording.h"
 #include "ui/packet_model.h"
 #include "ui/traffic_chart.h"
+#include "ui/source_context.h"
 #include <QMainWindow>
 #include <QElapsedTimer>
 #include <QTimer>
@@ -33,10 +34,13 @@ class QGridLayout;
 class QDialog;
 class QToolButton;
 class QShowEvent;
+class QMenu;
 
 namespace etherscope {
 class FilterChip;
-class TcpDialog;
+class TcpPanel;
+class AnalysisDock;
+class ApplicationView;
 class WindowTitleBar;
 struct MainWindowOptions {
     QString settingsFile;
@@ -168,7 +172,26 @@ class MainWindow final : public QMainWindow {
     QPushButton *emptyStart_{}, *emptyOpen_{}, *emptyRefresh_{}, *emptyAdjust_{};
     QLabel *bpfMarker_{};
     QPointer<QDialog> bpfDialog_;
-    QPointer<TcpDialog> tcpDialog_;
+    QPointer<TcpPanel> tcpDialog_;
+    QMainWindow *analysisWorkspace_{};
+    AnalysisDock *tcpDock_{}, *applicationDock_{};
+    ApplicationView *applicationView_{};
+    SourceContext tcpContext_, applicationContext_;
+    std::uint64_t applicationPacket_{};
+    QString sourceNames_[2], tcpSourceName_, applicationSourceName_;
+    bool arrangingDocks_{}, tcpInvalidated_{}, applicationInvalidated_{};
+    struct DisplayState {
+        FilterSpec filter;
+        QString expression;
+        SourceContext source;
+        bool operator==(const DisplayState &) const = default;
+    };
+    std::vector<DisplayState> filterUndo_, filterRecent_;
+    bool historyReady_{}, restoringFilter_{};
+    QAction *undoFilter_{};
+    QMenu *recentFilters_{};
+    QLabel *fieldHelp_{};
+    QPushButton *fieldHelpToggle_{};
     StreamDecoder streamDecoder_;
     QPointer<QLineEdit> bpfInput_;
     QPointer<QPushButton> bpfApply_;
@@ -252,6 +275,29 @@ class MainWindow final : public QMainWindow {
     void appendDnsFields();
     void showTcpConversations();
     void refreshTcpConversations();
+    SourceContext sourceContext(int session) const;
+    bool sourceValid(const SourceContext &source, bool analysis = false) const;
+    SessionStore &storeFor(int session);
+    QString sourceName(int session) const;
+    void initializeInteractions();
+    void rememberFilter(const FilterSpec &filter, const QString &expression);
+    DisplayState displayState() const;
+    void restoreFilter(const DisplayState &state);
+    void applyQuickFilter(const QString &predicate, bool unique);
+    void refreshFilterHistory();
+    QMenu *packetMenu(const QModelIndex &index);
+    QMenu *fieldMenu(QTreeWidgetItem *item);
+    void updateFieldHelp();
+    void showExpressionHelp();
+    void showAnalysisHelp(AnalysisStatus status);
+    AnalysisDock *createAnalysisDock(const QString &title, const QString &name);
+    void presentAnalysisDock(AnalysisDock *dock);
+    void arrangeAnalysisDocks();
+    void saveAnalysisLayout();
+    void resetAnalysisLayout();
+    void bindTcpSource();
+    void bindApplicationSource();
+    void refreshAnalysisSources();
     void beginFile(const QString &path, PreparedFile reader);
     void completeFileOpen(FileOpenResult result, const QString &error = {});
     void requestCaptureStop();
@@ -268,6 +314,7 @@ class MainWindow final : public QMainWindow {
     void restoreSettings();
     void saveSettings();
     void updateFilterStatus();
+    void syncFilterInputs();
     void applyFilter();
     void commitFilter(FilterSpec filter);
     void showDetails();

@@ -74,6 +74,10 @@ if(ETHERSCOPE_BUILD_GUI)
     src/capture/details.cpp
     src/capture/stream.cpp
     src/ui/main_window.cpp
+    src/ui/main_window_actions.cpp
+    src/ui/main_window_workspace.cpp
+    src/ui/analysis_dock.cpp
+    src/ui/learning.cpp
     src/ui/icons.cpp
     src/ui/language.cpp
     src/ui/main_window_ui.cpp

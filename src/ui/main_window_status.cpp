@@ -84,6 +84,7 @@ void MainWindow::updateStatus() {
     icons::bind(diagnostics_, discarded ? icons::Id::Warning : icons::Id::Diagnostic);
     setWindowTitle("EtherScope");
     modes_->setTabToolTip(1, filePath_);
+    refreshAnalysisSources();
     updatePresentation();
 }
 void MainWindow::updateButtons() {

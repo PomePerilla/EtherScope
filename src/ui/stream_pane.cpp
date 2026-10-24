@@ -1,4 +1,5 @@
 #include "ui/stream_pane.h"
+#include "ui/flow_layout.h"
 #include "ui/application_view.h"
 #include "ui/style.h"
 #include "ui/icons.h"
@@ -127,7 +128,7 @@ StreamPane::StreamPane(QWidget *parent, StreamDecoder decoder)
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(style::gap);
-    auto *bar = new QHBoxLayout;
+    auto *bar = new FlowLayout;
     direction_ = new QComboBox(this);
     direction_->setObjectName("streamDirection");
     direction_->addItems({"A -> B", "B -> A"});
@@ -146,19 +147,24 @@ StreamPane::StreamPane(QWidget *parent, StreamDecoder decoder)
     prefix_->setObjectName("streamPrefix");
     limit_ = new QLabel(this);
     limit_->setObjectName("streamLimit");
-    for (auto *label : {phase_, scope_, prefix_, limit_})
+    for (auto *label : {phase_, scope_, prefix_, limit_}) {
+        label->setMaximumWidth(340);
+        label->setWordWrap(true);
         bar->addWidget(label);
-    bar->addStretch();
+    }
     layout->addLayout(bar);
-    auto *metrics = new QGridLayout;
-    metrics->setHorizontalSpacing(10);
+    auto *metrics = new FlowLayout;
     const QStringList titles = {"快照包数", "重组字节", "缺口",     "重复段",
                                 "补齐段",   "冲突字节", "占用 KiB", "省略标记"};
     for (int i = 0; i < 8; ++i) {
-        metrics->addWidget(new QLabel(titles[i], this), i / 4, (i % 4) * 2);
+        auto *pair = new QWidget(this);
+        auto *pairLayout = new QHBoxLayout(pair);
+        pairLayout->setContentsMargins(0, 0, 0, 0);
+        pairLayout->addWidget(new QLabel(titles[i], pair));
         metrics_[i] = new QLabel("-", this);
         metrics_[i]->setObjectName("streamMetric" + QString::number(i));
-        metrics->addWidget(metrics_[i], i / 4, (i % 4) * 2 + 1);
+        pairLayout->addWidget(metrics_[i]);
+        metrics->addWidget(pair);
     }
     layout->addLayout(metrics);
     tabs_ = new QTabWidget(this);
@@ -202,6 +208,8 @@ StreamPane::StreamPane(QWidget *parent, StreamDecoder decoder)
     tabs_->addTab(events_, "标记");
     applicationView_ = new ApplicationView(tabs_);
     tabs_->addTab(applicationView_, "Messages");
+    connect(applicationView_, &ApplicationView::filterRequested, this, &StreamPane::filterRequested);
+    connect(applicationView_, &ApplicationView::analysisHelpRequested, this, &StreamPane::analysisHelpRequested);
     connect(applicationView_, &ApplicationView::locateRequested, this,
             &StreamPane::locateRequested);
     rangeModel_ = new StreamTableModel(false, this);
@@ -238,17 +246,17 @@ StreamPane::StreamPane(QWidget *parent, StreamDecoder decoder)
         displayPage();
     });
     connect(locate_, &QPushButton::clicked, this, [this] {
-        if (pagePacketId_)
+        if (navigationEnabled_ && pagePacketId_)
             emit locateRequested(pagePacketId_);
     });
     connect(ranges_, &QTableView::doubleClicked, this, [this](const QModelIndex &index) {
         const auto id = index.data(Qt::UserRole).toULongLong();
-        if (id)
+        if (navigationEnabled_ && id)
             emit locateRequested(id);
     });
     connect(events_, &QTableView::doubleClicked, this, [this](const QModelIndex &index) {
         const auto id = index.data(Qt::UserRole).toULongLong();
-        if (id)
+        if (navigationEnabled_ && id)
             emit locateRequested(id);
     });
     connect(
@@ -325,6 +333,12 @@ void StreamPane::cancel() {
     i18n::setLabel(phase_, "已取消");
     cancel_->setEnabled(service_.busy());
     emit workChanged();
+}
+void StreamPane::setSourceContext(SourceContext context) { applicationView_->setSourceContext(context); }
+void StreamPane::setNavigationEnabled(bool enabled) {
+    navigationEnabled_ = enabled;
+    locate_->setEnabled(enabled && pagePacketId_ != 0);
+    applicationView_->setNavigationEnabled(enabled);
 }
 void StreamPane::clearResult() {
     result_.reset();
@@ -437,7 +451,7 @@ void StreamPane::displayPage() {
         }
         position += block.bytes.size();
     }
-    locate_->setEnabled(pagePacketId_ != 0);
+    locate_->setEnabled(navigationEnabled_ && pagePacketId_ != 0);
     QString text;
     text.reserve(static_cast<qsizetype>((end - pageStart_) * 5));
     for (auto offset = pageStart_; offset < end; offset += 16) {

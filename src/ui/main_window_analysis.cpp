@@ -4,6 +4,7 @@
 #include "ui/language.h"
 #include "ui/style.h"
 #include "ui/application_view.h"
+#include "ui/analysis_dock.h"
 #include <QAction>
 #include <QCheckBox>
 #include <QDialog>
@@ -63,6 +64,8 @@ void MainWindow::initializeAnalysis(const MainWindowOptions &options) {
         Qt::QueuedConnection);
 }
 void MainWindow::resetApplications(int session) {
+    if (session == view_) filterUndo_.clear();
+    refreshFilterHistory();
     applications_[session]->reset();
     applicationIndex_[session].clear();
     applicationSubmitted_[session] = 0;
@@ -149,6 +152,7 @@ void MainWindow::collectApplications() {
     analysisIncomplete_->setText(QString::number(diagnostics.incomplete()));
     for (unsigned i = 0; i < analysisStates_.size(); ++i)
         analysisStates_[i]->setText(QString::number(diagnostics.states[i + 1]));
+    refreshAnalysisSources();
     tryClose();
 }
 bool MainWindow::applyExpression(const QString &text) {
@@ -167,7 +171,15 @@ bool MainWindow::applyExpression(const QString &text) {
     }
     expressionError_->hide();
     style::setFlag(expressionInput_, "invalid", false);
-    model_->setExpression(std::move(expression));
+    rememberFilter(model_->filter(), source);
+    const auto selectedId = selected_ ? selected_->id : 0;
+    {
+        QScopedValueRollback<bool> changing(updatingSelection_, true);
+        model_->setExpression(std::move(expression));
+        const auto row = selectedId ? model_->rowForId(selectedId) : -1;
+        if (model_->rowCount()) table_->setCurrentIndex(model_->index(row >= 0 ? row : 0, 0));
+    }
+    expressionInput_->setText(source);
     expressionChip_->setCondition(source);
     showDetails();
     updateStatus();
@@ -184,48 +196,53 @@ void MainWindow::setTlsKeyLog(const QString &path) {
     model_->refreshApplications();
 }
 void MainWindow::showApplicationAnalysis() {
-    if (!selected_)
-        return;
-    if (auto *previous = findChild<QDialog *>("applicationDialog")) {
-        previous->close();
-        delete previous;
+    if (!selected_ || closing_) return;
+    if (!applicationDock_) {
+        applicationDock_ = createAnalysisDock("应用分析", "applicationAnalysisDock");
+        applicationView_ = new ApplicationView(applicationDock_);
+        applicationDock_->setContent(applicationView_);
+        connect(applicationDock_, &AnalysisDock::rebindRequested, this, &MainWindow::bindApplicationSource);
+        connect(applicationView_, &ApplicationView::filterRequested, this,
+                [this](const QString &predicate, bool unique, SourceContext context) {
+                    if (context.session == view_ && sourceValid(context, true)) applyQuickFilter(predicate, unique);
+                    else applicationDock_->showError("筛选来源已失效");
+                });
+        connect(applicationView_, &ApplicationView::analysisHelpRequested, this, &MainWindow::showAnalysisHelp);
+        connect(applicationView_, &ApplicationView::locateRequested, this, [this](quint64 id) {
+            if (closing_) return;
+            if (!sourceValid(applicationContext_, true) || applicationContext_.session != view_) {
+                applicationDock_->showError("分析来源已变化，请切回来源或重新分析");
+                return;
+            }
+            const auto row = model_->rowForId(id);
+            if (row < 0) {
+                applicationDock_->showError(storeFor(view_).find(id) ? "报文已被筛选" : "报文已覆盖");
+                return;
+            }
+            applicationDock_->showError({});
+            follow_->setChecked(false);
+            selectPacket(row);
+            table_->scrollTo(model_->index(row, 0));
+            raise();
+            activateWindow();
+        });
     }
-    auto *dialog = new QDialog(this);
-    dialog->setObjectName("applicationDialog");
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setWindowTitle("Application analysis");
-    dialog->resize(1000, 650);
-    auto *layout = new QVBoxLayout(dialog);
-    auto *view = new ApplicationView(dialog);
-    view->setResults(applicationIndex_[view_].results(selected_->id));
-    layout->addWidget(view);
-    const auto session = view_;
-    const auto packet = selected_->id, generation = applications_[session]->generation();
-    connect(&applicationTimer_, &QTimer::timeout, view, [this, view, session, packet, generation] {
-        view->setResults(generation == applications_[session]->generation()
-                             ? applicationIndex_[session].results(packet)
-                             : std::vector<std::shared_ptr<const ApplicationResult>>{});
-    });
-    connect(view, &ApplicationView::locateRequested, view, [this, session, generation](quint64 id) {
-        if (closing_)
-            return;
-        if (view_ != session || generation != applications_[session]->generation()) {
-            reportError("分析来源已变化，请重新打开应用分析");
-            return;
-        }
-        const auto row = model_->rowForId(id);
-        if (row < 0) {
-            reportError("Packet is no longer visible");
-            return;
-        }
-        actionError_.clear();
-        follow_->setChecked(false);
-        selectPacket(row);
-        table_->scrollTo(model_->index(row, 0));
-        updateStatus();
-    });
-    i18n::bind(dialog);
-    dialog->show();
+    bindApplicationSource();
+    presentAnalysisDock(applicationDock_);
+}
+void MainWindow::bindApplicationSource() {
+    if (!selected_) {
+        applicationDock_->showError("选择数据包后可进行应用分析");
+        return;
+    }
+    applicationContext_ = sourceContext(view_);
+    applicationSourceName_ = sourceNames_[view_];
+    applicationPacket_ = selected_->id;
+    applicationView_->setSourceContext(applicationContext_);
+    applicationInvalidated_ = false;
+    applicationDock_->showError({});
+    applicationView_->setResults({});
+    refreshAnalysisSources();
 }
 void MainWindow::appendDnsFields() {
     if (!selected_ || !selectedDetails_ ||
@@ -255,7 +272,7 @@ void MainWindow::appendDnsFields() {
                                                 applicationText(field.value),
                                                 field.offset,
                                                 field.length,
-                                                {}});
+                                                {}, field.key});
             }
     if (dns.children.empty())
         return;

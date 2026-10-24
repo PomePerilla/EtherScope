@@ -26,6 +26,7 @@
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabBar>
+#include <QTabWidget>
 #include <QTableView>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -40,6 +41,7 @@ QWidget *panel(const QString &name, QWidget *content, QWidget *parent) {
     auto *layout = new QVBoxLayout(frame);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
+    layout->setSizeConstraint(QLayout::SetNoConstraint);
     auto *label = new QLabel(name, frame);
     label->setObjectName("panelTitle");
     label->setFixedHeight(style::titleHeight);
@@ -174,6 +176,9 @@ void MainWindow::buildUi() {
         connect(action, &QAction::triggered, this,
                 [code = QString(entry.first)] { i18n::language().set(code); });
     }
+    auto *resetLayout = appearance->addAction("恢复默认布局");
+    resetLayout->setObjectName("resetAnalysisLayout");
+    connect(resetLayout, &QAction::triggered, this, &MainWindow::resetAnalysisLayout);
     menu->addSeparator();
     menu->addAction("EtherScope " + QCoreApplication::applicationVersion())->setEnabled(false);
     more->setMenu(menu);
@@ -255,6 +260,21 @@ void MainWindow::buildUi() {
     expressionToggle_->setDefaultAction(expressionAction_);
     expressionToggle_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     sessionBar->addWidget(expressionToggle_);
+    undoFilter_ = new QAction("撤回筛选", this);
+    undoFilter_->setObjectName("undoDisplayFilter");
+    auto *undo = new QToolButton(sessionStrip);
+    undo->setObjectName("undoFilterButton");
+    undo->setDefaultAction(undoFilter_);
+    sessionBar->addWidget(undo);
+    auto *recent = new QToolButton(sessionStrip);
+    recent->setObjectName("recentFiltersButton");
+    recent->setText("最近筛选");
+    recentFilters_ = new QMenu(recent);
+    recentFilters_->setObjectName("recentFiltersMenu");
+    recentFilters_->setToolTipsVisible(true);
+    recent->setMenu(recentFilters_);
+    recent->setPopupMode(QToolButton::InstantPopup);
+    sessionBar->addWidget(recent);
     sessionBar->addWidget(bpfMarker_);
     conditionStrip_ = new QWidget(sessionStrip);
     conditionStrip_->setObjectName("conditionStrip");
@@ -295,7 +315,13 @@ void MainWindow::buildUi() {
     expressionInput_ = new QLineEdit(expressionPanel_);
     expressionInput_->setObjectName("expressionInput");
     expressionInput_->setPlaceholderText("tcp.port == 443 and tls.sni contains \"example\"");
-    expressionLayout->addWidget(expressionInput_);
+    auto *expressionRow = new QHBoxLayout;
+    expressionRow->addWidget(expressionInput_, 1);
+    auto *expressionHelp = new QPushButton("表达式帮助", expressionPanel_);
+    expressionHelp->setObjectName("expressionHelpButton");
+    expressionRow->addWidget(expressionHelp);
+    expressionLayout->addLayout(expressionRow);
+    connect(expressionHelp, &QPushButton::clicked, this, &MainWindow::showExpressionHelp);
     expressionError_ = new QLabel(expressionPanel_);
     expressionError_->setObjectName("expressionError");
     expressionError_->setProperty("error", true);
@@ -361,7 +387,12 @@ void MainWindow::buildUi() {
     for (auto *child : addressPanel_->findChildren<QWidget *>())
         child->installEventFilter(this);
 
-    auto *vertical = new QSplitter(Qt::Vertical, root);
+    analysisWorkspace_ = new QMainWindow(root, Qt::Widget);
+    analysisWorkspace_->setWindowFlags(Qt::Widget);
+    analysisWorkspace_->setObjectName("analysisWorkspace");
+    analysisWorkspace_->setDockOptions(QMainWindow::AllowTabbedDocks | QMainWindow::GroupedDragging);
+    analysisWorkspace_->setTabPosition(Qt::AllDockWidgetAreas, QTabWidget::North);
+    auto *vertical = new QSplitter(Qt::Vertical, analysisWorkspace_);
     vertical->setObjectName("packetDetailSplitter");
     vertical->setChildrenCollapsible(false);
     table_ = new QTableView(vertical);
@@ -489,7 +520,19 @@ void MainWindow::buildUi() {
     fieldEmpty_->setAttribute(Qt::WA_TransparentForMouseEvents);
     fields_->viewport()->installEventFilter(this);
     fields_->header()->setFixedHeight(26);
-    panel("字段", fields_, detailSplit);
+    auto *fieldPanel = panel("字段", fields_, detailSplit);
+    fieldHelpToggle_ = new QPushButton("字段说明", fieldPanel);
+    fieldHelpToggle_->setObjectName("fieldHelpToggle");
+    fieldHelpToggle_->setCheckable(true);
+    fieldHelp_ = new QLabel(fieldPanel);
+    fieldHelp_->setObjectName("fieldExplanation");
+    fieldHelp_->setTextFormat(Qt::PlainText);
+    fieldHelp_->setWordWrap(true);
+    fieldHelp_->setMaximumHeight(135);
+    fieldHelp_->hide();
+    auto *fieldLayout = static_cast<QVBoxLayout *>(fieldPanel->layout());
+    fieldLayout->addWidget(fieldHelpToggle_);
+    fieldLayout->addWidget(fieldHelp_);
     auto *bytePanel = new QWidget;
     auto *byteLayout = new QVBoxLayout(bytePanel);
     byteLayout->setContentsMargins(0, 0, 0, 0);
@@ -521,7 +564,8 @@ void MainWindow::buildUi() {
     vertical->addWidget(table_);
     vertical->addWidget(lower);
     vertical->setSizes({400, 300});
-    layout->addWidget(vertical, 1);
+    analysisWorkspace_->setCentralWidget(vertical);
+    layout->addWidget(analysisWorkspace_, 1);
     chart_ = new TrafficChart(root);
     chart_->setObjectName("trafficChart");
     chartPanel_ = panel("统计", chart_, root);
@@ -619,6 +663,7 @@ void MainWindow::buildUi() {
     save_->setToolTip("保存  Ctrl+S");
     apply_->setToolTip("应用  Ctrl+Enter");
     connect(follow_, &QCheckBox::toggled, this, &MainWindow::updatePresentation);
+    analysisWorkspace_->installEventFilter(this);
     i18n::bind(this);
 }
 void MainWindow::arrangeFilters() {

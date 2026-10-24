@@ -3378,5 +3378,295 @@
     "还原",
     "Restore",
     "還原"
+  ],
+  [
+    "分析当前来源",
+    "Analyze current source",
+    "分析目前來源"
+  ],
+  [
+    "恢复默认布局",
+    "Restore default layout",
+    "恢復預設版面配置"
+  ],
+  [
+    "撤回筛选",
+    "Undo filter",
+    "復原篩選"
+  ],
+  [
+    "最近筛选",
+    "Recent filters",
+    "最近篩選"
+  ],
+  [
+    "字段说明",
+    "Field help",
+    "欄位說明"
+  ],
+  [
+    "表达式帮助",
+    "Expression help",
+    "運算式說明"
+  ],
+  [
+    "筛选来源已失效",
+    "Filter source is no longer available",
+    "篩選來源已失效"
+  ],
+  [
+    "生成的筛选表达式无效",
+    "Generated display expression is invalid",
+    "產生的篩選運算式無效"
+  ],
+  [
+    "暂无最近筛选",
+    "No recent filters",
+    "暫無最近篩選"
+  ],
+  [
+    "操作目标已失效，请重新选择报文",
+    "Target is no longer available; select the packet again",
+    "操作目標已失效，請重新選擇封包"
+  ],
+  [
+    "复制当前单元格",
+    "Copy cell",
+    "複製目前儲存格"
+  ],
+  [
+    "复制整行",
+    "Copy row",
+    "複製整列"
+  ],
+  [
+    "作为唯一筛选",
+    "Use as only filter",
+    "作為唯一篩選"
+  ],
+  [
+    "加入当前筛选",
+    "Add to current filter",
+    "加入目前篩選"
+  ],
+  [
+    "按源地址筛选",
+    "Filter by source address",
+    "依來源位址篩選"
+  ],
+  [
+    "按目的地址筛选",
+    "Filter by destination address",
+    "依目的位址篩選"
+  ],
+  [
+    "按协议筛选",
+    "Filter by protocol",
+    "依通訊協定篩選"
+  ],
+  [
+    "按 TCP 会话筛选",
+    "Filter by TCP conversation",
+    "依 TCP 交談篩選"
+  ],
+  [
+    "查看当前 TCP 会话",
+    "View this TCP conversation",
+    "檢視目前 TCP 交談"
+  ],
+  [
+    "应用分析",
+    "Application analysis",
+    "應用分析"
+  ],
+  [
+    "复制值",
+    "Copy value",
+    "複製值"
+  ],
+  [
+    "复制字段和值",
+    "Copy field and value",
+    "複製欄位和值"
+  ],
+  [
+    "复制对应字节",
+    "Copy field bytes",
+    "複製對應位元組"
+  ],
+  [
+    "选择字段以查看说明",
+    "Select a field to see its explanation",
+    "選擇欄位以檢視說明"
+  ],
+  [
+    "显示表达式帮助",
+    "Display expression help",
+    "顯示運算式說明"
+  ],
+  [
+    "显示表达式只改变当前列表；BPF 决定捕获哪些报文。应用分析未完成时，相关字段可能未知。",
+    "Display expressions change the visible list; BPF controls which packets are captured. Application fields may remain unknown until analysis is ready.",
+    "顯示運算式只改變目前清單；BPF 決定擷取哪些封包。應用分析未完成時，相關欄位可能未知。"
+  ],
+  [
+    "分析来源已变化，请切回来源或重新分析",
+    "Analysis source differs; return to its source or analyze again",
+    "分析來源已變更，請切回來源或重新分析"
+  ],
+  [
+    "来源已重置，请重新分析",
+    "Source was reset; analyze again",
+    "來源已重設，請重新分析"
+  ],
+  [
+    "来源不同，请切回对应的实时或文件视图后定位",
+    "Different source; return to its live or file view to locate packets",
+    "來源不同，請切回對應的即時或檔案檢視後定位"
+  ],
+  [
+    "此字段暂无说明，仍可复制和查看对应字节",
+    "No explanation is available for this field; copying and byte inspection remain available",
+    "此欄位暫無說明，仍可複製和檢視對應位元組"
+  ],
+  [
+    "当前值: %1",
+    "Current value: %1",
+    "目前值: %1"
+  ],
+  [
+    "状态说明",
+    "Status help",
+    "狀態說明"
+  ],
+  [
+    "下一步",
+    "Next step",
+    "下一步"
+  ],
+  [
+    "查看字节",
+    "Inspect bytes",
+    "檢視位元組"
+  ],
+  [
+    "载荷长度",
+    "Payload length",
+    "負載長度"
+  ],
+  [
+    "链路层地址标识当前链路上的接口，不标识个人，也不一定是远端 IP 主机的地址。",
+    "A link-layer address identifies an interface on this link; it does not identify a person or a remote IP host.",
+    "鏈路層位址標識目前鏈路上的介面，不標識個人，也不一定是遠端 IP 主機的位址。"
+  ],
+  [
+    "EtherType 表示封装的协议。VLAN 标签会增加一层封装首部。",
+    "EtherType identifies the encapsulated protocol. A VLAN tag adds another encapsulation header.",
+    "EtherType 表示封裝的通訊協定。VLAN 標籤會增加一層封裝標頭。"
+  ],
+  [
+    "VLAN ID 区分逻辑链路层网络。这里显示已解码的标签，不据此推断网络拓扑。",
+    "The VLAN ID separates logical link-layer networks. This value describes the decoded tag, not an inferred network topology.",
+    "VLAN ID 區分邏輯鏈路層網路。這裡顯示已解碼的標籤，不據此推斷網路拓撲。"
+  ],
+  [
+    "源和目的地址来自当前 IP 首部。NAT、隧道和错误消息引用的首部可能涉及不同端点。",
+    "The source and destination are the addresses in this IP header. NAT, tunnels and quoted headers can describe different endpoints.",
+    "來源與目的位址來自目前 IP 標頭。NAT、隧道和錯誤訊息引用的標頭可能涉及不同端點。"
+  ],
+  [
+    "TTL 或 Hop Limit 会随路由转发递减。仅凭较小的值，不能证明丢包或路由故障。",
+    "TTL or Hop Limit is reduced by forwarding routers. A low value alone does not prove packet loss or a routing fault.",
+    "TTL 或 Hop Limit 會隨路由轉送遞減。僅憑較小的值，不能證明遺失封包或路由故障。"
+  ],
+  [
+    "IPv4 总长度包含首部，IPv6 有效载荷长度不包含基础首部。实际捕获字节可能被截断。",
+    "IPv4 total length includes its header; IPv6 payload length excludes the base header. Captured bytes may be truncated.",
+    "IPv4 總長度包含標頭，IPv6 有效負載長度不包含基礎標頭。實際擷取位元組可能遭截斷。"
+  ],
+  [
+    "校验和用于检测部分传输错误。网卡卸载或捕获截断会影响校验；未校验的数值不能证明数据损坏。",
+    "A checksum detects some transmission errors. Offloading and truncated captures can affect verification; an unverified value is not evidence of corruption.",
+    "檢查碼用於偵測部分傳輸錯誤。網卡卸載或擷取截斷會影響驗證；未驗證的數值不能證明資料損壞。"
+  ],
+  [
+    "端口标识传输层端点。常用端口只能提示惯例，不能证明实际使用的应用协议。",
+    "Ports identify transport endpoints. A familiar port number suggests a convention, but does not prove which application is present.",
+    "連接埠標識傳輸層端點。常用連接埠只能提示慣例，不能證明實際使用的應用通訊協定。"
+  ],
+  [
+    "TCP 序列号跟踪字节位置，确认号通常表示下一个期望字节。这里显示捕获的绝对数值，不使用相对编号。",
+    "TCP sequence numbers track byte positions; acknowledgments normally identify the next expected byte. These are captured absolute values, not relative numbering.",
+    "TCP 序號追蹤位元組位置，確認號通常表示下一個預期位元組。這裡顯示擷取的絕對數值，不使用相對編號。"
+  ],
+  [
+    "SYN 用于同步，ACK 表示确认号有效，FIN 结束字节流，RST 重置连接。单个标志不能证明连接的完整状态。",
+    "SYN starts synchronization, ACK validates the acknowledgment field, FIN ends a byte stream, and RST resets a connection. One observed flag does not prove the full connection state.",
+    "SYN 用於同步，ACK 表示確認號有效，FIN 結束位元組流，RST 重設連線。單一旗標不能證明連線的完整狀態。"
+  ],
+  [
+    "接收窗口限制未确认的数据量。这里显示首部原始值，未应用协商的窗口缩放。",
+    "The advertised receive window limits outstanding data. This is the raw header value; negotiated window scaling is not applied here.",
+    "接收視窗限制未確認的資料量。這裡顯示標頭原始值，未套用協商的視窗縮放。"
+  ],
+  [
+    "UDP 长度包含 8 字节首部和载荷。分片或捕获截断可能导致实际可用字节更少。",
+    "UDP length includes the 8-byte UDP header and payload. Fragmentation or capture truncation can make the available bytes shorter.",
+    "UDP 長度包含 8 位元組標頭和負載。分片或擷取截斷可能導致實際可用位元組更少。"
+  ],
+  [
+    "ICMP Type 决定消息类别，Code 进一步说明含义。ICMP 与 ICMPv6 的编号含义不同。",
+    "ICMP Type selects the message category and Code refines its meaning. ICMP and ICMPv6 use different number assignments.",
+    "ICMP Type 決定訊息類別，Code 進一步說明含義。ICMP 與 ICMPv6 的編號含義不同。"
+  ],
+  [
+    "DNS 查询名表示正在查询的名称。看到查询不代表已收到响应，也不代表连接成功。",
+    "The DNS question name is the name being queried. A captured query does not establish that a response was received or a connection succeeded.",
+    "DNS 查詢名稱表示正在查詢的名稱。看到查詢不代表已收到回應，也不代表連線成功。"
+  ],
+  [
+    "Host 表示解析器看到的 HTTP 请求目标字段，不能据此证明目标服务器的身份。",
+    "Host is the HTTP request authority field observed by the parser. Its presence does not prove the destination server identity.",
+    "Host 表示解析器看到的 HTTP 請求目標欄位，不能據此證明目標伺服器的身分。"
+  ],
+  [
+    "SNI 表示捕获的 TLS ClientHello 中请求的服务器名称，不代表证书验证成功或握手完成。",
+    "SNI is the server name requested in the observed TLS ClientHello. It is not certificate validation or proof of a completed TLS handshake.",
+    "SNI 表示擷取的 TLS ClientHello 中請求的伺服器名稱，不代表憑證驗證成功或交握完成。"
+  ],
+  [
+    "分析正在等待后台处理或更多捕获数据，应用字段可能仍未知。",
+    "Analysis is waiting for background work or more captured data. Application fields may still be unknown.",
+    "分析正在等待背景處理或更多擷取資料，應用欄位可能仍未知。"
+  ],
+  [
+    "现有消息已完成解析，但这不代表网络事务成功。",
+    "The available message was parsed. This does not certify that the network transaction succeeded.",
+    "現有訊息已完成解析，但這不代表網路交易成功。"
+  ],
+  [
+    "部分消息字节或边界缺失。请检查捕获范围和流缺口，不要把未知字段当作不存在。",
+    "Some message bytes or boundaries are missing. Check capture coverage and stream gaps; do not treat missing fields as absent.",
+    "部分訊息位元組或邊界缺失。請檢查擷取範圍和流缺口，不要把未知欄位當作不存在。"
+  ],
+  [
+    "分析达到资源上限。可以缩小捕获范围或缩短会话；这与捕获丢包不同。",
+    "An analysis resource limit was reached. Narrow the capture or start a shorter session; this is separate from capture packet drops.",
+    "分析達到資源上限。可以縮小擷取範圍或縮短交談；這與擷取遺失封包不同。"
+  ],
+  [
+    "解密需要匹配的 TLS 密钥日志。请打开密钥日志设置，加载或重新载入端点提供的密钥。",
+    "Decryption needs a matching TLS key log. Open the key-log settings, then load or reload keys supplied by the endpoint.",
+    "解密需要匹配的 TLS 金鑰日誌。請開啟金鑰日誌設定，載入或重新載入端點提供的金鑰。"
+  ],
+  [
+    "当前协议特性超出解析器支持范围。请检查原始字节或重组字节。",
+    "The observed protocol feature is outside the implemented parser. Inspect the raw or reassembled bytes.",
+    "目前通訊協定特性超出解析器支援範圍。請檢查原始位元組或重組位元組。"
+  ],
+  [
+    "认证解密失败。请检查密钥是否匹配、流是否完整；仅此不能证明存在攻击。",
+    "Authenticated decryption failed. Check matching keys and stream completeness; this alone does not establish an attack.",
+    "驗證解密失敗。請檢查金鑰是否匹配、流是否完整；僅此不能證明存在攻擊。"
   ]
 ]

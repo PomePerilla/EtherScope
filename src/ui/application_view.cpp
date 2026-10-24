@@ -2,6 +2,15 @@
 #include "ui/language.h"
 #include "ui/style.h"
 #include "ui/icons.h"
+#include "ui/learning.h"
+#include "ui/flow_layout.h"
+#include <QResizeEvent>
+#include <QMenu>
+#include <QAction>
+#include <QApplication>
+#include <QClipboard>
+#include <QShortcut>
+#include <QToolTip>
 #include <QComboBox>
 #include <QElapsedTimer>
 #include <QFontDatabase>
@@ -40,20 +49,30 @@ QString statusText(AnalysisStatus status) {
 ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    auto *bar = new QHBoxLayout;
+    auto *bar = new FlowLayout;
     sources_ = new QComboBox(this);
     sources_->setObjectName("applicationDataSource");
     sources_->addItems({"All sources", "Original", "Reassembled", "Decrypted"});
     bar->addWidget(sources_);
     packets_ = new QComboBox(this);
     packets_->setObjectName("applicationPackets");
-    bar->addWidget(packets_, 1);
+    bar->addWidget(packets_);
     state_ = new QLabel(this);
     state_->setObjectName("applicationState");
     bar->addWidget(state_);
     auto *locate = new QPushButton("定位", this);
+    locate_ = locate;
+    locate_->setObjectName("applicationLocate");
     icons::bind(locate, icons::Id::Locate);
     bar->addWidget(locate);
+    fieldHelpToggle_ = new QPushButton("字段说明", this);
+    fieldHelpToggle_->setObjectName("applicationFieldHelpToggle");
+    fieldHelpToggle_->setCheckable(true);
+    statusHelpToggle_ = new QPushButton("状态说明", this);
+    statusHelpToggle_->setObjectName("analysisStatusHelpToggle");
+    statusHelpToggle_->setCheckable(true);
+    bar->addWidget(fieldHelpToggle_);
+    bar->addWidget(statusHelpToggle_);
     layout->addLayout(bar);
     auto *splitter = new QSplitter(Qt::Vertical, this);
     list_ = new QTreeWidget(splitter);
@@ -64,6 +83,7 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     list_->setColumnWidth(1, 90);
     list_->setColumnWidth(2, 350);
     auto *lower = new QSplitter(Qt::Horizontal, splitter);
+    lower_ = lower;
     fields_ = new QTreeWidget(lower);
     fields_->setObjectName("applicationFields");
     fields_->setHeaderLabels({"字段", "值"});
@@ -83,16 +103,50 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     pager->addWidget(page_, 1);
     pager->addWidget(next);
     layout->addLayout(pager);
+    fieldHelp_ = new QLabel(this);
+    fieldHelp_->setObjectName("applicationFieldExplanation");
+    fieldHelp_->setTextFormat(Qt::PlainText);
+    fieldHelp_->setWordWrap(true);
+    fieldHelp_->hide();
+    statusHelp_ = new QLabel(this);
+    statusHelp_->setObjectName("analysisStatusExplanation");
+    statusHelp_->setTextFormat(Qt::PlainText);
+    statusHelp_->setWordWrap(true);
+    statusHelp_->hide();
+    nextStep_ = new QPushButton("下一步", this);
+    nextStep_->setObjectName("analysisNextStep");
+    nextStep_->hide();
+    layout->addWidget(fieldHelp_);
+    layout->addWidget(statusHelp_);
+    layout->addWidget(nextStep_);
+    connect(fieldHelpToggle_, &QPushButton::toggled, this, [this](bool checked) {
+        fieldHelp_->setVisible(checked);
+        updateHelp();
+    });
+    connect(statusHelpToggle_, &QPushButton::toggled, this, [this](bool checked) {
+        statusHelp_->setVisible(checked);
+        nextStep_->setVisible(checked);
+        updateHelp();
+    });
+    connect(nextStep_, &QPushButton::clicked, this, [this] {
+        if (status_ == AnalysisStatus::Complete || status_ == AnalysisStatus::Unsupported ||
+            status_ == AnalysisStatus::AuthenticationFailed) bytes_->setFocus();
+        else emit analysisHelpRequested(status_);
+    });
+    connect(packets_, &QComboBox::currentIndexChanged, this, [this] {
+        locate_->setEnabled(navigationEnabled_ && packets_->currentIndex() >= 0);
+    });
     connect(previous, &QPushButton::clicked, this,
             [this] { page(offset_ >= 4096 ? offset_ - 4096 : 0); });
     connect(next, &QPushButton::clicked, this, [this] { page(offset_ + 4096); });
     connect(list_, &QTreeWidget::currentItemChanged, this, [this] { select(); });
     connect(sources_, &QComboBox::currentIndexChanged, this, [this] { rebuild(); });
     connect(locate, &QPushButton::clicked, this, [this] {
-        if (packets_->currentIndex() >= 0)
+        if (navigationEnabled_ && packets_->currentIndex() >= 0)
             emit locateRequested(packets_->currentData().toULongLong());
     });
     connect(fields_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) {
+        updateHelp();
         if (!item || !selected_)
             return;
         const auto offset = item->data(0, Qt::UserRole).toULongLong();
@@ -100,6 +154,50 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     });
     connect(&fillTimer_, &QTimer::timeout, this, &ApplicationView::fill);
     fillTimer_.setInterval(0);
+    fields_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(fields_, &QTreeWidget::customContextMenuRequested, this, [this](QPoint position) {
+        auto *item = position.x() < 0 ? fields_->currentItem() : fields_->itemAt(position);
+        if (!item || !selected_) return;
+        fields_->setCurrentItem(item);
+        const auto value = item->text(1), name = item->text(0);
+        const auto predicate = item->data(0, Qt::UserRole + 6).toString();
+        const auto offset = item->data(0, Qt::UserRole).toULongLong();
+        const auto length = item->data(1, Qt::UserRole).toULongLong();
+        const auto bytes = selected_->bytes;
+        const auto context = context_;
+        auto *menu = new QMenu(fields_);
+        menu->setObjectName("applicationFieldMenu");
+        auto add = [&](const char *caption, const char *id, auto callback, bool enabled = true) {
+            auto *action = menu->addAction(i18n::text(caption));
+            action->setObjectName(id);
+            action->setEnabled(enabled);
+            connect(action, &QAction::triggered, menu, [this, context, callback] {
+                if (context_ == context && navigationEnabled_) callback();
+                else QToolTip::showText(QCursor::pos(), i18n::text("操作目标已失效，请重新选择报文"), fields_);
+            });
+        };
+        add("复制值", "copyApplicationField", [value] { qApp->clipboard()->setText(value); });
+        add("复制字段和值", "copyApplicationFieldPair", [name, value] { qApp->clipboard()->setText(name + '\t' + value); });
+        add("复制对应字节", "copyApplicationFieldBytes", [bytes, offset, length] {
+            qApp->clipboard()->setText(QString::fromLatin1(QByteArray(
+                reinterpret_cast<const char *>(bytes->data() + offset), qsizetype(length)).toHex(' ')));
+        }, bytes && length && offset <= bytes->size() && length <= bytes->size() - offset);
+        for (bool unique : {true, false})
+            add(unique ? "作为唯一筛选" : "加入当前筛选", unique ? "applicationFilterOnly" : "applicationFilterAdd",
+                [this, predicate, unique, context] { emit filterRequested(predicate, unique, context); }, !predicate.isEmpty());
+        connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+        menu->popup(fields_->viewport()->mapToGlobal(position.x() < 0 ? fields_->visualItemRect(item).center() : position));
+    });
+    auto *copyField = new QShortcut(QKeySequence::Copy, fields_);
+    copyField->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(copyField, &QShortcut::activated, this, [this] {
+        if (auto *item = fields_->currentItem()) qApp->clipboard()->setText(item->text(1));
+    });
+    for (auto sequence : {QKeySequence(Qt::SHIFT | Qt::Key_F10), QKeySequence(Qt::Key_Menu)}) {
+        auto *shortcut = new QShortcut(sequence, fields_);
+        shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+        connect(shortcut, &QShortcut::activated, this, [this] { emit fields_->customContextMenuRequested(QPoint(-1, -1)); });
+    }
     i18n::bind(this);
     connect(&i18n::language(), &i18n::Language::changed, this, &ApplicationView::rebuild);
     rebuild();
@@ -110,6 +208,24 @@ ApplicationView::~ApplicationView() {
     disconnect(list_, nullptr, this, nullptr);
     disconnect(fields_, nullptr, this, nullptr);
     disconnect(sources_, nullptr, this, nullptr);
+}
+void ApplicationView::setNavigationEnabled(bool enabled) {
+    navigationEnabled_ = enabled;
+    locate_->setEnabled(enabled && packets_->currentIndex() >= 0);
+    nextStep_->setEnabled(enabled);
+}
+void ApplicationView::resizeEvent(QResizeEvent *event) {
+    QWidget::resizeEvent(event);
+    lower_->setOrientation(width() < 760 ? Qt::Vertical : Qt::Horizontal);
+}
+void ApplicationView::updateHelp() {
+    const auto *item = fields_->currentItem();
+    fieldHelp_->setText(item ? learning::fieldExplanation(item->data(0, Qt::UserRole + 5).toString(), item->text(1))
+                            : i18n::text("选择字段以查看说明"));
+    statusHelp_->setText(learning::statusExplanation(status_));
+    nextStep_->setText(i18n::text(status_ == AnalysisStatus::MissingKeys ? "TLS key log"
+                                   : (status_ == AnalysisStatus::Pending || status_ == AnalysisStatus::Limited ||
+                                      status_ == AnalysisStatus::Incomplete ? "调整筛选" : "查看字节")));
 }
 void ApplicationView::setResults(std::vector<std::shared_ptr<const ApplicationResult>> results) {
     // Shared result identity is stable until the connection revision changes.
@@ -156,6 +272,8 @@ void ApplicationView::rebuild() {
         if (!result->error.empty())
             error = i18n::text(QString::fromStdString(result->error));
     }
+    status_ = results_.empty() ? AnalysisStatus::Pending : status;
+    updateHelp();
     state_->setText(results_.empty() ? i18n::text("Pending analysis") : statusText(status));
     state_->setToolTip(error);
     if (preferredMessage_ >= messages_.size())
@@ -185,6 +303,8 @@ void ApplicationView::fill() {
         item->setToolTip(1, item->text(1));
         item->setData(0, Qt::UserRole, qulonglong(field.offset));
         item->setData(1, Qt::UserRole, qulonglong(field.length));
+        item->setData(0, Qt::UserRole + 5, QString::fromStdString(field.key));
+        item->setData(0, Qt::UserRole + 6, learning::fieldPredicate(QString::fromStdString(field.key), field.value));
     }
     if (filled_ == messages_.size() && (!selected_ || fieldFilled_ == selected_->fields.size()))
         fillTimer_.stop();
