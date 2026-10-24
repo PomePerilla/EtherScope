@@ -1,4 +1,4 @@
-# EtherScope v2.1.0
+# EtherScope v2.2.0
 
 [English](README.md) | 简体中文 | [繁體中文](README.zh-TW.md)
 
@@ -12,15 +12,17 @@ Windows x64 网络协议分析器。
 - PCAPNG 滚动录制与显示表达式。
 - English、简体中文、繁體中文。
 - 网卡与回环抓包。
+- 报文与字段右键操作，显示筛选撤回和最近记录。
+- 绑定数据来源的 TCP／应用分析面板，支持停靠和独立显示，提供按需字段与分析说明。
 
 ## 下载
 
-[EtherScope v2.1.0](https://github.com/PomePerilla/EtherScope/releases/tag/v2.1.0)
+[EtherScope v2.2.0](https://github.com/PomePerilla/EtherScope/releases/tag/v2.2.0)
 
 | 文件 | 用途 |
 |---|---|
-| `EtherScope-2.1.0-windows-x64.zip` | 安装后使用 |
-| `EtherScope-2.1.0-sourcecode.zip` | 编译后使用 |
+| `EtherScope-2.2.0-windows-x64.zip` | 安装后使用 |
+| `EtherScope-2.2.0-sourcecode.zip` | 编译后使用 |
 
 1. 安装 [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe)。
 2. 解压程序包，运行安装器。

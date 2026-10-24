@@ -1,4 +1,4 @@
-# EtherScope v2.1.0
+# EtherScope v2.2.0
 
 English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
@@ -12,15 +12,17 @@ Windows x64 network protocol analyzer.
 - Rolling PCAPNG recording and typed display expressions.
 - English, Simplified Chinese and Traditional Chinese.
 - Network and loopback capture.
+- Packet and field context actions, display-filter undo and recent history.
+- Source-bound TCP/application panels that dock or float, with optional field and analysis explanations.
 
 ## Download
 
-[EtherScope v2.1.0](https://github.com/PomePerilla/EtherScope/releases/tag/v2.1.0)
+[EtherScope v2.2.0](https://github.com/PomePerilla/EtherScope/releases/tag/v2.2.0)
 
 | File | Use |
 |---|---|
-| `EtherScope-2.1.0-windows-x64.zip` | Install and run |
-| `EtherScope-2.1.0-sourcecode.zip` | Build from source |
+| `EtherScope-2.2.0-windows-x64.zip` | Install and run |
+| `EtherScope-2.2.0-sourcecode.zip` | Build from source |
 
 1. Install [Npcap 1.89](https://npcap.com/dist/npcap-1.89.exe).
 2. Extract the program package and run the installer.
