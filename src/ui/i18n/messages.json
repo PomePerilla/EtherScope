@@ -2605,6 +2605,11 @@
     "封包已被覆蓋或篩選"
   ],
   [
+    "分析来源已变化，请重新打开应用分析",
+    "Analysis source has changed; reopen application analysis",
+    "分析來源已變更，請重新開啟應用分析"
+  ],
+  [
     "完成",
     "Complete",
     "完成"

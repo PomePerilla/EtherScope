@@ -594,7 +594,7 @@ void MainWindow::buildUi() {
     };
     capturedLabel_ = counter("捕获", "capturedCount");
     displayedLabel_ = counter("显示", "displayedCount");
-    droppedLabel_ = counter("丢弃", "droppedCount");
+    droppedLabel_ = counter("队列丢弃", "droppedCount");
     diagnostics_ = new QPushButton("诊断", this);
     diagnostics_->setObjectName("diagnosticsToggle");
     diagnostics_->setCheckable(true);

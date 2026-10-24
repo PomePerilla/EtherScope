@@ -711,6 +711,156 @@ class DesktopTests : public QObject {
         }
         QVERIFY(!reader.next());
     }
+    void applicationNavigationKeepsSourceOwnership() {
+        auto options = testOptions();
+        options.capture = fakeCapture();
+        MainWindow window(nullptr, options);
+        QVERIFY(waitForInterfaces(window));
+        auto *start = window.findChild<QPushButton *>("startButton");
+        start->click();
+        QTRY_COMPARE_WITH_TIMEOUT(window.captureState(), MainWindow::CaptureState::Running, 3000);
+        QTRY_VERIFY_WITH_TIMEOUT(window.packetModel()->rowCount() >= 2, 3000);
+        window.stopCapture();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.busy(), 3000);
+        window.selectPacket(0);
+        window.findChild<QAction *>("applicationAnalysisAction")->trigger();
+        auto *dialog = window.findChild<QDialog *>("applicationDialog");
+        QVERIFY(dialog);
+        auto *analysis = dialog->findChild<ApplicationView *>();
+        QVERIFY(analysis);
+        auto *table = window.findChild<QTableView *>("packetTable");
+        auto *tabs = window.findChild<QTabBar *>("sessionTabs");
+        window.selectPacket(1);
+        emit analysis->locateRequested(1);
+        QCOMPARE(table->currentIndex().row(), 0);
+
+        window.ingestBenchmark({decodeSummary(fixtures::icmp()), decodeSummary(fixtures::icmp())});
+        QCOMPARE(window.packetModel()->packetAt(0)->id, std::uint64_t(1));
+        window.selectPacket(1);
+        emit analysis->locateRequested(1);
+        QCOMPARE(table->currentIndex().row(), 1);
+        QCOMPARE(window.findChild<QLabel *>("captureStatus")->text(),
+                 i18n::text("分析来源已变化，请重新打开应用分析"));
+
+        tabs->setCurrentIndex(0);
+        window.selectPacket(1);
+        emit analysis->locateRequested(1);
+        QCOMPARE(table->currentIndex().row(), 0);
+        // Restarting the same live source reuses packet IDs but invalidates the old analysis.
+        start->click();
+        QTRY_COMPARE_WITH_TIMEOUT(window.captureState(), MainWindow::CaptureState::Running, 3000);
+        QTRY_VERIFY_WITH_TIMEOUT(window.packetModel()->rowCount() >= 2, 3000);
+        window.stopCapture();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.busy(), 3000);
+        window.selectPacket(1);
+        emit analysis->locateRequested(1);
+        QCOMPARE(table->currentIndex().row(), 1);
+        QCOMPARE(window.findChild<QLabel *>("captureStatus")->text(),
+                 i18n::text("分析来源已变化，请重新打开应用分析"));
+    }
+    void queueDropStatusDistinguishesUnknownDriver() {
+        MainWindow window(nullptr, testOptions());
+        QVERIFY(waitForInterfaces(window));
+        window.show();
+        auto *dropped = window.findChild<QLabel *>("droppedCount");
+        for (const auto *code : {"zh_CN", "zh_TW", "en"}) {
+            i18n::language().set(code);
+            QCOMPARE(dropped->text(), QString("0"));
+            QCOMPARE(dropped->toolTip(), QString("%1: 0\n%2: %3")
+                                             .arg(i18n::text("队列丢弃"), i18n::text("驱动丢包"),
+                                                  i18n::text("未知")));
+            bool queueCaption = false;
+            for (auto *label : window.findChildren<QLabel *>())
+                queueCaption |= label->text() == i18n::text("队列丢弃") && label->isVisible();
+            QVERIFY(queueCaption);
+        }
+    }
+    void tcpSortingTracksLiveValues_data() {
+        QTest::addColumn<int>("column");
+        QTest::addColumn<Qt::SortOrder>("order");
+        QTest::newRow("packets-descending") << 6 << Qt::DescendingOrder;
+        QTest::newRow("packets-ascending") << 6 << Qt::AscendingOrder;
+        QTest::newRow("bytes-descending") << 8 << Qt::DescendingOrder;
+        QTest::newRow("bytes-ascending") << 8 << Qt::AscendingOrder;
+    }
+    void tcpSortingTracksLiveValues() {
+        QFETCH(int, column);
+        QFETCH(Qt::SortOrder, order);
+        SessionStore store;
+        auto append = [&](std::uint16_t port, std::uint32_t sequence) {
+            store.append(decodeSummary(fixtures::tcp(24, sequence, 0, false, port, false,
+                                                    std::vector<std::uint8_t>(8, 'x'))));
+        };
+        for (unsigned i = 0; i < TcpConversations::connectionLimit; ++i)
+            append(static_cast<std::uint16_t>(1000 + i), 1);
+        append(1000, 9);
+        TcpDialog dialog;
+        dialog.refresh(store, "实时");
+        auto *table = dialog.findChild<QTableView *>("tcpTable");
+        table->sortByColumn(column, order);
+        dialog.selectConversation(1);
+        const auto edge = order == Qt::DescendingOrder ? 0 : table->model()->rowCount() - 1;
+        QCOMPARE(table->model()->rowCount(), 1024);
+        QCOMPARE(table->model()->index(edge, 0).data(Qt::UserRole).toULongLong(), qulonglong(1));
+        append(1001, 9);
+        append(1001, 17);
+        QElapsedTimer clock;
+        clock.start();
+        dialog.refresh(store, "实时");
+        qInfo() << "1024-session sorted refresh (ms):" << clock.nsecsElapsed() / 1000000.0;
+        QCOMPARE(table->model()->index(edge, 0).data(Qt::UserRole).toULongLong(), qulonglong(2));
+        QCOMPARE(table->currentIndex().data(Qt::UserRole).toULongLong(), qulonglong(1));
+        QCOMPARE(table->horizontalHeader()->sortIndicatorSection(), column);
+        QCOMPARE(table->horizontalHeader()->sortIndicatorOrder(), order);
+    }
+    void exportProgressUsesPacketCounts_data() {
+        QTest::addColumn<bool>("pcapng");
+        QTest::newRow("pcap") << false;
+        QTest::newRow("pcapng-multiple-interfaces") << true;
+    }
+    void exportProgressUsesPacketCounts() {
+        QFETCH(bool, pcapng);
+        QTemporaryDir directory;
+        PacketSnapshot snapshot;
+        for (unsigned i = 0; i < 2000; ++i) {
+            auto raw = fixtures::icmp();
+            raw.bytes.resize(64);
+            raw.originalLength = 64;
+            raw.interfaceId = pcapng ? i % 2 : 0;
+            snapshot.push_back(std::make_shared<Packet>(decodeSummary(std::move(raw))));
+        }
+        ExportEngine engine(nullptr, [](QIODevice &file, const char *data, qint64 size) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(110));
+            return file.write(data, size);
+        });
+        QSignalSpy progress(&engine, &ExportEngine::progress);
+        QSignalSpy finished(&engine, &ExportEngine::finished);
+        const auto path = directory.filePath(pcapng ? "progress.pcapng" : "progress.pcap");
+        QVERIFY(engine.start(path, snapshot, pcapng ? CaptureFormat::Pcapng : CaptureFormat::Pcap));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+        QVERIFY(finished.front()[1].toBool());
+        QVERIFY(progress.size() >= 3);
+        quint64 previous = 0;
+        bool intermediate = false;
+        for (const auto &event : progress) {
+            QCOMPARE(event[0].toULongLong(), engine.generation());
+            const auto completed = event[1].toULongLong(), total = event[2].toULongLong();
+            QCOMPARE(total, qulonglong(2000));
+            QVERIFY(completed >= previous && completed <= total);
+            intermediate |= completed > 0 && completed < total;
+            previous = completed;
+        }
+        QVERIFY(intermediate);
+        QCOMPARE(previous, qulonglong(2000));
+        CaptureReader reader(std::filesystem::path(path.toStdWString()));
+        for (const auto &packet : snapshot) {
+            const auto raw = reader.next();
+            QVERIFY(raw);
+            QCOMPARE(raw->bytes, packet->raw.bytes);
+            QCOMPARE(raw->interfaceId, packet->raw.interfaceId);
+        }
+        QVERIFY(!reader.next());
+    }
     void init() {
         i18n::language().set("zh_CN");
     }
@@ -2886,6 +3036,12 @@ class DesktopTests : public QObject {
         QCOMPARE(window.findChild<QLabel *>("diagnosticQueueDropped")->text(),
                  QString::number(dropped));
         QCOMPARE(window.findChild<QLabel *>("diagnosticDriverDropped")->text(), QString("未知"));
+        QCOMPARE(window.findChild<QLabel *>("droppedCount")->toolTip(),
+                 QString("队列丢弃: %1\n驱动丢包: 未知").arg(dropped));
+        bool queueCaption = false;
+        for (auto *label : window.findChildren<QLabel *>())
+            queueCaption |= label->text() == "队列丢弃" && label->isVisible();
+        QVERIFY(queueCaption);
         QCOMPARE(window.findChild<QLabel *>("capturedCount")->text(), QString("10000"));
     }
     void keyboardActions() {

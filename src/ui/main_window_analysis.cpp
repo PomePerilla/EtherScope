@@ -206,14 +206,23 @@ void MainWindow::showApplicationAnalysis() {
                              ? applicationIndex_[session].results(packet)
                              : std::vector<std::shared_ptr<const ApplicationResult>>{});
     });
-    connect(view, &ApplicationView::locateRequested, this, [this](quint64 id) {
+    connect(view, &ApplicationView::locateRequested, view, [this, session, generation](quint64 id) {
+        if (closing_)
+            return;
+        if (view_ != session || generation != applications_[session]->generation()) {
+            reportError("分析来源已变化，请重新打开应用分析");
+            return;
+        }
         const auto row = model_->rowForId(id);
         if (row < 0) {
             reportError("Packet is no longer visible");
             return;
         }
+        actionError_.clear();
+        follow_->setChecked(false);
         selectPacket(row);
         table_->scrollTo(model_->index(row, 0));
+        updateStatus();
     });
     i18n::bind(dialog);
     dialog->show();

@@ -30,7 +30,8 @@ class ExportEngine final : public QObject {
         return referencedBytes_;
     }
   signals:
-    void progress(quint64 job, quint64 bytes, quint64 total);
+    // Completed packet count; the final progress event follows a successful atomic commit.
+    void progress(quint64 job, quint64 completed, quint64 total);
     void finished(quint64 job, bool success, const QString &path, quint64 count,
                   const QString &error);
 

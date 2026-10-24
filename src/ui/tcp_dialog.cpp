@@ -175,7 +175,7 @@ TcpDialog::TcpDialog(QWidget *parent, StreamDecoder decoder) : QDialog(parent) {
     model_ = new TcpTableModel(this);
     auto *proxy = new QSortFilterProxyModel(this);
     proxy->setSourceModel(model_);
-    proxy->setDynamicSortFilter(false);
+    proxy->setDynamicSortFilter(true);
     table_->setModel(proxy);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
