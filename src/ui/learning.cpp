@@ -27,37 +27,37 @@ QString fieldPredicate(const QString &key, const ApplicationValue &value) {
 QString fieldExplanation(const QString &key, const QString &value) {
     const char *description = nullptr;
     if (key == "eth.src" || key == "eth.dst")
-        description = "A link-layer address identifies an interface on this link; it does not identify a person or a remote IP host.";
+        description = "A MAC address identifies a link-layer interface. Source and destination show the sender and receiver on this link.";
     else if (key == "eth.type")
         description = "EtherType identifies the encapsulated protocol. A VLAN tag adds another encapsulation header.";
     else if (key == "vlan.id")
-        description = "The VLAN ID separates logical link-layer networks. This value describes the decoded tag, not an inferred network topology.";
+        description = "The VLAN ID identifies the logical network carried by this VLAN tag.";
     else if (key == "ip.src" || key == "ip.dst" || key == "ipv6.src" || key == "ipv6.dst")
-        description = "The source and destination are the addresses in this IP header. NAT, tunnels and quoted headers can describe different endpoints.";
+        description = "Source and destination identify the sender and receiver in this IP header. NAT and tunnels can change the addresses along the path.";
     else if (key == "ip.ttl" || key == "ipv6.hlim")
-        description = "TTL or Hop Limit is reduced by forwarding routers. A low value alone does not prove packet loss or a routing fault.";
+        description = "TTL or Hop Limit decreases at each forwarding router. A router discards the packet when this value reaches zero.";
     else if (key == "ip.len" || key == "ipv6.plen")
-        description = "IPv4 total length includes its header; IPv6 payload length excludes the base header. Captured bytes may be truncated.";
+        description = "IPv4 total length counts the header and payload in bytes. IPv6 payload length counts the bytes after the base header.";
     else if (key.endsWith(".checksum"))
-        description = "A checksum detects some transmission errors. Offloading and truncated captures can affect verification; an unverified value is not evidence of corruption.";
+        description = "A checksum helps detect data errors. Read the verification result alongside this value; network-card offloading can affect captured checksums.";
     else if (key.endsWith(".srcport") || key.endsWith(".dstport"))
-        description = "Ports identify transport endpoints. A familiar port number suggests a convention, but does not prove which application is present.";
+        description = "Ports identify transport endpoints. Source and destination ports distinguish the sending and receiving services.";
     else if (key == "tcp.seq" || key == "tcp.ack")
-        description = "TCP sequence numbers track byte positions; acknowledgments normally identify the next expected byte. These are captured absolute values, not relative numbering.";
+        description = "TCP sequence numbers track byte positions, and acknowledgments identify the next expected byte. Values here use absolute numbering.";
     else if (key == "tcp.flags")
-        description = "SYN starts synchronization, ACK validates the acknowledgment field, FIN ends a byte stream, and RST resets a connection. One observed flag does not prove the full connection state.";
+        description = "SYN starts synchronization, ACK marks a valid acknowledgment, FIN ends a byte stream, and RST resets a connection.";
     else if (key == "tcp.window_size")
-        description = "The advertised receive window limits outstanding data. This is the raw header value; negotiated window scaling is not applied here.";
+        description = "The receive window advertises available receive capacity. This value is the raw header field before window scaling.";
     else if (key == "udp.length")
-        description = "UDP length includes the 8-byte UDP header and payload. Fragmentation or capture truncation can make the available bytes shorter.";
+        description = "UDP length counts the 8-byte header and payload in bytes.";
     else if (key == "icmp.type" || key == "icmp.code" || key == "icmpv6.type" || key == "icmpv6.code")
         description = "ICMP Type selects the message category and Code refines its meaning. ICMP and ICMPv6 use different number assignments.";
     else if (key == "dns.qry.name")
-        description = "The DNS question name is the name being queried. A captured query does not establish that a response was received or a connection succeeded.";
+        description = "The DNS question name is the domain name requested by the client. Match the transaction ID to inspect its response.";
     else if (key == "http.host")
-        description = "Host is the HTTP request authority field observed by the parser. Its presence does not prove the destination server identity.";
+        description = "Host specifies the target host and optional port of an HTTP request.";
     else if (key == "tls.sni")
-        description = "SNI is the server name requested in the observed TLS ClientHello. It is not certificate validation or proof of a completed TLS handshake.";
+        description = "SNI carries the server name requested in TLS ClientHello, allowing a server to select the matching site.";
     if (!description)
         return i18n::text("此字段暂无说明，仍可复制和查看对应字节");
     return i18n::text("当前值: %1").arg(value) + "\n" + i18n::text(description);
@@ -65,19 +65,19 @@ QString fieldExplanation(const QString &key, const QString &value) {
 QString statusExplanation(AnalysisStatus status) {
     switch (status) {
     case AnalysisStatus::Pending:
-        return i18n::text("Analysis is waiting for background work or more captured data. Application fields may still be unknown.");
+        return i18n::text("Analysis is waiting for background work or more captured data. Fields update as parsing progresses.");
     case AnalysisStatus::Complete:
-        return i18n::text("The available message was parsed. This does not certify that the network transaction succeeded.");
+        return i18n::text("Parsing is complete. Inspect the message fields and bytes.");
     case AnalysisStatus::Incomplete:
-        return i18n::text("Some message bytes or boundaries are missing. Check capture coverage and stream gaps; do not treat missing fields as absent.");
+        return i18n::text("Message data is incomplete. Check stream gaps or continue capturing.");
     case AnalysisStatus::Limited:
-        return i18n::text("An analysis resource limit was reached. Narrow the capture or start a shorter session; this is separate from capture packet drops.");
+        return i18n::text("An analysis resource limit was reached. Narrow the filter or capture a shorter session.");
     case AnalysisStatus::MissingKeys:
         return i18n::text("Decryption needs a matching TLS key log. Open the key-log settings, then load or reload keys supplied by the endpoint.");
     case AnalysisStatus::Unsupported:
-        return i18n::text("The observed protocol feature is outside the implemented parser. Inspect the raw or reassembled bytes.");
+        return i18n::text("This protocol feature is not supported yet. Inspect the original or reassembled bytes.");
     case AnalysisStatus::AuthenticationFailed:
-        return i18n::text("Authenticated decryption failed. Check matching keys and stream completeness; this alone does not establish an attack.");
+        return i18n::text("Decryption authentication failed. Check matching keys and stream completeness.");
     }
     return {};
 }

@@ -17,6 +17,7 @@
 
 class QComboBox;
 class QLabel;
+class QTextEdit;
 class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
@@ -190,7 +191,8 @@ class MainWindow final : public QMainWindow {
     bool historyReady_{}, restoringFilter_{};
     QAction *undoFilter_{};
     QMenu *recentFilters_{};
-    QLabel *fieldHelp_{};
+    QTextEdit *fieldHelp_{};
+    QWidget *fieldHelpArea_{};
     QPushButton *fieldHelpToggle_{};
     StreamDecoder streamDecoder_;
     QPointer<QLineEdit> bpfInput_;

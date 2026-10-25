@@ -1,6 +1,7 @@
 #include "ui/application_view.h"
 #include "ui/language.h"
 #include "ui/style.h"
+#include "ui/helpers.h"
 #include "ui/icons.h"
 #include "ui/learning.h"
 #include "ui/flow_layout.h"
@@ -49,6 +50,7 @@ QString statusText(AnalysisStatus status) {
 ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(4);
     auto *bar = new FlowLayout;
     sources_ = new QComboBox(this);
     sources_->setObjectName("applicationDataSource");
@@ -57,8 +59,12 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     packets_ = new QComboBox(this);
     packets_->setObjectName("applicationPackets");
     bar->addWidget(packets_);
-    state_ = new QLabel(this);
+    state_ = new QPushButton(this);
     state_->setObjectName("applicationState");
+    state_->setCheckable(true);
+    state_->setProperty("statusBadge", true);
+    state_->setToolTip("查看状态说明");
+    state_->setAccessibleName("查看状态说明");
     bar->addWidget(state_);
     auto *locate = new QPushButton("定位", this);
     locate_ = locate;
@@ -68,11 +74,8 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     fieldHelpToggle_ = new QPushButton("字段说明", this);
     fieldHelpToggle_->setObjectName("applicationFieldHelpToggle");
     fieldHelpToggle_->setCheckable(true);
-    statusHelpToggle_ = new QPushButton("状态说明", this);
-    statusHelpToggle_->setObjectName("analysisStatusHelpToggle");
-    statusHelpToggle_->setCheckable(true);
-    bar->addWidget(fieldHelpToggle_);
-    bar->addWidget(statusHelpToggle_);
+    icons::bind(fieldHelpToggle_, icons::Id::Info);
+    fieldHelpToggle_->setAccessibleName("字段说明");
     layout->addLayout(bar);
     auto *splitter = new QSplitter(Qt::Vertical, this);
     list_ = new QTreeWidget(splitter);
@@ -84,48 +87,76 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     list_->setColumnWidth(2, 350);
     auto *lower = new QSplitter(Qt::Horizontal, splitter);
     lower_ = lower;
-    fields_ = new QTreeWidget(lower);
+    auto *fieldPanel = new QWidget(lower);
+    auto *fieldLayout = new QVBoxLayout(fieldPanel);
+    fieldLayout->setContentsMargins(0, 0, 0, 0);
+    fieldLayout->setSpacing(0);
+    auto *fieldHeader = new QHBoxLayout;
+    auto *fieldTitle = new QLabel("字段", fieldPanel);
+    fieldTitle->setObjectName("panelTitle");
+    fieldHeader->addWidget(fieldTitle, 1);
+    fieldHeader->addWidget(fieldHelpToggle_);
+    fieldLayout->addLayout(fieldHeader);
+    fields_ = new QTreeWidget(fieldPanel);
     fields_->setObjectName("applicationFields");
     fields_->setHeaderLabels({"字段", "值"});
     fields_->setUniformRowHeights(true);
     fields_->setColumnWidth(0, 180);
+    fieldLayout->addWidget(fields_, 1);
     bytes_ = new QPlainTextEdit(lower);
     bytes_->setObjectName("applicationBytes");
     bytes_->setReadOnly(true);
     bytes_->setLineWrapMode(QPlainTextEdit::NoWrap);
     bytes_->setFont(style::dataFont());
+    splitter->setObjectName("applicationContentSplitter");
+    splitter->setSizes({210, 390});
+    splitter->setStretchFactor(0, 1);
+    splitter->setStretchFactor(1, 1);
     layout->addWidget(splitter, 1);
-    auto *pager = new QHBoxLayout;
-    auto *previous = new QPushButton("上一页", this);
-    auto *next = new QPushButton("下一页", this);
+    pager_ = new QWidget(this);
+    pager_->setObjectName("applicationBytePager");
+    auto *pager = new QHBoxLayout(pager_);
+    pager->setContentsMargins(0, 0, 0, 0);
+    auto *previous = previous_ = new QPushButton("上一页", pager_);
+    previous_->setObjectName("applicationPreviousPage");
+    auto *next = next_ = new QPushButton("下一页", pager_);
+    next_->setObjectName("applicationNextPage");
     page_ = new QLabel(this);
     pager->addWidget(previous);
     pager->addWidget(page_, 1);
     pager->addWidget(next);
-    layout->addLayout(pager);
-    fieldHelp_ = new QLabel(this);
+    layout->addWidget(pager_);
+    pager_->hide();
+    fieldHelp_ = new ExplanationText(this);
     fieldHelp_->setObjectName("applicationFieldExplanation");
-    fieldHelp_->setTextFormat(Qt::PlainText);
-    fieldHelp_->setWordWrap(true);
-    fieldHelp_->hide();
-    statusHelp_ = new QLabel(this);
+    fieldHelpArea_ = explanationArea(fieldHelp_, fieldPanel);
+    fieldLayout->addWidget(fieldHelpArea_);
+    statusHelp_ = new ExplanationText(this);
     statusHelp_->setObjectName("analysisStatusExplanation");
-    statusHelp_->setTextFormat(Qt::PlainText);
-    statusHelp_->setWordWrap(true);
-    statusHelp_->hide();
+    statusHelpPanel_ = new QWidget(this);
+    auto *statusLayout = new QVBoxLayout(statusHelpPanel_);
+    statusLayout->setContentsMargins(0, 0, 0, 0);
+    statusLayout->setSpacing(0);
+    statusHelpArea_ = explanationArea(statusHelp_, statusHelpPanel_);
+    statusHelpArea_->show();
+    statusLayout->addWidget(statusHelpArea_);
     nextStep_ = new QPushButton("下一步", this);
     nextStep_->setObjectName("analysisNextStep");
-    nextStep_->hide();
-    layout->addWidget(fieldHelp_);
-    layout->addWidget(statusHelp_);
-    layout->addWidget(nextStep_);
+    auto *statusActions = new QHBoxLayout;
+    statusActions->addStretch();
+    statusActions->addWidget(nextStep_);
+    statusLayout->addLayout(statusActions);
+    layout->addWidget(statusHelpPanel_);
+    statusHelpPanel_->hide();
     connect(fieldHelpToggle_, &QPushButton::toggled, this, [this](bool checked) {
-        fieldHelp_->setVisible(checked);
+        fieldHelpArea_->setVisible(checked);
         updateHelp();
+        QTimer::singleShot(0, fields_, [this] {
+            if (fields_->currentItem()) fields_->scrollToItem(fields_->currentItem());
+        });
     });
-    connect(statusHelpToggle_, &QPushButton::toggled, this, [this](bool checked) {
-        statusHelp_->setVisible(checked);
-        nextStep_->setVisible(checked);
+    connect(state_, &QPushButton::toggled, this, [this](bool checked) {
+        statusHelpPanel_->setVisible(checked);
         updateHelp();
     });
     connect(nextStep_, &QPushButton::clicked, this, [this] {
@@ -199,7 +230,11 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
         connect(shortcut, &QShortcut::activated, this, [this] { emit fields_->customContextMenuRequested(QPoint(-1, -1)); });
     }
     i18n::bind(this);
-    connect(&i18n::language(), &i18n::Language::changed, this, &ApplicationView::rebuild);
+    connect(&i18n::language(), &i18n::Language::changed, this, [this] {
+        const auto field = fields_->indexOfTopLevelItem(fields_->currentItem());
+        rebuild();
+        restoreField_ = field;
+    });
     rebuild();
 }
 ApplicationView::~ApplicationView() {
@@ -220,9 +255,19 @@ void ApplicationView::resizeEvent(QResizeEvent *event) {
 }
 void ApplicationView::updateHelp() {
     const auto *item = fields_->currentItem();
-    fieldHelp_->setText(item ? learning::fieldExplanation(item->data(0, Qt::UserRole + 5).toString(), item->text(1))
+    updateExplanation(fieldHelp_, item ? learning::fieldExplanation(item->data(0, Qt::UserRole + 5).toString(), item->text(1))
                             : i18n::text("选择字段以查看说明"));
-    statusHelp_->setText(learning::statusExplanation(status_));
+    updateExplanation(statusHelp_, learning::statusExplanation(status_));
+    const bool complete = status_ == AnalysisStatus::Complete;
+    const bool failed = status_ == AnalysisStatus::AuthenticationFailed;
+    const bool pending = status_ == AnalysisStatus::Pending;
+    const QString tone = complete ? "success" : failed ? "error" : pending ? "muted" : "warning";
+    if (state_->property("statusTone").toString() != tone) {
+        state_->setProperty("statusTone", tone);
+        state_->style()->unpolish(state_);
+        state_->style()->polish(state_);
+        icons::bind(state_, complete ? icons::Id::Check : failed ? icons::Id::Error : pending ? icons::Id::Info : icons::Id::Warning);
+    }
     nextStep_->setText(i18n::text(status_ == AnalysisStatus::MissingKeys ? "TLS key log"
                                    : (status_ == AnalysisStatus::Pending || status_ == AnalysisStatus::Limited ||
                                       status_ == AnalysisStatus::Incomplete ? "调整筛选" : "查看字节")));
@@ -305,6 +350,10 @@ void ApplicationView::fill() {
         item->setData(1, Qt::UserRole, qulonglong(field.length));
         item->setData(0, Qt::UserRole + 5, QString::fromStdString(field.key));
         item->setData(0, Qt::UserRole + 6, learning::fieldPredicate(QString::fromStdString(field.key), field.value));
+        if (fields_->indexOfTopLevelItem(item) == restoreField_) {
+            fields_->setCurrentItem(item);
+            restoreField_ = -1;
+        }
     }
     if (filled_ == messages_.size() && (!selected_ || fieldFilled_ == selected_->fields.size()))
         fillTimer_.stop();
@@ -331,6 +380,9 @@ void ApplicationView::page(std::size_t offset) {
     if (!selected_ || !selected_->bytes) {
         bytes_->clear();
         page_->clear();
+        pager_->hide();
+        previous_->setEnabled(false);
+        next_->setEnabled(false);
         return;
     }
     const auto &content = *selected_->bytes;
@@ -349,9 +401,13 @@ void ApplicationView::page(std::size_t offset) {
         text += '\n';
     }
     bytes_->setPlainText(text);
-    page_->setText(QString("%1-%2 / %3")
-                       .arg(qulonglong(offset_))
-                       .arg(qulonglong(end ? end - 1 : 0))
+    const auto pages = (content.size() + 4095) / 4096;
+    pager_->setVisible(pages > 1);
+    previous_->setEnabled(offset_ > 0);
+    next_->setEnabled(end < content.size());
+    page_->setText(i18n::text("第 %1/%2 页，字节 %3-%4 / %5")
+                       .arg(qulonglong(offset_ / 4096 + 1)).arg(qulonglong(pages))
+                       .arg(qulonglong(offset_)).arg(qulonglong(end ? end - 1 : 0))
                        .arg(qulonglong(content.size())));
     highlightField();
 }

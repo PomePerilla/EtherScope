@@ -41,6 +41,14 @@ void MainWindow::setDarkTheme(bool dark) {
         QWidget#workspace { background: %1; }
         QWidget#toolbarBar, QWidget#sessionStrip, QWidget#addressFilterPanel { background: %2; border-bottom: 1px solid %3; }
         QLabel#panelTitle { color: %4; background: %1; padding-left: 8px; }
+        QWidget[analysisHeader="true"] { background: %2; border-bottom: 1px solid %3; }
+        QWidget[analysisHeader="true"] QLabel { color: %4; }
+        QTextEdit[explanation="true"] { background: %2; color: %7; border: none; border-top: 1px solid %3; }
+        QPushButton[statusBadge="true"] { background: %2; border: 1px solid %3; }
+        QPushButton[statusBadge="true"][statusTone="success"] { color: %14; }
+        QPushButton[statusBadge="true"][statusTone="warning"] { color: %6; }
+        QPushButton[statusBadge="true"][statusTone="error"] { color: %11; }
+        QPushButton[statusBadge="true"]:checked { background: %10; border-color: %6; }
         QWidget#detailHeader, QWidget#diagnosticPanel { background: %1; color: %4; border-top: 1px solid %3; }
         QLabel[error="true"] { color: %11; }
         QPushButton, QToolButton { min-height: %12px; padding: 0 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; }

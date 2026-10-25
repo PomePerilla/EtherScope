@@ -45,6 +45,9 @@
 #include <QRegularExpression>
 #include <QScreen>
 #include <QScrollBar>
+#include <QTextEdit>
+#include <QTextCursor>
+#include <QMainWindow>
 #include <QSplitter>
 #include <QHeaderView>
 #include <QToolButton>
@@ -53,6 +56,9 @@
 #include <condition_variable>
 #include <mutex>
 #include <fstream>
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>
+#endif
 
 using namespace etherscope;
 namespace {
@@ -301,9 +307,9 @@ class DesktopTests : public QObject {
         QVERIFY(source);
         tree->setCurrentItem(source);
         window.findChild<QPushButton *>("fieldHelpToggle")->click();
-        auto *help = window.findChild<QLabel *>("fieldExplanation");
+        auto *help = window.findChild<QTextEdit *>("fieldExplanation");
         QVERIFY(help->isVisible());
-        QVERIFY(help->text().contains("NAT"));
+        QVERIFY(help->toPlainText().contains("NAT"));
         emit tree->customContextMenuRequested(QPoint(-1, -1));
         auto *menu = window.findChild<QMenu *>("fieldContextMenu");
         QVERIFY(menu);
@@ -315,7 +321,7 @@ class DesktopTests : public QObject {
         QCOMPARE(window.packetModel()->expression()->source(), std::string("ip.src == 192.0.2.1"));
         menu->close();
         i18n::language().set("en");
-        QVERIFY(help->text().contains("Current value"));
+        QVERIFY(help->toPlainText().contains("Current value"));
         QCOMPARE(source->data(0, Qt::UserRole + 5).toString(), QString("ip.src"));
         QVERIFY(learning::fieldExplanation("tcp.seq", "100").contains("absolute"));
         const auto escaped = learning::fieldPredicate("http.host", std::string("a\"b\\c"));
@@ -328,7 +334,7 @@ class DesktopTests : public QObject {
         QVERIFY(icmpType);
         tree->setCurrentItem(icmpType);
         i18n::language().set("en");
-        QVERIFY(help->text().startsWith("Current value: " + icmpType->text(1)));
+        QVERIFY(help->toPlainText().startsWith("Current value: " + icmpType->text(1)));
     }
     void expressionExamplesRemainDrafts() {
         MainWindow window(nullptr, testOptions());
@@ -419,6 +425,147 @@ class DesktopTests : public QObject {
         QSettings saved(options.settingsFile, QSettings::IniFormat);
         for (const auto &key : saved.allKeys()) QVERIFY(!key.contains("history", Qt::CaseInsensitive));
     }
+    void compactDockHeaderPreservesNativeFloatingAndSource() {
+        QMainWindow host;
+        host.resize(1440, 900);
+        host.setCentralWidget(new QWidget(&host));
+        auto *dock = new AnalysisDock("应用分析", "compactDock", &host);
+        host.addDockWidget(Qt::RightDockWidgetArea, dock);
+        auto *content = new QLabel("content");
+        dock->setContent(content);
+        host.show();
+        dock->show();
+        auto *title = dock->findChild<QLabel *>("compactDockTitle");
+        auto *source = dock->findChild<QLabel *>("compactDockSource");
+        auto *identity = dock->findChild<QLabel *>("compactDockIdentity");
+        auto *toggle = dock->findChild<QPushButton *>("compactDockFloat");
+        const auto name = QString("文件: ") + QString(300, 'x') + ".pcapng";
+        dock->setSource(name, "#12345");
+        QTest::qWait(20);
+        QVERIFY(title->isVisible());
+        QVERIFY(source->text().size() < name.size());
+        QVERIFY(source->toolTip().contains(name));
+        QCOMPARE(identity->text(), QString("#12345"));
+        QVERIFY(dock->titleBarWidget());
+        dock->setTabbed(true);
+        QVERIFY(!title->isVisible());
+        toggle->click();
+        QTRY_VERIFY(dock->isFloating());
+        QVERIFY(!dock->titleBarWidget());
+#ifdef Q_OS_WIN
+        if (QGuiApplication::platformName() == "windows") {
+            const auto handle = reinterpret_cast<HWND>(dock->winId());
+            const auto style = GetWindowLongPtrW(handle, GWL_STYLE);
+            QVERIFY((style & WS_CAPTION) == WS_CAPTION);
+            QVERIFY(style & WS_SYSMENU);
+        }
+#endif
+        QVERIFY(source->isVisible());
+        QVERIFY(content->isVisible());
+        QVERIFY(!dock->findChild<QPushButton *>("compactDockClose")->isVisible());
+        QCOMPARE(toggle->accessibleName(), i18n::text("停靠面板"));
+        toggle->click();
+        QTRY_VERIFY(!dock->isFloating());
+        QVERIFY(dock->titleBarWidget());
+        QCOMPARE(identity->text(), QString("#12345"));
+        dock->setTabbed(false);
+        QVERIFY(title->isVisible());
+        i18n::language().set("en");
+        QCOMPARE(toggle->accessibleName(), QString("Float panel"));
+        bool allowClose = false;
+        dock->closeContent = [&] { return allowClose; };
+        dock->findChild<QPushButton *>("compactDockClose")->click();
+        QVERIFY(dock->isVisible());
+        allowClose = true;
+        dock->findChild<QPushButton *>("compactDockClose")->click();
+        QVERIFY(!dock->isVisible());
+    }
+    void compactApplicationPaginationAndHelp() {
+        ApplicationView view;
+        view.resize(1000, 650);
+        view.show();
+        auto *list = view.findChild<QTreeWidget *>("applicationMessages");
+        auto *fields = view.findChild<QTreeWidget *>("applicationFields");
+        auto *pager = view.findChild<QWidget *>("applicationBytePager");
+        auto *previous = view.findChild<QPushButton *>("applicationPreviousPage");
+        auto *next = view.findChild<QPushButton *>("applicationNextPage");
+        auto *state = view.findChild<QPushButton *>("applicationState");
+        auto *split = view.findChild<QSplitter *>("applicationContentSplitter");
+        QVERIFY(!pager->isVisible());
+        QTest::qWait(20);
+        const auto initial = split->sizes();
+        const auto fraction = double(initial[0]) / (initial[0] + initial[1]);
+        QVERIFY2(fraction >= .25 && fraction <= .45, qPrintable(QString::number(fraction)));
+        split->setSizes({150, 450});
+        for (std::size_t size : {0U, 64U, 4096U, 4097U, 8193U}) {
+            auto result = std::make_shared<ApplicationResult>();
+            result->status = AnalysisStatus::Complete;
+            ApplicationMessage message;
+            message.protocol = "HTTP";
+            message.bytes = std::make_shared<const std::vector<std::uint8_t>>(size, 'x');
+            message.length = size;
+            message.fields = {{"Host", "http.host", std::string("example.com"), 0, std::min(size, std::size_t(1))}};
+            result->messages = {message};
+            view.setResults({result});
+            QTRY_COMPARE(list->topLevelItemCount(), 1);
+            QTRY_COMPARE(fields->topLevelItemCount(), 1);
+            QCOMPARE(pager->isVisible(), size > 4096);
+            QVERIFY(!previous->isEnabled());
+            QCOMPARE(next->isEnabled(), size > 4096);
+            if (size > 4096) {
+                while (next->isEnabled()) next->click();
+                QVERIFY(previous->isEnabled());
+                QVERIFY(!next->isEnabled());
+                while (previous->isEnabled()) previous->click();
+                QVERIFY(next->isEnabled());
+            }
+        }
+        fields->setCurrentItem(fields->topLevelItem(0));
+        view.findChild<QPushButton *>("applicationFieldHelpToggle")->click();
+        auto *fieldHelp = view.findChild<QTextEdit *>("applicationFieldExplanation");
+        QVERIFY(fieldHelp->isVisible());
+        QVERIFY(fieldHelp->textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
+        auto *area = view.findChild<QWidget *>("applicationFieldExplanationArea");
+        QVERIFY(area && area->height() <= 112);
+        QVERIFY(!view.findChild<QPushButton *>("analysisStatusHelpToggle"));
+        fieldHelp->selectAll();
+        const auto selectedExplanation = fieldHelp->textCursor().selectedText();
+        state->click();
+        QCOMPARE(fieldHelp->textCursor().selectedText(), selectedExplanation);
+        auto *statusHelp = view.findChild<QTextEdit *>("analysisStatusExplanation");
+        QVERIFY(statusHelp->isVisible());
+        for (const auto *language : {"en", "zh_TW", "zh_CN"}) {
+            i18n::language().set(language);
+            QTRY_VERIFY(fieldHelp->toPlainText().contains("Host"));
+            QVERIFY(!statusHelp->toPlainText().isEmpty());
+            QVERIFY(state->isChecked());
+        }
+        auto longResult = std::make_shared<ApplicationResult>();
+        longResult->status = AnalysisStatus::Complete;
+        ApplicationMessage longMessage;
+        longMessage.protocol = "HTTP";
+        longMessage.bytes = std::make_shared<const std::vector<std::uint8_t>>(64, 'x');
+        longMessage.length = 64;
+        longMessage.fields = {{"Host", "http.host", std::string(5000, 'h'), 0, 1}};
+        longResult->messages = {longMessage};
+        view.setResults({longResult});
+        QTRY_COMPARE(fields->topLevelItemCount(), 1);
+        fields->setCurrentItem(fields->topLevelItem(0));
+        QTRY_VERIFY(fieldHelp->verticalScrollBar()->maximum() > 0);
+        QVERIFY(area->height() <= 112);
+        auto shortResult = std::make_shared<ApplicationResult>(*longResult);
+        shortResult->messages[0].fields[0].value = std::string("example.com");
+        view.setResults({shortResult});
+        QTRY_COMPARE(fields->topLevelItemCount(), 1);
+        fields->setCurrentItem(fields->topLevelItem(0));
+        QTRY_VERIFY(area->height() < 96);
+        state->click();
+        QVERIFY(!statusHelp->isVisible());
+        view.setResults({});
+        QTRY_COMPARE(list->topLevelItemCount(), 0);
+        QVERIFY(!pager->isVisible());
+        QVERIFY(!previous->isEnabled() && !next->isEnabled());
+    }
     void workspaceLayoutsAndLearning() {
         MainWindow window(nullptr, testOptions());
         QVERIFY(waitForInterfaces(window));
@@ -448,6 +595,12 @@ class DesktopTests : public QObject {
                     window.findChild<QAction *>("resetAnalysisLayout")->trigger();
                     QTest::qWait(20);
                     QCOMPARE(window.size(), size);
+                    for (auto *dock : {tcp, application}) {
+                        auto *title = dock->findChild<QLabel *>(dock->objectName() + "Title");
+                        QVERIFY(title);
+                        QVERIFY(!title->isVisible());
+                        QCOMPARE(dock->titleBarWidget() == nullptr, dock->isFloating());
+                    }
                     QCOMPARE(window.findChild<QLabel *>("detailPacketId")->text(), QString("#4"));
                     QCOMPARE(window.findChild<QLabel *>("detailCaptured")->text(), QString("91 B"));
                     QCOMPARE(window.findChild<QLabel *>("detailOriginal")->text(), QString("91 B"));
@@ -478,8 +631,8 @@ class DesktopTests : public QObject {
             if (applicationFields->topLevelItem(i)->data(0, Qt::UserRole + 5).toString() == "http.host")
                 applicationFields->setCurrentItem(applicationFields->topLevelItem(i));
         application->findChild<QPushButton *>("applicationFieldHelpToggle")->click();
-        application->findChild<QPushButton *>("analysisStatusHelpToggle")->click();
-        QVERIFY(application->findChild<QLabel *>("applicationFieldExplanation")->text().contains("Host"));
+        application->findChild<QPushButton *>("applicationState")->click();
+        QVERIFY(application->findChild<QTextEdit *>("applicationFieldExplanation")->toPlainText().contains("Host"));
         const auto learningShots = qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");
         if (!learningShots.isEmpty()) {
             QTest::qWait(20);
@@ -911,7 +1064,7 @@ class DesktopTests : public QObject {
     }
     void applicationViewKeepsSelectionAndLocatesBytes() {
         ApplicationView view;
-        QCOMPARE(view.findChild<QLabel *>("applicationState")->text(),
+        QCOMPARE(view.findChild<QPushButton *>("applicationState")->text(),
                  i18n::text("Pending analysis"));
         auto result = std::make_shared<ApplicationResult>();
         ApplicationMessage message;

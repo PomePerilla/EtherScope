@@ -60,6 +60,9 @@ AnalysisDock *MainWindow::createAnalysisDock(const QString &title, const QString
         if (!arrangingDocks_ && (area == Qt::RightDockWidgetArea || area == Qt::BottomDockWidgetArea))
             dock->preferredArea = area;
     });
+    connect(dock, &QDockWidget::visibilityChanged, this, [this] {
+        QTimer::singleShot(0, this, &MainWindow::arrangeAnalysisDocks);
+    });
     return dock;
 }
 void MainWindow::presentAnalysisDock(AnalysisDock *dock) {
@@ -114,6 +117,13 @@ void MainWindow::arrangeAnalysisDocks() {
                        std::clamp(dock->y(), bounds.top(), std::max(bounds.top(), bounds.bottom() - dock->height())));
         }
     }
+    for (auto *dock : {tcpDock_, applicationDock_}) {
+        if (!dock) continue;
+        const auto peers = analysisWorkspace_->tabifiedDockWidgets(dock);
+        const bool tabbed = !dock->isFloating() && std::any_of(peers.begin(), peers.end(),
+            [](QDockWidget *peer) { return !peer->isFloating() && !peer->isHidden(); });
+        dock->setTabbed(tabbed);
+    }
 }
 void MainWindow::saveAnalysisLayout() {
     for (auto *dock : {tcpDock_, applicationDock_}) {
@@ -158,8 +168,10 @@ void MainWindow::refreshAnalysisSources() {
         }
         const bool current = valid && tcpContext_.session == view_;
         tcpDialog_->setNavigationEnabled(current);
+        const auto conversation = tcpDialog_->selectedConversation();
         tcpDock_->setSource(i18n::text(tcpContext_.session == 0 ? "实时" : "文件") +
-                            (tcpSourceName_.isEmpty() ? QString{} : ": " + tcpSourceName_));
+                            (tcpSourceName_.isEmpty() ? QString{} : ": " + tcpSourceName_),
+                            conversation ? QString("#%1").arg(conversation) : QString{});
         if (!valid) tcpDock_->showError("来源已重置，请重新分析");
         else if (!current) tcpDock_->showError("来源不同，请切回对应的实时或文件视图后定位");
         else if (tcpDock_->property("sourceMismatch").toBool()) tcpDock_->showError({});
@@ -176,8 +188,8 @@ void MainWindow::refreshAnalysisSources() {
         const bool current = valid && applicationContext_.session == view_;
         applicationView_->setNavigationEnabled(current);
         applicationDock_->setSource(i18n::text(applicationContext_.session == 0 ? "实时" : "文件") +
-                                    (applicationSourceName_.isEmpty() ? QString{} : ": " + applicationSourceName_) +
-                                    QString(" / #%1").arg(applicationPacket_));
+                                    (applicationSourceName_.isEmpty() ? QString{} : ": " + applicationSourceName_),
+                                    QString("#%1").arg(applicationPacket_));
         if (!valid) applicationDock_->showError("来源已重置，请重新分析");
         else if (!current) applicationDock_->showError("来源不同，请切回对应的实时或文件视图后定位");
         else if (applicationDock_->property("sourceMismatch").toBool()) applicationDock_->showError({});

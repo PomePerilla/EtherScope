@@ -310,14 +310,17 @@ void MainWindow::initializeInteractions() {
     connect(recentFilters_, &QMenu::aboutToShow, this, &MainWindow::refreshFilterHistory);
     connect(fields_, &QTreeWidget::currentItemChanged, this, &MainWindow::updateFieldHelp);
     connect(fieldHelpToggle_, &QPushButton::toggled, this, [this](bool expanded) {
-        fieldHelp_->setVisible(expanded);
+        fieldHelpArea_->setVisible(expanded);
         updateFieldHelp();
+        QTimer::singleShot(0, fields_, [this] {
+            if (fields_->currentItem()) fields_->scrollToItem(fields_->currentItem());
+        });
     });
     refreshFilterHistory();
 }
 void MainWindow::updateFieldHelp() {
     const auto *item = fields_->currentItem();
-    fieldHelp_->setText(item ? learning::fieldExplanation(
+    updateExplanation(fieldHelp_, item ? learning::fieldExplanation(
                                   item->data(0, Qt::UserRole + 5).toString(), item->text(1))
                             : i18n::text("选择字段以查看说明"));
 }

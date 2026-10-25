@@ -26,6 +26,7 @@ class TcpPanel final : public QWidget {
     void invalidate();
     void setSourceContext(SourceContext context);
     void setNavigationEnabled(bool enabled);
+    std::uint64_t selectedConversation() const { return selectedId(); }
   signals:
     void workChanged();
     void closed();

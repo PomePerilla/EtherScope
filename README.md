@@ -1,4 +1,4 @@
-# EtherScope v2.2.0
+# EtherScope v2.2.1 (local preview)
 
 English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 

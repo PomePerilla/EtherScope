@@ -3535,11 +3535,6 @@
     "目前值: %1"
   ],
   [
-    "状态说明",
-    "Status help",
-    "狀態說明"
-  ],
-  [
     "下一步",
     "Next step",
     "下一步"
@@ -3555,9 +3550,9 @@
     "負載長度"
   ],
   [
-    "链路层地址标识当前链路上的接口，不标识个人，也不一定是远端 IP 主机的地址。",
-    "A link-layer address identifies an interface on this link; it does not identify a person or a remote IP host.",
-    "鏈路層位址標識目前鏈路上的介面，不標識個人，也不一定是遠端 IP 主機的位址。"
+    "MAC 地址标识链路层接口。源地址和目的地址分别表示当前链路上的发送方与接收方。",
+    "A MAC address identifies a link-layer interface. Source and destination show the sender and receiver on this link.",
+    "MAC 位址標識鏈路層介面。來源與目的位址分別表示目前鏈路上的傳送端與接收端。"
   ],
   [
     "EtherType 表示封装的协议。VLAN 标签会增加一层封装首部。",
@@ -3565,54 +3560,54 @@
     "EtherType 表示封裝的通訊協定。VLAN 標籤會增加一層封裝標頭。"
   ],
   [
-    "VLAN ID 区分逻辑链路层网络。这里显示已解码的标签，不据此推断网络拓扑。",
-    "The VLAN ID separates logical link-layer networks. This value describes the decoded tag, not an inferred network topology.",
-    "VLAN ID 區分邏輯鏈路層網路。這裡顯示已解碼的標籤，不據此推斷網路拓撲。"
+    "VLAN ID 标识当前 VLAN 标签所属的逻辑网络。",
+    "The VLAN ID identifies the logical network carried by this VLAN tag.",
+    "VLAN ID 標識目前 VLAN 標籤所屬的邏輯網路。"
   ],
   [
-    "源和目的地址来自当前 IP 首部。NAT、隧道和错误消息引用的首部可能涉及不同端点。",
-    "The source and destination are the addresses in this IP header. NAT, tunnels and quoted headers can describe different endpoints.",
-    "來源與目的位址來自目前 IP 標頭。NAT、隧道和錯誤訊息引用的標頭可能涉及不同端點。"
+    "源地址和目的地址标识当前 IP 首部中的发送方与接收方。NAT 和隧道可在传输路径上改变地址。",
+    "Source and destination identify the sender and receiver in this IP header. NAT and tunnels can change the addresses along the path.",
+    "來源與目的位址標識目前 IP 標頭中的傳送端與接收端。NAT 和通道可在傳輸路徑上改變位址。"
   ],
   [
-    "TTL 或 Hop Limit 会随路由转发递减。仅凭较小的值，不能证明丢包或路由故障。",
-    "TTL or Hop Limit is reduced by forwarding routers. A low value alone does not prove packet loss or a routing fault.",
-    "TTL 或 Hop Limit 會隨路由轉送遞減。僅憑較小的值，不能證明遺失封包或路由故障。"
+    "TTL 或 Hop Limit 在每次路由转发时递减。数值降至 0 时，路由器丢弃该报文。",
+    "TTL or Hop Limit decreases at each forwarding router. A router discards the packet when this value reaches zero.",
+    "TTL 或 Hop Limit 在每次路由轉送時遞減。數值降至 0 時，路由器捨棄該封包。"
   ],
   [
-    "IPv4 总长度包含首部，IPv6 有效载荷长度不包含基础首部。实际捕获字节可能被截断。",
-    "IPv4 total length includes its header; IPv6 payload length excludes the base header. Captured bytes may be truncated.",
-    "IPv4 總長度包含標頭，IPv6 有效負載長度不包含基礎標頭。實際擷取位元組可能遭截斷。"
+    "IPv4 总长度以字节计，包含首部和载荷。IPv6 载荷长度统计基本首部之后的字节数。",
+    "IPv4 total length counts the header and payload in bytes. IPv6 payload length counts the bytes after the base header.",
+    "IPv4 總長度以位元組計，包含標頭與負載。IPv6 負載長度統計基本標頭之後的位元組數。"
   ],
   [
-    "校验和用于检测部分传输错误。网卡卸载或捕获截断会影响校验；未校验的数值不能证明数据损坏。",
-    "A checksum detects some transmission errors. Offloading and truncated captures can affect verification; an unverified value is not evidence of corruption.",
-    "檢查碼用於偵測部分傳輸錯誤。網卡卸載或擷取截斷會影響驗證；未驗證的數值不能證明資料損壞。"
+    "校验和用于检测数据错误。可结合校验结果查看当前值；网卡卸载会影响捕获到的校验和。",
+    "A checksum helps detect data errors. Read the verification result alongside this value; network-card offloading can affect captured checksums.",
+    "檢查碼用於偵測資料錯誤。可搭配驗證結果查看目前值；網卡卸載會影響擷取到的檢查碼。"
   ],
   [
-    "端口标识传输层端点。常用端口只能提示惯例，不能证明实际使用的应用协议。",
-    "Ports identify transport endpoints. A familiar port number suggests a convention, but does not prove which application is present.",
-    "連接埠標識傳輸層端點。常用連接埠只能提示慣例，不能證明實際使用的應用通訊協定。"
+    "端口标识传输层端点。源端口和目的端口区分发送与接收服务。",
+    "Ports identify transport endpoints. Source and destination ports distinguish the sending and receiving services.",
+    "連接埠標識傳輸層端點。來源與目的連接埠區分傳送及接收服務。"
   ],
   [
-    "TCP 序列号跟踪字节位置，确认号通常表示下一个期望字节。这里显示捕获的绝对数值，不使用相对编号。",
-    "TCP sequence numbers track byte positions; acknowledgments normally identify the next expected byte. These are captured absolute values, not relative numbering.",
-    "TCP 序號追蹤位元組位置，確認號通常表示下一個預期位元組。這裡顯示擷取的絕對數值，不使用相對編號。"
+    "TCP 序号标识字节位置，确认号表示下一个期望接收的字节。这里显示绝对序号。",
+    "TCP sequence numbers track byte positions, and acknowledgments identify the next expected byte. Values here use absolute numbering.",
+    "TCP 序號標識位元組位置，確認號表示下一個預期接收的位元組。這裡顯示絕對序號。"
   ],
   [
-    "SYN 用于同步，ACK 表示确认号有效，FIN 结束字节流，RST 重置连接。单个标志不能证明连接的完整状态。",
-    "SYN starts synchronization, ACK validates the acknowledgment field, FIN ends a byte stream, and RST resets a connection. One observed flag does not prove the full connection state.",
-    "SYN 用於同步，ACK 表示確認號有效，FIN 結束位元組流，RST 重設連線。單一旗標不能證明連線的完整狀態。"
+    "SYN 发起同步，ACK 表示确认号有效，FIN 结束字节流，RST 重置连接。",
+    "SYN starts synchronization, ACK marks a valid acknowledgment, FIN ends a byte stream, and RST resets a connection.",
+    "SYN 發起同步，ACK 表示確認號有效，FIN 結束位元組流，RST 重設連線。"
   ],
   [
-    "接收窗口限制未确认的数据量。这里显示首部原始值，未应用协商的窗口缩放。",
-    "The advertised receive window limits outstanding data. This is the raw header value; negotiated window scaling is not applied here.",
-    "接收視窗限制未確認的資料量。這裡顯示標頭原始值，未套用協商的視窗縮放。"
+    "接收窗口表示可用的接收容量。这里显示窗口缩放前的首部原始值。",
+    "The receive window advertises available receive capacity. This value is the raw header field before window scaling.",
+    "接收視窗表示可用的接收容量。這裡顯示視窗縮放前的標頭原始值。"
   ],
   [
-    "UDP 长度包含 8 字节首部和载荷。分片或捕获截断可能导致实际可用字节更少。",
-    "UDP length includes the 8-byte UDP header and payload. Fragmentation or capture truncation can make the available bytes shorter.",
-    "UDP 長度包含 8 位元組標頭和負載。分片或擷取截斷可能導致實際可用位元組更少。"
+    "UDP 长度以字节计，包含 8 字节首部和载荷。",
+    "UDP length counts the 8-byte header and payload in bytes.",
+    "UDP 長度以位元組計，包含 8 位元組標頭與負載。"
   ],
   [
     "ICMP Type 决定消息类别，Code 进一步说明含义。ICMP 与 ICMPv6 的编号含义不同。",
@@ -3620,39 +3615,39 @@
     "ICMP Type 決定訊息類別，Code 進一步說明含義。ICMP 與 ICMPv6 的編號含義不同。"
   ],
   [
-    "DNS 查询名表示正在查询的名称。看到查询不代表已收到响应，也不代表连接成功。",
-    "The DNS question name is the name being queried. A captured query does not establish that a response was received or a connection succeeded.",
-    "DNS 查詢名稱表示正在查詢的名稱。看到查詢不代表已收到回應，也不代表連線成功。"
+    "DNS 查询名是客户端请求解析的域名。可通过事务 ID 查找对应响应。",
+    "The DNS question name is the domain name requested by the client. Match the transaction ID to inspect its response.",
+    "DNS 查詢名稱是用戶端請求解析的網域名稱。可透過交易 ID 尋找對應回應。"
   ],
   [
-    "Host 表示解析器看到的 HTTP 请求目标字段，不能据此证明目标服务器的身份。",
-    "Host is the HTTP request authority field observed by the parser. Its presence does not prove the destination server identity.",
-    "Host 表示解析器看到的 HTTP 請求目標欄位，不能據此證明目標伺服器的身分。"
+    "Host 指定 HTTP 请求的目标主机及可选端口。",
+    "Host specifies the target host and optional port of an HTTP request.",
+    "Host 指定 HTTP 請求的目標主機及選用連接埠。"
   ],
   [
-    "SNI 表示捕获的 TLS ClientHello 中请求的服务器名称，不代表证书验证成功或握手完成。",
-    "SNI is the server name requested in the observed TLS ClientHello. It is not certificate validation or proof of a completed TLS handshake.",
-    "SNI 表示擷取的 TLS ClientHello 中請求的伺服器名稱，不代表憑證驗證成功或交握完成。"
+    "SNI 携带 TLS ClientHello 请求的服务器名称，供服务器选择对应站点。",
+    "SNI carries the server name requested in TLS ClientHello, allowing a server to select the matching site.",
+    "SNI 攜帶 TLS ClientHello 請求的伺服器名稱，供伺服器選擇對應站台。"
   ],
   [
-    "分析正在等待后台处理或更多捕获数据，应用字段可能仍未知。",
-    "Analysis is waiting for background work or more captured data. Application fields may still be unknown.",
-    "分析正在等待背景處理或更多擷取資料，應用欄位可能仍未知。"
+    "正在等待后台分析或更多数据，字段会随解析进度更新。",
+    "Analysis is waiting for background work or more captured data. Fields update as parsing progresses.",
+    "正在等候背景分析或更多資料，欄位會隨解析進度更新。"
   ],
   [
-    "现有消息已完成解析，但这不代表网络事务成功。",
-    "The available message was parsed. This does not certify that the network transaction succeeded.",
-    "現有訊息已完成解析，但這不代表網路交易成功。"
+    "解析完成，可查看消息字段和字节。",
+    "Parsing is complete. Inspect the message fields and bytes.",
+    "解析完成，可查看訊息欄位與位元組。"
   ],
   [
-    "部分消息字节或边界缺失。请检查捕获范围和流缺口，不要把未知字段当作不存在。",
-    "Some message bytes or boundaries are missing. Check capture coverage and stream gaps; do not treat missing fields as absent.",
-    "部分訊息位元組或邊界缺失。請檢查擷取範圍和流缺口，不要把未知欄位當作不存在。"
+    "消息数据尚不完整，可检查流缺口或继续捕获。",
+    "Message data is incomplete. Check stream gaps or continue capturing.",
+    "訊息資料尚不完整，可檢查串流缺口或繼續擷取。"
   ],
   [
-    "分析达到资源上限。可以缩小捕获范围或缩短会话；这与捕获丢包不同。",
-    "An analysis resource limit was reached. Narrow the capture or start a shorter session; this is separate from capture packet drops.",
-    "分析達到資源上限。可以縮小擷取範圍或縮短交談；這與擷取遺失封包不同。"
+    "分析已达到资源上限，可缩小筛选范围或缩短捕获时段。",
+    "An analysis resource limit was reached. Narrow the filter or capture a shorter session.",
+    "分析已達資源上限，可縮小篩選範圍或縮短擷取時段。"
   ],
   [
     "解密需要匹配的 TLS 密钥日志。请打开密钥日志设置，加载或重新载入端点提供的密钥。",
@@ -3660,13 +3655,38 @@
     "解密需要匹配的 TLS 金鑰日誌。請開啟金鑰日誌設定，載入或重新載入端點提供的金鑰。"
   ],
   [
-    "当前协议特性超出解析器支持范围。请检查原始字节或重组字节。",
-    "The observed protocol feature is outside the implemented parser. Inspect the raw or reassembled bytes.",
-    "目前通訊協定特性超出解析器支援範圍。請檢查原始位元組或重組位元組。"
+    "暂不支持此协议特性，可查看原始或重组字节。",
+    "This protocol feature is not supported yet. Inspect the original or reassembled bytes.",
+    "暫不支援此協定特性，可查看原始或重組位元組。"
   ],
   [
-    "认证解密失败。请检查密钥是否匹配、流是否完整；仅此不能证明存在攻击。",
-    "Authenticated decryption failed. Check matching keys and stream completeness; this alone does not establish an attack.",
-    "驗證解密失敗。請檢查金鑰是否匹配、流是否完整；僅此不能證明存在攻擊。"
+    "解密认证失败，请检查密钥匹配和流完整性。",
+    "Decryption authentication failed. Check matching keys and stream completeness.",
+    "解密驗證失敗，請檢查金鑰匹配及串流完整性。"
+  ],
+  [
+    "浮动面板",
+    "Float panel",
+    "浮動面板"
+  ],
+  [
+    "停靠面板",
+    "Dock panel",
+    "停駐面板"
+  ],
+  [
+    "关闭面板",
+    "Close panel",
+    "關閉面板"
+  ],
+  [
+    "查看状态说明",
+    "Show status details",
+    "查看狀態說明"
+  ],
+  [
+    "第 %1/%2 页，字节 %3-%4 / %5",
+    "Page %1/%2, bytes %3-%4 / %5",
+    "第 %1/%2 頁，位元組 %3-%4 / %5"
   ]
 ]

@@ -26,7 +26,11 @@ enum class Id {
     Language,
     Close,
     Warning,
-    Error
+    Error,
+    Info,
+    Check,
+    Float,
+    Dock
 };
 QIcon icon(Id id, bool primary = false, int size = 20);
 void bind(QAbstractButton *button, Id id, bool primary = false);

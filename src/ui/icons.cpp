@@ -160,6 +160,23 @@ void draw(QPainter &p, Id id, const QColor &color) {
         path({{10, 7}, {10, 11}});
         p.drawPoint(QPointF(10, 14));
         break;
+    case Id::Info:
+        p.drawEllipse(QRectF(3, 3, 14, 14));
+        p.drawPoint(QPointF(10, 6));
+        path({{10, 9}, {10, 14}});
+        break;
+    case Id::Check:
+        path({{4, 10}, {8, 14}, {16, 6}});
+        break;
+    case Id::Float:
+        path({{8, 4}, {4, 4}, {4, 16}, {16, 16}, {16, 12}});
+        path({{10, 3}, {17, 3}, {17, 10}});
+        path({{17, 3}, {9, 11}});
+        break;
+    case Id::Dock:
+        p.drawRect(QRectF(3, 4, 14, 12));
+        p.drawLine(QPointF(11, 4), QPointF(11, 16));
+        break;
     case Id::Error:
         p.drawEllipse(QRectF(2, 2, 16, 16));
         path({{6.5, 6.5}, {13.5, 13.5}});
