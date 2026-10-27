@@ -14,6 +14,7 @@ Windows x64 network protocol analyzer.
 - Network and loopback capture.
 - Packet and field context actions, display-filter undo and recent history.
 - Source-bound TCP/application panels that dock or float, with optional field and analysis explanations.
+- Incremental message updates preserve field selection, byte pages and reading position.
 
 ## Download
 

@@ -6,6 +6,8 @@
 #include "ui/learning.h"
 #include "ui/flow_layout.h"
 #include <QResizeEvent>
+#include <QScrollBar>
+#include <QSignalBlocker>
 #include <QMenu>
 #include <QAction>
 #include <QApplication>
@@ -77,11 +79,17 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     icons::bind(fieldHelpToggle_, icons::Id::Info);
     fieldHelpToggle_->setAccessibleName("字段说明");
     layout->addLayout(bar);
+    selectionHint_ = new QLabel(this);
+    selectionHint_->setObjectName("applicationSelectionHint");
+    selectionHint_->setWordWrap(true);
+    selectionHint_->hide();
+    layout->addWidget(selectionHint_);
     auto *splitter = new QSplitter(Qt::Vertical, this);
     list_ = new QTreeWidget(splitter);
     list_->setObjectName("applicationMessages");
     list_->setHeaderLabels({"协议", "方向", "摘要", "状态"});
     list_->setUniformRowHeights(true);
+    list_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     list_->setColumnWidth(0, 75);
     list_->setColumnWidth(1, 90);
     list_->setColumnWidth(2, 350);
@@ -101,6 +109,7 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     fields_->setObjectName("applicationFields");
     fields_->setHeaderLabels({"字段", "值"});
     fields_->setUniformRowHeights(true);
+    fields_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     fields_->setColumnWidth(0, 180);
     fieldLayout->addWidget(fields_, 1);
     bytes_ = new QPlainTextEdit(lower);
@@ -178,10 +187,9 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     });
     connect(fields_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) {
         updateHelp();
-        if (!item || !selected_)
-            return;
-        const auto offset = item->data(0, Qt::UserRole).toULongLong();
-        page(static_cast<std::size_t>(offset / 4096 * 4096));
+        fieldKey_ = item ? item->data(0, Qt::UserRole + 7).toString() : QString{};
+        if (!item || !selected_ || !fieldByKey_.contains(fieldKey_)) return;
+        page(fieldByKey_.value(fieldKey_)->offset / 4096 * 4096);
     });
     connect(&fillTimer_, &QTimer::timeout, this, &ApplicationView::fill);
     fillTimer_.setInterval(0);
@@ -190,20 +198,26 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
         auto *item = position.x() < 0 ? fields_->currentItem() : fields_->itemAt(position);
         if (!item || !selected_) return;
         fields_->setCurrentItem(item);
-        const auto value = item->text(1), name = item->text(0);
-        const auto predicate = item->data(0, Qt::UserRole + 6).toString();
-        const auto offset = item->data(0, Qt::UserRole).toULongLong();
-        const auto length = item->data(1, Qt::UserRole).toULongLong();
+        const auto targetKey = item->data(0, Qt::UserRole + 7).toString();
+        const auto *field = fieldByKey_.value(targetKey);
+        if (!field) return;
+        const auto value = QString::fromStdString(applicationText(field->value));
+        const auto name = i18n::text(QString::fromStdString(field->name));
+        const auto predicate = learning::fieldPredicate(QString::fromStdString(field->key), field->value);
+        const auto offset = field->offset, length = field->length;
         const auto bytes = selected_->bytes;
         const auto context = context_;
+        const auto epoch = bindingEpoch_;
+        const auto messageKey = selectedKey_;
+        const auto fieldKey = item->data(0, Qt::UserRole + 7).toString();
         auto *menu = new QMenu(fields_);
         menu->setObjectName("applicationFieldMenu");
         auto add = [&](const char *caption, const char *id, auto callback, bool enabled = true) {
             auto *action = menu->addAction(i18n::text(caption));
             action->setObjectName(id);
             action->setEnabled(enabled);
-            connect(action, &QAction::triggered, menu, [this, context, callback] {
-                if (context_ == context && navigationEnabled_) callback();
+            connect(action, &QAction::triggered, menu, [this, context, epoch, messageKey, fieldKey, callback] {
+                if (context_ == context && navigationEnabled_ && menuTargetValid(epoch, messageKey, fieldKey)) callback();
                 else QToolTip::showText(QCursor::pos(), i18n::text("操作目标已失效，请重新选择报文"), fields_);
             });
         };
@@ -231,11 +245,11 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
     }
     i18n::bind(this);
     connect(&i18n::language(), &i18n::Language::changed, this, [this] {
-        const auto field = fields_->indexOfTopLevelItem(fields_->currentItem());
         rebuild();
-        restoreField_ = field;
     });
     rebuild();
+    state_->setText(statusText(status_));
+    updateHelp();
 }
 ApplicationView::~ApplicationView() {
     // Child widgets outlive members and may emit selection signals while closing.
@@ -272,119 +286,265 @@ void ApplicationView::updateHelp() {
                                    : (status_ == AnalysisStatus::Pending || status_ == AnalysisStatus::Limited ||
                                       status_ == AnalysisStatus::Incomplete ? "调整筛选" : "查看字节")));
 }
-void ApplicationView::setResults(std::vector<std::shared_ptr<const ApplicationResult>> results) {
-    // Shared result identity is stable until the connection revision changes.
-    if (results_ == results)
-        return;
-    const auto previous = selected_ ? std::optional<ApplicationMessage>(*selected_) : std::nullopt;
-    results_ = std::move(results);
-    selected_ = nullptr;
-    rebuild();
-    if (previous)
-        for (std::size_t i = 0; i < messages_.size(); ++i) {
-            const auto &message = *messages_[i];
-            if (message.protocol == previous->protocol &&
-                message.direction == previous->direction &&
-                message.streamOffset.value_or(message.offset) ==
-                    previous->streamOffset.value_or(previous->offset) &&
-                message.summary == previous->summary && message.source == previous->source &&
-                message.streamId == previous->streamId) {
-                preferredMessage_ = i;
-                break;
-            }
+namespace {
+QString messageBase(const ApplicationMessage &m) {
+    QString key = QString::fromStdString(m.protocol) + '/' + QString::number(int(m.source)) + '/' +
+                  QString::number(m.direction) + '/' + QString::number(m.streamId) + '/';
+    if (m.streamOffset) return key + "s" + QString::number(*m.streamOffset);
+    key += "p";
+    if (!m.sources.empty()) key += QString::number(m.sources.front().packetId) + ':' + QString::number(m.sources.front().rawOffset);
+    return key + ':' + QString::number(m.offset);
+}
+QString fieldBase(const ApplicationField &field) {
+    return QString::fromStdString(field.key.empty() ? "n:" + field.name : "k:" + field.key) + '/' + QString::number(field.offset);
+}
+struct TreeAnchor {
+    QString key;
+    int offset{}, vertical{}, horizontal{};
+    explicit TreeAnchor(QTreeWidget *tree) {
+        vertical = tree->verticalScrollBar()->value();
+        horizontal = tree->horizontalScrollBar()->value();
+        if (auto *item = tree->itemAt(2, 2)) {
+            key = item->data(0, Qt::UserRole + 7).toString();
+            offset = tree->visualItemRect(item).top();
         }
+    }
+    void restore(QTreeWidget *tree, const QHash<QString, QTreeWidgetItem *> &items) const {
+        if (auto *item = items.value(key)) {
+            tree->scrollToItem(item, QAbstractItemView::PositionAtTop);
+            tree->verticalScrollBar()->setValue(tree->verticalScrollBar()->value() - offset);
+        } else tree->verticalScrollBar()->setValue(vertical);
+        tree->horizontalScrollBar()->setValue(horizontal);
+    }
+};
+void moveRow(QTreeWidget *tree, QTreeWidgetItem *item, int position) {
+    const auto old = tree->indexOfTopLevelItem(item);
+    if (old == position) return;
+    if (old >= 0) tree->takeTopLevelItem(old);
+    tree->insertTopLevelItem(position, item);
+}
+}
+void ApplicationView::setSourceContext(SourceContext context) {
+    setBinding(context, scope_, scopeId_);
+}
+void ApplicationView::setBinding(SourceContext context, Scope scope, std::uint64_t id, bool reset) {
+    if (!reset && context_ == context && scope_ == scope && scopeId_ == id) return;
+    context_ = context; scope_ = scope; scopeId_ = id;
+    ++bindingEpoch_;
+    resetPresentation();
+}
+void ApplicationView::resetPresentation() {
+    fillTimer_.stop();
+    updating_ = false; pendingResults_.reset();
+    selected_ = nullptr; selectedKey_.clear(); fieldKey_.clear();
+    messageByKey_.clear(); messageCounts_.clear(); fieldByKey_.clear();
+    messages_.clear(); fieldRows_.clear(); removals_.clear();
+    messageItems_.clear(); fieldItems_.clear();
+    {
+        const QSignalBlocker block(list_);
+        list_->clear();
+    }
+    results_.clear();
+    firstSelection_ = true; lostSelection_ = false;
+    selectionHint_->hide();
+    fieldHelpToggle_->setChecked(false); state_->setChecked(false);
+    clearDetails();
+    status_ = AnalysisStatus::Pending;
+    state_->setText(statusText(status_));
+    updateHelp();
+}
+void ApplicationView::setResults(Results results) {
+    if (pendingResults_ && *pendingResults_ == results) return;
+    if (!pendingResults_ && results_ == results) return;
+    pendingResults_ = std::move(results);
+    fillTimer_.start();
+    if (!updating_) fill();
 }
 void ApplicationView::rebuild() {
-    preferredMessage_ =
-        list_->currentItem() ? list_->currentItem()->data(0, Qt::UserRole).toULongLong() : 0;
-    fillTimer_.stop();
+    if (!pendingResults_) pendingResults_ = results_;
+    if (!updating_) fillTimer_.start();
+}
+void ApplicationView::beginUpdate() {
+    if (!pendingResults_) return;
+    // All visible rows resolve through keys, never through old result pointers.
+    const bool ambiguous = selected_ && messageCounts_.value(messageBase(*selected_)) > 1;
     selected_ = nullptr;
-    messages_.clear();
-    list_->clear();
-    fields_->clear();
-    bytes_->clear();
-    packets_->clear();
-    filled_ = fieldFilled_ = 0;
-    for (const auto &r : results_)
-        for (const auto &message : r->messages)
-            if (!sources_->currentIndex() || sources_->currentIndex() == int(message.source) + 1)
-                messages_.push_back(&message);
+    results_ = std::move(*pendingResults_); pendingResults_.reset();
+    messages_.clear(); messageByKey_.clear(); messageCounts_.clear();
+    for (const auto &result : results_)
+        for (const auto &message : result->messages) {
+            if (sources_->currentIndex() && sources_->currentIndex() != int(message.source) + 1) continue;
+            const auto base = messageBase(message);
+            const auto occurrence = messageCounts_[base]++;
+            const auto key = base + '/' + QString::number(occurrence);
+            messages_.push_back({key, base, &message});
+            messageByKey_.insert(key, &message);
+        }
+    const auto *candidate = messageByKey_.value(selectedKey_);
+    if (!ambiguous && candidate && messageCounts_.value(messageBase(*candidate)) == 1) selected_ = candidate;
+    else if (!selectedKey_.isEmpty()) {
+        selectedKey_.clear(); fieldKey_.clear(); lostSelection_ = true; firstSelection_ = false;
+        clearDetails();
+    }
+    removals_.clear();
+    for (auto it = messageItems_.cbegin(); it != messageItems_.cend(); ++it)
+        if (!messageByKey_.contains(it.key())) removals_.append(it.key());
+    rowCursor_ = removeCursor_ = 0;
+    messagesDone_ = false; updating_ = true;
     auto status = AnalysisStatus::Complete;
     QString error;
     for (const auto &result : results_) {
-        if (result->status != AnalysisStatus::Complete)
-            status = result->status;
-        if (!result->error.empty())
-            error = i18n::text(QString::fromStdString(result->error));
+        if (result->status != AnalysisStatus::Complete) status = result->status;
+        if (!result->error.empty()) error = i18n::text(QString::fromStdString(result->error));
     }
     status_ = results_.empty() ? AnalysisStatus::Pending : status;
-    updateHelp();
-    state_->setText(results_.empty() ? i18n::text("Pending analysis") : statusText(status));
-    state_->setToolTip(error);
-    if (preferredMessage_ >= messages_.size())
-        preferredMessage_ = 0;
-    fillTimer_.start();
+    state_->setText(statusText(status_));
+    state_->setToolTip(error.isEmpty() ? i18n::text("查看状态说明") : error);
+    i18n::setLabel(selectionHint_, lostSelection_ ? "当前结果中已无所选消息，请重新选择" : "");
+    selectionHint_->setVisible(lostSelection_);
+    prepareFields();
 }
-void ApplicationView::fill() {
-    QElapsedTimer elapsed;
-    elapsed.start();
-    while (filled_ < messages_.size() && elapsed.nsecsElapsed() < 2000000) {
-        const auto *m = messages_[filled_];
-        auto *item = new QTreeWidgetItem(list_);
-        item->setText(0, QString::fromStdString(m->protocol));
-        item->setText(1, m->direction ? "B -> A" : "A -> B");
-        item->setText(2, QString::fromStdString(m->summary));
-        item->setToolTip(2, item->text(2));
-        item->setText(3,
-                      m->status == AnalysisStatus::Complete ? QString{} : i18n::text("Incomplete"));
-        item->setData(0, Qt::UserRole, qulonglong(filled_++));
-    }
-    while (selected_ && fieldFilled_ < selected_->fields.size() &&
-           elapsed.nsecsElapsed() < 2000000) {
-        const auto &field = selected_->fields[fieldFilled_++];
-        auto *item = new QTreeWidgetItem(fields_);
-        item->setText(0, i18n::text(QString::fromStdString(field.name)));
-        item->setText(1, QString::fromStdString(applicationText(field.value)));
-        item->setToolTip(1, item->text(1));
-        item->setData(0, Qt::UserRole, qulonglong(field.offset));
-        item->setData(1, Qt::UserRole, qulonglong(field.length));
-        item->setData(0, Qt::UserRole + 5, QString::fromStdString(field.key));
-        item->setData(0, Qt::UserRole + 6, learning::fieldPredicate(QString::fromStdString(field.key), field.value));
-        if (fields_->indexOfTopLevelItem(item) == restoreField_) {
-            fields_->setCurrentItem(item);
-            restoreField_ = -1;
+void ApplicationView::prepareFields() {
+    fieldRows_.clear(); fieldByKey_.clear();
+    if (selected_) {
+        QHash<QString, int> occurrences;
+        for (const auto &field : selected_->fields) {
+            const auto base = fieldBase(field);
+            const auto key = base + '/' + QString::number(occurrences[base]++);
+            fieldRows_.push_back({key, &field});
+            fieldByKey_.insert(key, &field);
         }
     }
-    if (filled_ == messages_.size() && (!selected_ || fieldFilled_ == selected_->fields.size()))
-        fillTimer_.stop();
-    if (!selected_ && std::size_t(list_->topLevelItemCount()) > preferredMessage_)
-        list_->setCurrentItem(list_->topLevelItem(static_cast<int>(preferredMessage_)));
+    if (!fieldByKey_.contains(fieldKey_)) fieldKey_.clear();
+    fieldDirty_ = true;
+}
+void ApplicationView::fill() {
+    QElapsedTimer clock; clock.start();
+    if (!updating_ && pendingResults_) beginUpdate();
+    if (!updating_) { fillTimer_.stop(); return; }
+    const TreeAnchor listAnchor(list_), fieldAnchor(fields_);
+    const QSignalBlocker listBlock(list_), fieldBlock(fields_);
+    while (!messagesDone_ && clock.nsecsElapsed() < 2000000) {
+        if (removeCursor_ < std::size_t(removals_.size())) {
+            delete messageItems_.take(removals_[qsizetype(removeCursor_++)]);
+        } else if (rowCursor_ < messages_.size()) {
+            const auto &row = messages_[rowCursor_];
+            auto *item = messageItems_.value(row.key);
+            if (!item) { item = new QTreeWidgetItem; messageItems_.insert(row.key, item); }
+            moveRow(list_, item, int(rowCursor_));
+            const auto &m = *row.message;
+            item->setText(0, QString::fromStdString(m.protocol));
+            item->setText(1, m.direction ? "B -> A" : "A -> B");
+            item->setText(2, QString::fromStdString(m.summary)); item->setToolTip(2, item->text(2));
+            item->setText(3, m.status == AnalysisStatus::Complete ? QString{} : i18n::text("Incomplete"));
+            item->setData(0, Qt::UserRole + 7, row.key);
+            item->setData(0, Qt::UserRole + 8, qulonglong(m.bytes ? m.bytes->size() : 0));
+            ++rowCursor_;
+        } else {
+            messagesDone_ = true;
+            if (firstSelection_ && !messages_.empty()) {
+                firstSelection_ = false; freshSelection_ = true;
+                selectedKey_ = messages_.front().key;
+                selected_ = messages_.front().message;
+                prepareFields();
+                offset_ = selected_->offset / 4096 * 4096;
+            }
+            removals_.clear(); removeCursor_ = rowCursor_ = 0;
+            for (auto it = fieldItems_.cbegin(); it != fieldItems_.cend(); ++it)
+                if (!fieldByKey_.contains(it.key())) removals_.append(it.key());
+        }
+    }
+    if (messagesDone_ && fieldDirty_) {
+        while (clock.nsecsElapsed() < 2000000) {
+            if (removeCursor_ < std::size_t(removals_.size())) {
+                delete fieldItems_.take(removals_[qsizetype(removeCursor_++)]);
+            } else if (rowCursor_ < fieldRows_.size()) {
+                const auto &row = fieldRows_[rowCursor_]; const auto &f = *row.field;
+                auto *item = fieldItems_.value(row.key);
+                if (!item) { item = new QTreeWidgetItem; fieldItems_.insert(row.key, item); }
+                moveRow(fields_, item, int(rowCursor_));
+                item->setText(0, i18n::text(QString::fromStdString(f.name)));
+                item->setText(1, QString::fromStdString(applicationText(f.value))); item->setToolTip(1, item->text(1));
+                item->setData(0, Qt::UserRole, qulonglong(f.offset));
+                item->setData(1, Qt::UserRole, qulonglong(f.length));
+                item->setData(0, Qt::UserRole + 5, QString::fromStdString(f.key));
+                item->setData(0, Qt::UserRole + 6, learning::fieldPredicate(QString::fromStdString(f.key), f.value));
+                item->setData(0, Qt::UserRole + 7, row.key);
+                ++rowCursor_;
+            } else {
+                fieldDirty_ = false; updating_ = false;
+                finishFields(); break;
+            }
+        }
+    }
+    list_->setCurrentItem(messageItems_.value(selectedKey_));
+    fields_->setCurrentItem(fieldItems_.value(fieldKey_));
+    listAnchor.restore(list_, messageItems_); fieldAnchor.restore(fields_, fieldItems_);
+    if (!updating_ && !pendingResults_) fillTimer_.stop();
+}
+void ApplicationView::finishFields() {
+    const QSignalBlocker block(fields_);
+    fields_->setCurrentItem(fieldItems_.value(fieldKey_));
+    page(offset_, !freshSelection_);
+    freshSelection_ = false;
+    updateHelp();
+}
+void ApplicationView::clearDetails() {
+    const QSignalBlocker fieldBlock(fields_), packetBlock(packets_);
+    fieldItems_.clear(); fieldByKey_.clear(); fieldRows_.clear();
+    fields_->clear(); packets_->clear(); bytes_->clear(); offset_ = 0;
+    pager_->hide(); page_->clear(); locate_->setEnabled(false);
+    previous_->setEnabled(false); next_->setEnabled(false);
+    updateHelp();
 }
 void ApplicationView::select() {
     auto *item = list_->currentItem();
-    selected_ = item && item->data(0, Qt::UserRole).toULongLong() < messages_.size()
-                    ? messages_[item->data(0, Qt::UserRole).toULongLong()]
-                    : nullptr;
-    fields_->clear();
-    packets_->clear();
-    fieldFilled_ = 0;
-    if (selected_)
-        for (const auto &source : selected_->sources)
-            if (packets_->findData(QVariant::fromValue<qulonglong>(source.packetId)) < 0)
-                packets_->addItem(QString::number(source.packetId),
-                                  QVariant::fromValue<qulonglong>(source.packetId));
-    page(selected_ ? selected_->offset / 4096 * 4096 : 0);
+    selectedKey_ = item ? item->data(0, Qt::UserRole + 7).toString() : QString{};
+    selected_ = messageByKey_.value(selectedKey_);
+    if (!selected_) { selectedKey_.clear(); clearDetails(); return; }
+    firstSelection_ = false; lostSelection_ = false; selectionHint_->hide();
+    fieldKey_.clear();
+    clearDetails();
+    offset_ = selected_->offset / 4096 * 4096;
+    prepareFields();
+    // A user selection supersedes any old field work, including a pending snapshot slice.
+    if (messagesDone_) {
+        removals_.clear(); rowCursor_ = removeCursor_ = 0;
+        updating_ = true;
+    }
+    page(offset_);
     fillTimer_.start();
 }
-void ApplicationView::page(std::size_t offset) {
-    if (!selected_ || !selected_->bytes) {
-        bytes_->clear();
-        page_->clear();
-        pager_->hide();
-        previous_->setEnabled(false);
-        next_->setEnabled(false);
-        return;
+void ApplicationView::syncPackets(bool preserve) {
+    const auto old = packets_->currentData();
+    std::vector<qulonglong> ids;
+    if (selected_) for (const auto &span : selected_->sources) {
+        const auto *field = fieldByKey_.value(fieldKey_);
+        const auto length = span.bufferLength ? span.bufferLength : span.length;
+        if (field && field->length && !(span.bufferOffset < field->offset + field->length && span.bufferOffset + length > field->offset)) continue;
+        if (std::find(ids.begin(), ids.end(), span.packetId) == ids.end()) ids.push_back(span.packetId);
     }
+    bool equal = packets_->count() == int(ids.size());
+    for (int i = 0; equal && i < packets_->count(); ++i) equal = packets_->itemData(i).toULongLong() == ids[std::size_t(i)];
+    if (!equal) {
+        const QSignalBlocker block(packets_);
+        packets_->clear();
+        for (auto id : ids) packets_->addItem(QString::number(id), QVariant::fromValue(id));
+        if (preserve) packets_->setCurrentIndex(old.isValid() ? packets_->findData(old) : -1);
+    }
+    locate_->setEnabled(navigationEnabled_ && packets_->currentIndex() >= 0);
+}
+bool ApplicationView::menuTargetValid(quint64 epoch, const QString &message, const QString &field) const {
+    const auto *m = messageByKey_.value(message);
+    return epoch == bindingEpoch_ && message == selectedKey_ && m &&
+           messageCounts_.value(messageBase(*m)) == 1 && fieldByKey_.contains(field);
+}
+void ApplicationView::page(std::size_t offset, bool preserve) {
+    if (!selected_ || !selected_->bytes) {
+        bytes_->clear(); page_->clear(); pager_->hide();
+        previous_->setEnabled(false); next_->setEnabled(false); syncPackets(preserve); return;
+    }
+    const auto vertical = bytes_->verticalScrollBar()->value(), horizontal = bytes_->horizontalScrollBar()->value();
     const auto &content = *selected_->bytes;
     offset_ = content.empty() ? 0 : std::min(offset / 4096, (content.size() - 1) / 4096) * 4096;
     const auto end = std::min(content.size(), offset_ + 4096);
@@ -395,21 +555,20 @@ void ApplicationView::page(std::size_t offset) {
             text += at + j < end ? QString("%1 ").arg(content[at + j], 2, 16, QChar('0')) : "   ";
         text += "  ";
         for (unsigned j = 0; j < 16 && at + j < end; ++j) {
-            const auto c = content[at + j];
-            text += c >= 32 && c < 127 ? QChar(c) : QChar('.');
+            const auto c = content[at + j]; text += c >= 32 && c < 127 ? QChar(c) : QChar('.');
         }
         text += '\n';
     }
-    bytes_->setPlainText(text);
+    if (bytes_->toPlainText() != text) bytes_->setPlainText(text);
+    if (preserve) {
+        bytes_->verticalScrollBar()->setValue(vertical); bytes_->horizontalScrollBar()->setValue(horizontal);
+    }
     const auto pages = (content.size() + 4095) / 4096;
-    pager_->setVisible(pages > 1);
-    previous_->setEnabled(offset_ > 0);
-    next_->setEnabled(end < content.size());
+    pager_->setVisible(pages > 1); previous_->setEnabled(offset_ > 0); next_->setEnabled(end < content.size());
     page_->setText(i18n::text("第 %1/%2 页，字节 %3-%4 / %5")
                        .arg(qulonglong(offset_ / 4096 + 1)).arg(qulonglong(pages))
-                       .arg(qulonglong(offset_)).arg(qulonglong(end ? end - 1 : 0))
-                       .arg(qulonglong(content.size())));
-    highlightField();
+                       .arg(qulonglong(offset_)).arg(qulonglong(end ? end - 1 : 0)).arg(qulonglong(content.size())));
+    highlightField(); syncPackets(preserve);
 }
 void ApplicationView::highlightField() {
     QList<QTextEdit::ExtraSelection> selections;
@@ -425,16 +584,6 @@ void ApplicationView::highlightField() {
         return;
     const auto last = first + length;
     // Source spans refer to the selected data source, including authenticated plaintext.
-    if (length) {
-        packets_->clear();
-        for (const auto &source : selected_->sources) {
-            const auto count = source.bufferLength ? source.bufferLength : source.length;
-            if (source.bufferOffset < last && source.bufferOffset + count > first &&
-                packets_->findData(QVariant::fromValue<qulonglong>(source.packetId)) < 0)
-                packets_->addItem(QString::number(source.packetId),
-                                  QVariant::fromValue<qulonglong>(source.packetId));
-        }
-    }
     const auto end = std::min({last, size, offset_ + 4096});
     for (auto at = std::max(first, offset_); at < end;) {
         const auto row = (at - offset_) / 16, column = (at - offset_) % 16;

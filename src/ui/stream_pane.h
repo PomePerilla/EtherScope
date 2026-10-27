@@ -21,7 +21,7 @@ class StreamPane final : public QWidget {
     void start();
     void cancel();
     void setNavigationEnabled(bool enabled);
-    void setSourceContext(SourceContext context);
+    void setSourceContext(SourceContext context, bool reset = true);
     bool busy() const {
         return service_.busy();
     }
@@ -38,6 +38,7 @@ class StreamPane final : public QWidget {
 
   private:
     bool navigationEnabled_{true};
+    SourceContext context_;
     StreamService service_;
     const ApplicationIndex *applicationIndex_{};
     ApplicationView *applicationView_{};

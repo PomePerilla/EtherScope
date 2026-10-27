@@ -238,7 +238,7 @@ void MainWindow::bindApplicationSource() {
     applicationContext_ = sourceContext(view_);
     applicationSourceName_ = sourceNames_[view_];
     applicationPacket_ = selected_->id;
-    applicationView_->setSourceContext(applicationContext_);
+    applicationView_->setBinding(applicationContext_, ApplicationView::Scope::Packet, applicationPacket_, true);
     applicationInvalidated_ = false;
     applicationDock_->showError({});
     applicationView_->setResults({});

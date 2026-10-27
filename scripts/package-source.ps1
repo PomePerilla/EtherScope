@@ -6,7 +6,7 @@ if (-not $version) { throw 'Version missing.' }
 
 $paths = @('.github/workflows/ci.yml', '.clang-format', '.gitattributes', '.gitignore', 'CMakeLists.txt', 'README.md', 'README.zh-CN.md', 'README.zh-TW.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
     'docs/licenses/GPL-3.0.txt', 'docs/licenses/LGPL-3.0.txt', 'docs/licenses/Inno-Setup.txt', 'docs/licenses/OpenSSL.txt', 'docs/licenses/nghttp2.txt',
-    'docs/部署说明.md', 'docs/视觉设计规范.md', 'docs/视觉改版验证.md', 'docs/交互工作区.md', 'docs/交互工作区验证.md', 'samples/README.md',
+    'docs/部署说明.md', 'docs/视觉设计规范.md', 'docs/视觉改版验证.md', 'docs/交互工作区.md', 'docs/交互工作区验证.md', 'docs/分析刷新与安装验收.md', 'samples/README.md',
     'samples/synthetic-protocols.pcap', 'samples/synthetic-ipv6.pcap')
 foreach ($folder in @('src', 'tests', 'scripts')) {
     foreach ($item in Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -Recurse -Force) {

@@ -1062,6 +1062,169 @@ class DesktopTests : public QObject {
             }
         }
     }
+    void applicationRefreshKeepsReadingPosition_data() {
+        QTest::addColumn<bool>("conversation");
+        QTest::newRow("packet-panel") << false;
+        QTest::newRow("tcp-messages") << true;
+    }
+    void applicationRefreshKeepsReadingPosition() {
+        QFETCH(bool, conversation);
+        MainWindow themeOwner(nullptr, testOptions());
+        themeOwner.setDarkTheme(true);
+        ApplicationView view;
+        view.setBinding({0, 1, 1}, conversation ? ApplicationView::Scope::Conversation : ApplicationView::Scope::Packet, 7);
+        view.resize(1000, 760); view.show();
+        auto result = std::make_shared<ApplicationResult>();
+        auto content = std::make_shared<const std::vector<std::uint8_t>>(20000, 'x');
+        for (unsigned i = 0; i < 80; ++i) {
+            ApplicationMessage m; m.protocol = "HTTP"; m.summary = "message " + std::to_string(i);
+            m.source = DataSource::Reassembled; m.streamOffset = i * 20000;
+            m.bytes = content; m.length = content->size(); m.sources = {{7, 0, 20000, 0}};
+            for (unsigned f = 0; f < 40; ++f)
+                m.fields.push_back({"Header", "http.header", std::string("value"), f * 20, 10});
+            result->messages.push_back(std::move(m));
+        }
+        view.setResults({result}); QTRY_VERIFY(!view.updating());
+        auto *list = view.findChild<QTreeWidget *>("applicationMessages");
+        auto *fields = view.findChild<QTreeWidget *>("applicationFields");
+        auto *bytes = view.findChild<QPlainTextEdit *>("applicationBytes");
+        auto *packets = view.findChild<QComboBox *>("applicationPackets");
+        list->setCurrentItem(list->topLevelItem(40)); QTRY_VERIFY(!view.updating());
+        fields->setCurrentItem(fields->topLevelItem(20));
+        view.findChild<QPushButton *>("applicationNextPage")->click();
+        view.findChild<QPushButton *>("applicationNextPage")->click();
+        QVERIFY(bytes->toPlainText().startsWith("002000"));
+        auto cursor = bytes->textCursor(); cursor.setPosition(10); cursor.setPosition(20, QTextCursor::KeepAnchor); bytes->setTextCursor(cursor);
+        const auto selection = cursor.selectedText();
+        list->scrollToItem(list->topLevelItem(35), QAbstractItemView::PositionAtTop);
+        fields->scrollToItem(fields->topLevelItem(16), QAbstractItemView::PositionAtTop);
+        const auto listTop = list->itemAt(2,2)->data(0, Qt::UserRole + 7).toString();
+        const auto fieldTop = fields->itemAt(2,2)->data(0, Qt::UserRole + 7).toString();
+        view.findChild<QPushButton *>("applicationState")->setChecked(true);
+        view.findChild<QPushButton *>("applicationFieldHelpToggle")->setChecked(true);
+        QTest::qWait(20);
+        list->scrollToItem(list->topLevelItem(35), QAbstractItemView::PositionAtTop);
+        fields->scrollToItem(fields->topLevelItem(16), QAbstractItemView::PositionAtTop);
+        const auto chosen = list->currentItem()->data(0, Qt::UserRole + 7).toString();
+        const auto fieldChosen = fields->currentItem()->data(0, Qt::UserRole + 7).toString();
+        const auto readingShots = qEnvironmentVariable("ETHERSCOPE_SCREENSHOTS");
+        if (!readingShots.isEmpty()) {
+            QDir().mkpath(readingShots);
+            QVERIFY(view.grab().save(readingShots + (conversation ? "/reading-tcp-before.png" : "/reading-packet-before.png")));
+        }
+        auto next = std::make_shared<ApplicationResult>(*result);
+        next->messages[40].summary = "completed message";
+        next->messages[40].fields.insert(next->messages[40].fields.begin(), {"New", "http.new", true, 1, 1});
+        next->messages.erase(next->messages.begin(), next->messages.begin() + 5);
+        view.setResults({next}); QTRY_VERIFY(!view.updating());
+        QCOMPARE(list->currentItem()->data(0, Qt::UserRole + 7).toString(), chosen);
+        QCOMPARE(list->currentItem()->text(2), QString("completed message"));
+        QCOMPARE(fields->currentItem()->data(0, Qt::UserRole + 7).toString(), fieldChosen);
+        QCOMPARE(list->itemAt(2,2)->data(0, Qt::UserRole + 7).toString(), listTop);
+        QCOMPARE(fields->itemAt(2,2)->data(0, Qt::UserRole + 7).toString(), fieldTop);
+        QVERIFY(bytes->toPlainText().startsWith("002000"));
+        QCOMPARE(bytes->textCursor().selectedText(), selection);
+        QVERIFY(view.findChild<QPushButton *>("applicationState")->isChecked());
+        QVERIFY(view.findChild<QPushButton *>("applicationFieldHelpToggle")->isChecked());
+        QCOMPARE(packets->currentData().toULongLong(), 7ULL);
+        if (!readingShots.isEmpty())
+            QVERIFY(view.grab().save(readingShots + (conversation ? "/reading-tcp-after.png" : "/reading-packet-after.png")));
+        i18n::language().set("en"); QTRY_VERIFY(!view.updating());
+        QCOMPARE(fields->currentItem()->data(0, Qt::UserRole + 7).toString(), fieldChosen);
+        QVERIFY(bytes->toPlainText().startsWith("002000"));
+        auto changed = std::make_shared<ApplicationResult>(*next);
+        auto newBytes = std::make_shared<std::vector<std::uint8_t>>(*content); (*newBytes)[8200] = 'z';
+        changed->messages[35].bytes = newBytes; changed->messages[35].sources = {{9, 0, 20000, 0}};
+        view.setResults({changed}); QTRY_VERIFY(!view.updating());
+        QVERIFY(bytes->textCursor().selectedText().isEmpty());
+        QCOMPARE(packets->currentIndex(), -1);
+        QVERIFY(!view.findChild<QPushButton *>("applicationLocate")->isEnabled());
+        auto shortened = std::make_shared<ApplicationResult>(*changed);
+        shortened->messages[35].bytes = std::make_shared<const std::vector<std::uint8_t>>(4200, 's');
+        view.setResults({shortened}); QTRY_VERIFY(!view.updating());
+        QVERIFY(bytes->toPlainText().startsWith("001000"));
+        QVERIFY(!view.findChild<QPushButton *>("applicationNextPage")->isEnabled());
+    }
+    void applicationRefreshInvalidatesMenusAndMissingMessages() {
+        ApplicationView view; view.resize(900,650); view.show();
+        view.setBinding({0, 1, 1}, ApplicationView::Scope::Conversation, 1);
+        auto initial = std::make_shared<ApplicationResult>();
+        ApplicationMessage m; m.protocol = "HTTP"; m.summary = "old"; m.streamOffset = 0;
+        m.bytes = std::make_shared<const std::vector<std::uint8_t>>(64, 'x'); m.sources = {{1,0,64,0}};
+        m.fields = {{"Host", "http.host", std::string("old.example"), 0, 5}};
+        initial->messages = {m}; m.streamOffset = 64; initial->messages.push_back(m);
+        view.setResults({initial}); QTRY_VERIFY(!view.updating());
+        auto *list = view.findChild<QTreeWidget *>("applicationMessages");
+        auto *fields = view.findChild<QTreeWidget *>("applicationFields");
+        auto *bytes = view.findChild<QPlainTextEdit *>("applicationBytes");
+        fields->setCurrentItem(fields->topLevelItem(0));
+        emit fields->customContextMenuRequested(QPoint(-1,-1));
+        auto *menu = view.findChild<QMenu *>("applicationFieldMenu"); QVERIFY(menu);
+        auto next = std::make_shared<ApplicationResult>(*initial);
+        next->messages[0].summary = "new summary"; next->messages[0].fields[0].value = std::string("new.example");
+        view.setResults({next}); QTRY_VERIFY(!view.updating());
+        menu->findChild<QAction *>("copyApplicationField")->trigger();
+        QCOMPARE(qApp->clipboard()->text(), QString("old.example"));
+        auto removedField = std::make_shared<ApplicationResult>(*next); removedField->messages[0].fields.clear();
+        view.setResults({removedField}); QTRY_VERIFY(!view.updating());
+        qApp->clipboard()->setText("unchanged"); menu->findChild<QAction *>("copyApplicationField")->trigger();
+        QCOMPARE(qApp->clipboard()->text(), QString("unchanged")); menu->close();
+        auto removed = std::make_shared<ApplicationResult>(*removedField); removed->messages.erase(removed->messages.begin());
+        view.setResults({removed}); QTRY_VERIFY(!view.updating());
+        QCOMPARE(list->topLevelItemCount(), 1); QVERIFY(!list->currentItem()); QVERIFY(bytes->toPlainText().isEmpty());
+        QVERIFY(view.findChild<QLabel *>("applicationSelectionHint")->isVisible());
+        auto more = std::make_shared<ApplicationResult>(*removed); m.streamOffset = 128; more->messages.push_back(m);
+        view.setResults({more}); QTRY_VERIFY(!view.updating()); QVERIFY(!list->currentItem());
+        list->setCurrentItem(list->topLevelItem(0)); QTRY_VERIFY(!view.updating());
+        QVERIFY(!view.findChild<QLabel *>("applicationSelectionHint")->isVisible());
+        auto duplicate = std::make_shared<ApplicationResult>(*more); duplicate->messages.push_back(duplicate->messages[0]);
+        view.setResults({duplicate}); QTRY_VERIFY(!view.updating()); QVERIFY(!list->currentItem());
+        view.setBinding({1,1,1}, ApplicationView::Scope::Conversation, 1);
+        QVERIFY(list->topLevelItemCount() == 0 && bytes->toPlainText().isEmpty());
+        view.setResults({initial}); QTRY_VERIFY(!view.updating()); QVERIFY(list->currentItem());
+        fields->setCurrentItem(fields->topLevelItem(0)); emit fields->customContextMenuRequested(QPoint(-1,-1));
+        auto *stale = view.findChild<QMenu *>("applicationFieldMenu"); QVERIFY(stale);
+        view.setBinding({1,1,1}, ApplicationView::Scope::Conversation, 2);
+        view.setResults({initial}); QTRY_VERIFY(!view.updating());
+        qApp->clipboard()->setText("scope"); stale->findChild<QAction *>("copyApplicationField")->trigger();
+        QCOMPARE(qApp->clipboard()->text(), QString("scope")); stale->close();
+        StreamPane pane;
+        pane.setSourceContext({0,1,1});
+        auto *embedded = pane.findChild<ApplicationView *>();
+        embedded->setResults({initial}); QTRY_VERIFY(!embedded->updating());
+        auto *embeddedList = embedded->findChild<QTreeWidget *>("applicationMessages");
+        QVERIFY(embeddedList->currentItem());
+        pane.setSourceContext({0,1,1},false);
+        QVERIFY(embeddedList->currentItem());
+        pane.setSourceContext({0,1,2},false);
+        QCOMPARE(embeddedList->topLevelItemCount(),0);
+    }
+    void applicationRefreshCoalescesLatestSnapshot() {
+        ApplicationView view; view.show();
+        auto result = std::make_shared<ApplicationResult>();
+        for (unsigned i=0;i<1500;++i) {
+            ApplicationMessage m; m.protocol="HTTP2"; m.streamOffset=i*64; m.streamId=i%3;
+            m.summary="initial"; m.bytes=std::make_shared<const std::vector<std::uint8_t>>(64,'x');
+            result->messages.push_back(std::move(m));
+        }
+        view.setResults({result});
+        auto *list=view.findChild<QTreeWidget *>("applicationMessages");
+        QString activeSelection;
+        for (int revision=0;revision<12;++revision) {
+            auto next=std::make_shared<ApplicationResult>(*result);
+            next->messages[0].summary="revision "+std::to_string(revision);
+            view.setResults({next});
+            if (list->topLevelItemCount()>3) {
+                list->setCurrentItem(list->topLevelItem(3));
+                activeSelection=list->currentItem()->data(0,Qt::UserRole+7).toString();
+            }
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(!view.updating(),5000);
+        if (!activeSelection.isEmpty()) QCOMPARE(list->currentItem()->data(0,Qt::UserRole+7).toString(),activeSelection);
+        QCOMPARE(list->topLevelItemCount(),1500); QCOMPARE(list->topLevelItem(0)->text(2),QString("revision 11"));
+        view.setResults({result}); view.setBinding({0,2,2},ApplicationView::Scope::Packet,1);
+        QTest::qWait(30); QCOMPARE(list->topLevelItemCount(),0); QVERIFY(!view.updating());
+    }
     void applicationViewKeepsSelectionAndLocatesBytes() {
         ApplicationView view;
         QCOMPARE(view.findChild<QPushButton *>("applicationState")->text(),

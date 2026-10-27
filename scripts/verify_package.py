@@ -6,6 +6,8 @@ from ctypes import wintypes
 import json
 import os
 import struct
+import shutil
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -30,6 +32,25 @@ def registered():
             return True
     except FileNotFoundError:
         return False
+
+
+def uninstall_current(application_root, working_directory, startup):
+    if not registered():
+        return
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+        command = winreg.QueryValueEx(key, 'UninstallString')[0]
+    match = re.match(r'^"([^"]+)"', command)
+    assert match, command
+    uninstaller = Path(match.group(1)).resolve(strict=True)
+    assert uninstaller.parent == application_root.resolve(), 'Uninstaller belongs to another installation'
+    subprocess.run([str(uninstaller), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'],
+                   check=True, timeout=60, cwd=working_directory, startupinfo=startup)
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        if not registered() and not (application_root / 'EtherScope.exe').exists() and not list(application_root.glob('unins*.exe')):
+            return
+        time.sleep(.1)
+    raise AssertionError('Uninstaller background cleanup did not finish')
 
 
 @contextmanager
@@ -130,12 +151,16 @@ def launch(application, settings, env, sample=None, language=None):
 def main():
     arguments = argparse.ArgumentParser()
     arguments.add_argument('--previous-installer', type=Path)
+    arguments.add_argument('--native-acceptance', type=Path)
+    arguments.add_argument('--evidence-dir', type=Path)
     arguments.add_argument('--installer-language', choices=['en', 'zh_CN', 'zh_TW'], default='en')
     arguments.add_argument('--application-language', choices=['en', 'zh_CN', 'zh_TW'])
     args = arguments.parse_args()
     project = Path(__file__).resolve().parent.parent
     manifest = json.loads((project / 'output/program-package.json').read_text(encoding='utf-8-sig'))
     version = manifest['version']
+    evidence = args.evidence_dir.resolve() if args.evidence_dir else project / 'output/evidence'
+    evidence.mkdir(parents=True, exist_ok=True)
     archive_path = Path(manifest['archive'])
     assert archive_path.name == f'EtherScope-{version}-windows-x64.zip', archive_path.name
     assert not registered(), 'An existing EtherScope installation must be preserved.'
@@ -203,18 +228,45 @@ def main():
             previous_checked = None
             if args.previous_installer:
                 previous_installer = args.previous_installer.resolve(strict=True)
+                # Fresh installation and old-to-new upgrade are separate paths.
+                uninstall_current(application_root, root, startup)
+                assert not application.exists() and not registered()
                 previous_parameters = [value for value in parameters[1:] if not value.startswith('/LANG=')]
                 subprocess.run([str(previous_installer)] + previous_parameters + ['/LOG=' + str(root / 'previous.log')], check=True, timeout=60, startupinfo=startup)
                 assert application.read_bytes() != (project / 'build/msvc-release/EtherScope.exe').read_bytes()
+                if args.native_acceptance:
+                    native_env = dict(env)
+                    test_runtime = evidence / 'test-runtime'
+                    test_runtime.mkdir(exist_ok=True)
+                    shutil.copy2(project / '.tools/Qt/bin/Qt6Test.dll', test_runtime / 'Qt6Test.dll')
+                    native_env['PATH'] = str(test_runtime) + os.pathsep + native_env['PATH']
+                    native_env['QT_PLUGIN_PATH'] = str(application_root)
+                    native_env['ETHERSCOPE_ACCEPTANCE_SETTINGS'] = str(settings)
+                    native_env['ETHERSCOPE_ACCEPTANCE_REPORT'] = str(evidence / 'upgraded-settings.json')
+                    subprocess.run([str(args.native_acceptance.resolve(strict=True)), '-platform', 'windows',
+                                    'seedUpgradeSettings', '-o', os.path.relpath(evidence / 'seed-settings.xml', project) + ',junitxml'],
+                                   check=True, timeout=30, env=native_env, cwd=project, startupinfo=startup)
                 launch(shortcut, settings, env)
                 previous_checked = previous_installer.name
             before_upgrade = settings.read_bytes()
             subprocess.run(parameters + ['/LOG=' + str(root / 'upgrade.log')], check=True, timeout=60, startupinfo=startup)
             assert settings.read_bytes() == before_upgrade
             assert application.read_bytes() == (project / 'build/msvc-release/EtherScope.exe').read_bytes()
+            report['settings_bytes_unchanged_by_upgrade'] = True
+            if args.native_acceptance and args.previous_installer:
+                subprocess.run([str(args.native_acceptance.resolve(strict=True)), '-platform', 'windows',
+                                'upgradedSettingsRestore', '-o', os.path.relpath(evidence / 'upgraded-settings.xml', project) + ',junitxml'],
+                               check=True, timeout=30, env=native_env, cwd=project, startupinfo=startup)
+                report['ui_settings_restore'] = json.loads((evidence / 'upgraded-settings.json').read_text(encoding='utf-8'))
             startups += [launch(shortcut, settings, env) for _ in range(4)]
             assert max(startups) <= 3000, startups
-            capture_output = project / f'output/evidence/npcap-installed-{version}.json'
+            native_window_output = evidence / 'installed-native-window.json'
+            subprocess.run([sys.executable, str(project / 'scripts/verify_native_window.py'),
+                            '--application', str(application), '--output', str(native_window_output)],
+                           check=True, timeout=30, cwd=project, env=env, startupinfo=startup,
+                           stdout=subprocess.DEVNULL)
+            report['native_window'] = json.loads(native_window_output.read_text(encoding='utf-8'))
+            capture_output = evidence / f'npcap-installed-{version}.json'
             powershell = Path(env['WINDIR']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
             adapter = subprocess.check_output([str(powershell), '-NoProfile', '-Command',
                        "Get-NetAdapter -Physical | Where-Object Status -eq 'Up' | Select-Object -First 1 -ExpandProperty InterfaceGuid"], startupinfo=startup).decode('ascii').strip()
@@ -232,15 +284,8 @@ def main():
                            'startup_ms': startups, 'live_capture': capture, 'installer_bytes': installer.stat().st_size,
                            'installer_language': args.installer_language, 'application_language': args.application_language})
         finally:
-            uninstaller = application_root / 'unins000.exe'
-            if installed and uninstaller.is_file():
-                subprocess.run([str(uninstaller), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'],
-                               check=True, timeout=60, cwd=root, startupinfo=startup)
-                deadline = time.monotonic() + 10
-                while (application_root / 'EtherScope.exe').exists() and time.monotonic() < deadline:
-                    time.sleep(0.1)
-                assert not (application_root / 'EtherScope.exe').exists()
-                assert not registered()
+            if installed and registered():
+                uninstall_current(application_root, root, startup)
                 assert not shortcut.exists()
                 report['uninstall'] = True
         for path in profile_files:
@@ -249,7 +294,7 @@ def main():
         report['passed'] = True
     assert (shortcut_path.read_bytes() if shortcut_path.exists() else None) == shortcut_before
     report['existing_shortcut_preserved'] = True
-    output = project / f'output/installer-check-{version}.json'
+    output = evidence / f'installer-check-{version}.json'
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps(report, ensure_ascii=False))
 

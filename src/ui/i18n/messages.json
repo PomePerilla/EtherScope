@@ -3688,5 +3688,10 @@
     "第 %1/%2 页，字节 %3-%4 / %5",
     "Page %1/%2, bytes %3-%4 / %5",
     "第 %1/%2 頁，位元組 %3-%4 / %5"
+  ],
+  [
+    "当前结果中已无所选消息，请重新选择",
+    "The selected message is no longer in the results. Select another message.",
+    "目前結果已無所選訊息，請重新選擇"
   ]
 ]

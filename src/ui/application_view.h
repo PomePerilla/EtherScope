@@ -3,6 +3,8 @@
 #include "ui/source_context.h"
 #include <QWidget>
 #include <QTimer>
+#include <QHash>
+#include <optional>
 class QComboBox;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -19,7 +21,10 @@ class ApplicationView final : public QWidget {
     explicit ApplicationView(QWidget *parent = nullptr);
     ~ApplicationView() override;
     void setNavigationEnabled(bool enabled);
-    void setSourceContext(SourceContext context) { context_ = context; }
+    bool updating() const { return updating_ || pendingResults_.has_value(); }
+    enum class Scope { Packet, Conversation };
+    void setSourceContext(SourceContext context);
+    void setBinding(SourceContext context, Scope scope, std::uint64_t id, bool reset = false);
     void setResults(std::vector<std::shared_ptr<const ApplicationResult>> results);
   signals:
     void locateRequested(quint64 packet);
@@ -30,12 +35,34 @@ class ApplicationView final : public QWidget {
 
   private:
     std::vector<std::shared_ptr<const ApplicationResult>> results_;
-    std::vector<const ApplicationMessage *> messages_;
+    using Results = std::vector<std::shared_ptr<const ApplicationResult>>;
+    struct MessageRow { QString key, base; const ApplicationMessage *message{}; };
+    struct FieldRow { QString key; const ApplicationField *field{}; };
+    std::optional<Results> pendingResults_;
+    std::vector<MessageRow> messages_;
+    std::vector<FieldRow> fieldRows_;
+    QHash<QString, const ApplicationMessage *> messageByKey_;
+    QHash<QString, int> messageCounts_;
+    QHash<QString, const ApplicationField *> fieldByKey_;
+    QHash<QString, QTreeWidgetItem *> messageItems_, fieldItems_;
+    QString selectedKey_, fieldKey_;
+    QStringList removals_;
+    std::size_t rowCursor_{}, removeCursor_{};
+    bool freshSelection_{}, updating_{}, firstSelection_{true}, lostSelection_{}, fieldDirty_{}, messagesDone_{};
+    Scope scope_{Scope::Packet};
+    std::uint64_t scopeId_{}, bindingEpoch_{};
+    void resetPresentation();
+    void beginUpdate();
+    void prepareFields();
+    void finishFields();
+    void clearDetails();
+    void syncPackets(bool preserve);
+    bool menuTargetValid(quint64 epoch, const QString &message, const QString &field) const;
     const ApplicationMessage *selected_{};
     QTreeWidget *list_{}, *fields_{};
     QComboBox *sources_{}, *packets_{};
     QPlainTextEdit *bytes_{};
-    QLabel *page_{};
+    QLabel *page_{}, *selectionHint_{};
     QPushButton *state_{}, *locate_{}, *fieldHelpToggle_{}, *nextStep_{}, *previous_{}, *next_{};
     QTextEdit *fieldHelp_{}, *statusHelp_{};
     QWidget *fieldHelpArea_{}, *statusHelpArea_{}, *statusHelpPanel_{}, *pager_{};
@@ -45,12 +72,11 @@ class ApplicationView final : public QWidget {
     AnalysisStatus status_{AnalysisStatus::Pending};
     void updateHelp();
     QTimer fillTimer_;
-    std::size_t filled_{}, fieldFilled_{}, offset_{}, preferredMessage_{};
-    int restoreField_{-1};
+    std::size_t offset_{};
     void rebuild();
     void fill();
     void select();
-    void page(std::size_t offset);
+    void page(std::size_t offset, bool preserve = false);
     void highlightField();
 };
 } // namespace etherscope

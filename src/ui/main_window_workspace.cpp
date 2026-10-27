@@ -161,6 +161,7 @@ void MainWindow::refreshAnalysisSources() {
         const bool valid = sourceValid(tcpContext_);
         if (valid) {
             tcpDialog_->refresh(storeFor(tcpContext_.session), tcpContext_.session == 0 ? "实时" : "文件");
+            tcpDialog_->updateAnalysisContext(sourceContext(tcpContext_.session));
             tcpDialog_->setApplicationIndex(&applicationIndex_[tcpContext_.session]);
         } else if (!tcpInvalidated_) {
             tcpInvalidated_ = true;

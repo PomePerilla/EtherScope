@@ -1,5 +1,8 @@
 #include "ui/main_window.h"
 #include "ui/analysis_dock.h"
+#include "ui/application_view.h"
+#include <QTreeWidget>
+#include <QTabWidget>
 #include <QMenu>
 #include <QTableView>
 #include "ui/tcp_dialog.h"
@@ -112,7 +115,11 @@ int main(int argc, char **argv) {
             return 2;
     }
     const bool longHttp = args.contains("--long-http");
+    const bool applicationViewLoad = args.contains("--application-view");
     const std::string longRequest = "GET /keep HTTP/1.1\r\nHost: persistent.example\r\n\r\n";
+    const std::string largeRequest = "GET /keep HTTP/1.1\r\nHost: persistent.example\r\nX-Padding: " + std::string(6000, 'p') + "\r\n\r\n";
+    constexpr std::uint64_t largePeriod = 100;
+    const auto extraRequestBytes = applicationViewLoad ? largeRequest.size() - longRequest.size() : 0;
     const std::string longResponse = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
     if (longHttp)
         raws = {fixtures::tcp(2, 99), fixtures::tcp(18, 499, 100, true),
@@ -121,6 +128,8 @@ int main(int argc, char **argv) {
                               {longRequest.begin(), longRequest.end()}),
                 fixtures::tcp(24, 500, 100, true, 50000, false,
                               {longResponse.begin(), longResponse.end()})};
+    if (longHttp && applicationViewLoad)
+        raws.push_back(fixtures::tcp(24, 100, 500, false, 50000, false, {largeRequest.begin(), largeRequest.end()}));
     const bool streamLoad = args.contains("--stream-load");
     if (streamLoad)
         raws = {
@@ -131,7 +140,8 @@ int main(int argc, char **argv) {
     }
     const auto target = std::uint64_t(seconds) * pps;
     auto rawAt = [&](std::uint64_t index) {
-        auto raw = raws[longHttp ? (index < 3 ? index : 3 + (index - 3) % 2) : index % raws.size()];
+        auto raw = raws[longHttp ? (index < 3 ? index :
+            (applicationViewLoad && (index-3)%2==0 && ((index-3)/2)%largePeriod==0 ? 5 : 3+(index-3)%2)) : index % raws.size()];
         raw.timestampNs = timestampBase + static_cast<std::int64_t>(index) * 1000000;
         auto write = [&](std::size_t offset, std::uint32_t value) {
             for (unsigned byte = 0; byte < 4; ++byte)
@@ -144,9 +154,11 @@ int main(int argc, char **argv) {
             const bool response = (index - 3) % 2;
             write(38, static_cast<std::uint32_t>(
                           (response ? 500 : 100) +
-                          round * (response ? longResponse.size() : longRequest.size())));
-            write(42, static_cast<std::uint32_t>(response ? 100 + (round + 1) * longRequest.size()
-                                                          : 500 + round * longResponse.size()));
+                          round * (response ? longResponse.size() : longRequest.size()) +
+                          (response ? 0 : (round+largePeriod-1)/largePeriod*extraRequestBytes)));
+
+            write(42, static_cast<std::uint32_t>(response ? 100 + (round + 1) * longRequest.size() +
+                              (round+largePeriod)/largePeriod*extraRequestBytes : 500 + round * longResponse.size()));
         }
         return raw;
     };
@@ -199,7 +211,8 @@ int main(int argc, char **argv) {
     }
     const auto payloadRecords = target > 3 ? target - 3 : 0;
     const auto expectedDelivered =
-        (payloadRecords + 1) / 2 * longRequest.size() + payloadRecords / 2 * longResponse.size();
+        (payloadRecords + 1) / 2 * longRequest.size() + payloadRecords / 2 * longResponse.size() +
+        (((payloadRecords+1)/2 + largePeriod-1)/largePeriod)*extraRequestBytes;
     const bool recordingLoad = args.contains("--recording");
     if (recordingLoad) {
         QSettings settings(options.settingsFile, QSettings::IniFormat);
@@ -221,10 +234,14 @@ int main(int argc, char **argv) {
         window.setTlsKeyLog(args[position + 1]);
     if (recordingLoad)
         window.findChild<QAction *>("recordingAction")->setChecked(true);
-    if (args.contains("--tcp-panel") || streamLoad)
+    if (args.contains("--tcp-panel") || streamLoad || applicationViewLoad)
         window.findChild<QAction *>("tcpConversationsAction")->trigger();
     bool panelBound = false;
     int workspaceInteractions = 0;
+    ApplicationView *visibleApplication = nullptr;
+    QString observedApplicationRows;
+    int applicationViewUpdates = 0, applicationPageClicks = 0;
+    bool chooseApplicationField = false;
     qint64 nextWorkspaceInteraction = 5000;
     StreamPane *streamPane = nullptr;
     int streamRequests = 0, streamCompleted = 0;
@@ -345,6 +362,27 @@ int main(int argc, char **argv) {
         if (!panelBound && c.enqueued > 0 && window.findChild<TcpPanel *>()) {
             window.findChild<QPushButton *>("tcpAnalysisDockRebind")->click();
             panelBound = true;
+            if (applicationViewLoad) {
+                window.findChild<QTabWidget *>("tcpAnalysisTabs")->setCurrentIndex(1);
+                auto *pane = window.findChild<StreamPane *>();
+                pane->findChild<QTabWidget *>("streamTabs")->setCurrentIndex(2);
+                visibleApplication = pane->findChild<ApplicationView *>();
+            }
+        }
+        if (visibleApplication && visibleApplication->isVisible()) {
+            auto *list = visibleApplication->findChild<QTreeWidget *>("applicationMessages");
+            if (list->topLevelItemCount()) {
+                const auto token = list->topLevelItem(0)->data(0,Qt::UserRole+7).toString() + ':' +
+                    list->topLevelItem(list->topLevelItemCount()-1)->data(0,Qt::UserRole+7).toString();
+                if (token != observedApplicationRows) { ++applicationViewUpdates; observedApplicationRows = token; }
+            }
+            if (chooseApplicationField && !visibleApplication->updating()) {
+                auto *fields = visibleApplication->findChild<QTreeWidget *>("applicationFields");
+                if (fields->topLevelItemCount()) fields->setCurrentItem(fields->topLevelItem(0));
+                auto *next = visibleApplication->findChild<QPushButton *>("applicationNextPage");
+                if (next->isEnabled()) { next->click(); ++applicationPageClicks; }
+                chooseApplicationField = false;
+            }
         }
         if (args.contains("--workspace-interactions") && now >= nextWorkspaceInteraction &&
             window.packetModel()->rowCount() > 0 && panelBound) {
@@ -360,6 +398,13 @@ int main(int argc, char **argv) {
             dock->setFloating(!floating);
             dock->setFloating(floating);
             ++workspaceInteractions;
+            if (visibleApplication) {
+                auto *messages = visibleApplication->findChild<QTreeWidget *>("applicationMessages");
+                for (int row=messages->topLevelItemCount()-1;row>=0;--row)
+                    if (messages->topLevelItem(row)->text(1)=="A -> B" && messages->topLevelItem(row)->data(0,Qt::UserRole+8).toULongLong()>4096) {
+                        messages->setCurrentItem(messages->topLevelItem(row)); chooseApplicationField=true; break;
+                    }
+            }
             nextWorkspaceInteraction = now + 10000;
         }
         if (streamLoad && now >= nextStream && now < seconds * 1000 && c.enqueued > 0 &&
@@ -538,6 +583,7 @@ int main(int argc, char **argv) {
                 window.retainedEstimatedBytes() <= 64 * 1024 * 1024 && resets == 0 &&
                 saveRequests == 2 && exports.size() == 2 && saveValid && streamValid &&
                 (!args.contains("--workspace-interactions") || (panelBound && workspaceInteractions >= 5)) &&
+                (!applicationViewLoad || (applicationViewUpdates >= 20 && applicationPageClicks >= 3)) &&
                 (!streamLoad || streamCompleted == streamRequests) &&
                 (!languageCycle || languageChanges >= (seconds - 1) / 10);
             QJsonObject report{
@@ -553,6 +599,10 @@ int main(int argc, char **argv) {
                 {"stream_load", streamLoad},
                 {"analysis_panel_bound", panelBound},
                 {"workspace_interactions", workspaceInteractions},
+                {"large_request_period", double(largePeriod)},
+                {"large_request_bytes", double(applicationViewLoad ? largeRequest.size() : 0)},
+                {"application_view_updates", applicationViewUpdates},
+                {"application_page_clicks", applicationPageClicks},
                 {"stream_requests", streamRequests},
                 {"stream_completed", streamCompleted},
                 {"language_cycle", languageCycle},

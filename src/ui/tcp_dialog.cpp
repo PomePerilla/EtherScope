@@ -399,6 +399,7 @@ bool TcpPanel::streamBusy() const {
     return stream_->busy();
 }
 void TcpPanel::setSourceContext(SourceContext context) { stream_->setSourceContext(context); }
+void TcpPanel::updateAnalysisContext(SourceContext context) { stream_->setSourceContext(context, false); }
 void TcpPanel::invalidate() {
     stream_->setSelection(nullptr, 0);
     store_ = nullptr;

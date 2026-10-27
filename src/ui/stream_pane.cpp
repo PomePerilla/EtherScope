@@ -299,6 +299,7 @@ void StreamPane::setSelection(const SessionStore *store, std::uint64_t id) {
     store_ = store;
     generation_ = generation;
     conversation_ = id;
+    applicationView_->setBinding(context_, ApplicationView::Scope::Conversation, id, true);
     clearResult();
     i18n::setLabel(phase_, id ? "待重组" : "");
     start_->setEnabled(id != 0);
@@ -334,7 +335,10 @@ void StreamPane::cancel() {
     cancel_->setEnabled(service_.busy());
     emit workChanged();
 }
-void StreamPane::setSourceContext(SourceContext context) { applicationView_->setSourceContext(context); }
+void StreamPane::setSourceContext(SourceContext context, bool reset) {
+    context_ = context;
+    applicationView_->setBinding(context, ApplicationView::Scope::Conversation, conversation_, reset);
+}
 void StreamPane::setNavigationEnabled(bool enabled) {
     navigationEnabled_ = enabled;
     locate_->setEnabled(enabled && pagePacketId_ != 0);
