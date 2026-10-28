@@ -1,0 +1,4 @@
+interface:
+  display_name: "工作台界面管线"
+  short_description: "将紧凑工作台视觉、信息组织、交互状态与跨尺寸验证迁移到其他项目"
+  default_prompt: "使用 $workbench-ui-pipeline 为当前项目建立并落地统一的工作台界面，沿用现有技术栈。"

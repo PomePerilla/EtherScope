@@ -1,0 +1,19 @@
+{
+  "project": "实验数据工作台",
+  "primary_task": "选择一次实验，查看结果和原始记录，再返回列表",
+  "layout": "list-inspector",
+  "source_context": ["source_id", "data_generation", "analysis_generation", "item_id"],
+  "actions": {
+    "primary": "开始", "secondary": ["停止", "打开", "保存"],
+    "analysis": ["结果分析"], "more": ["设置", "外观与语言"]
+  },
+  "states": ["idle", "starting", "running", "waiting", "empty_filtered", "failed", "stopping"],
+  "languages": ["zh_CN", "en"],
+  "minimum_window": [900, 580],
+  "verification": {
+    "sizes": [[900, 580], [1024, 768], [1440, 900]],
+    "themes": ["dark", "light"], "scales": [1, 1.5, 2],
+    "performance": "沿用目标项目现有门槛，记录刷新期间查找、选择和返回的响应"
+  },
+  "token_overrides": {}
+}

@@ -1,0 +1,40 @@
+#pragma once
+#include <QApplication>
+#include <QColor>
+#include <QFile>
+#include <QFont>
+#include <QPalette>
+#include <QDir>
+namespace workbench {
+inline constexpr int controlHeight = @control_height@;
+inline constexpr int rowHeight = @row_height@;
+inline constexpr int splitterHit = @splitter_hit@;
+inline QFont dataFont() {
+    QFont font;
+    font.setFamilies({@DATA_FONTS@});
+    font.setStyleHint(QFont::Monospace);
+    font.setPixelSize(@font_size@);
+    return font;
+}
+inline bool applyTheme(QApplication &app, bool dark, const QString &directory) {
+    QFile sheet(QDir(directory).filePath(dark ? "theme-dark.qss" : "theme-light.qss"));
+    if (!sheet.open(QIODevice::ReadOnly)) return false;
+    QPalette p;
+    p.setColor(QPalette::Window, QColor(dark ? "@dark_workspace@" : "@light_workspace@"));
+    p.setColor(QPalette::WindowText, QColor(dark ? "@dark_text@" : "@light_text@"));
+    p.setColor(QPalette::Base, QColor(dark ? "@dark_surface@" : "@light_surface@"));
+    p.setColor(QPalette::AlternateBase, QColor(dark ? "@dark_alternate@" : "@light_alternate@"));
+    p.setColor(QPalette::Text, QColor(dark ? "@dark_text@" : "@light_text@"));
+    p.setColor(QPalette::Button, QColor(dark ? "@dark_bar@" : "@light_bar@"));
+    p.setColor(QPalette::ButtonText, QColor(dark ? "@dark_text@" : "@light_text@"));
+    p.setColor(QPalette::Highlight, QColor(dark ? "@dark_selection@" : "@light_selection@"));
+    p.setColor(QPalette::HighlightedText, QColor(dark ? "@dark_text@" : "@light_text@"));
+    p.setColor(QPalette::PlaceholderText, QColor(dark ? "@dark_muted@" : "@light_muted@"));
+    p.setColor(QPalette::Mid, QColor(dark ? "@dark_border@" : "@light_border@"));
+    p.setColor(QPalette::Disabled, QPalette::Text, QColor(dark ? "@dark_disabled@" : "@light_disabled@"));
+    p.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(dark ? "@dark_disabled@" : "@light_disabled@"));
+    app.setPalette(p);
+    app.setStyleSheet(QString::fromUtf8(sheet.readAll()));
+    return true;
+}
+} // namespace workbench

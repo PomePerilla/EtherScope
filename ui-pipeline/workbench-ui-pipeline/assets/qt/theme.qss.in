@@ -1,0 +1,33 @@
+QWidget { font-family: '@ui_font@'; font-size: @font_size@px; color: @text@; }
+QWidget[wbRole="workspace"] { background: @workspace@; }
+QWidget[wbRole="bar"] { background: @bar@; border-bottom: 1px solid @border@; }
+QLabel[wbRole="title"] { min-height: @title_height@px; color: @muted@; padding-left: @space_2@px; }
+QPushButton, QToolButton { min-height: @control_inner@px; padding: 0 @space_2@px; border: 1px solid transparent; border-radius: @radius@px; background: transparent; }
+QPushButton:hover, QToolButton:hover { background: @hover@; }
+QPushButton:pressed, QToolButton:pressed { background: @selection@; }
+QPushButton:focus, QToolButton:focus { border-color: @accent@; }
+QPushButton[wbRole="primary"] { background: @primary@; color: @primary_text@; font-weight: 600; }
+QPushButton[wbRole="primary"]:hover { background: @primary_hover@; }
+QPushButton[wbRole="primary"]:pressed { background: @primary_pressed@; }
+QPushButton:disabled, QToolButton:disabled { color: @disabled@; }
+QPushButton[wbRole="primary"]:disabled { background: @hover@; color: @disabled@; }
+QLineEdit, QComboBox { min-height: @control_inner@px; padding: 0 6px; border: 1px solid @border@; border-radius: @radius@px; background: @surface@; }
+QLineEdit:focus, QComboBox:focus { border-color: @accent@; }
+QLineEdit[wbInvalid="true"] { border-color: @error@; }
+QTableView, QTreeWidget, QPlainTextEdit { background: @surface@; border: 1px solid transparent; selection-background-color: @selection@; selection-color: @text@; }
+QTableView:focus, QTreeWidget:focus, QPlainTextEdit:focus { border-color: @accent@; }
+QTableView::item, QTreeWidget::item { padding: 2px 5px; }
+QHeaderView::section { background: @bar@; color: @muted@; padding: 3px 7px; border: none; border-bottom: 1px solid @border@; }
+QTabBar::tab { padding: 5px 8px; border-bottom: 2px solid transparent; background: @workspace@; color: @muted@; }
+QTabBar::tab:selected { color: @text@; border-bottom-color: @accent@; }
+QSplitter::handle { background: @border@; width: @splitter_hit@px; height: @splitter_hit@px; }
+QSplitter::handle:hover { background: @selection@; }
+QMenu { background: @bar@; border: 1px solid @border@; padding: 4px; }
+QMenu::item { padding: 5px 20px; }
+QMenu::item:selected { background: @selection@; }
+QLabel[wbTone="success"] { color: @success@; }
+QLabel[wbTone="warning"] { color: @warning@; }
+QLabel[wbTone="error"] { color: @error@; }
+QStatusBar { background: @workspace@; border-top: 1px solid @border@; }
+QStatusBar::item { border: none; }
+QToolTip { background: @bar@; color: @text@; border: 1px solid @border@; padding: 4px; }

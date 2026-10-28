@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>@PROJECT@ · 工作台样板</title><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="components.css"></head>
+<body><main class="wb-shell" data-layout="@LAYOUT@">
+<header class="wb-titlebar"><span class="wb-brand"><span class="wb-mark" aria-hidden="true">◉</span>@PROJECT@</span><span data-i18n="sample">独立界面样板</span></header>
+<section class="wb-toolbar" aria-label="全局操作"><label><span data-i18n="source">来源</span><select id="source" aria-label="数据来源"><option value="local">本地实验 / Local experiments</option><option value="archive">归档记录 / Archive</option></select></label>
+<button class="wb-primary" id="start" data-i18n="start">开始</button><button id="stop" disabled data-i18n="stop">停止</button><button id="theme" data-i18n="theme">切换主题</button><button id="language" aria-label="切换语言">English</button><button id="diagnostic-toggle" aria-expanded="false" data-i18n="diagnostics">诊断</button></section>
+<section class="wb-filters" aria-label="视图和筛选"><span data-i18n="view">实验记录</span><select id="kind" aria-label="类型筛选"><option value="all">全部 / All</option><option value="complete">完成 / Complete</option><option value="pending">待处理 / Pending</option></select><input id="filter" aria-label="名称筛选" placeholder="输入名称，Enter 应用"><button id="apply" data-i18n="apply">应用筛选</button><button id="clear" data-i18n="clear">清除</button><button id="find-toggle" data-i18n="find">查找 Ctrl+F</button></section>
+<section class="wb-conditions" id="conditions" aria-label="生效条件" hidden></section>
+<section class="wb-find" id="find-bar" aria-label="查找" hidden><label for="query" data-i18n="findIn">查找当前列表</label><input id="query" placeholder="输入内容，Enter 查找"><button id="find-run" data-i18n="search">查找</button><button id="find-prev" data-i18n="previous">上一个</button><button id="find-next" data-i18n="next">下一个</button><span id="matches" role="status">0 / 0</span><button id="find-close" aria-label="关闭查找">×</button></section>
+<div class="wb-content"><nav class="wb-nav" aria-label="导航"><button data-i18n="view">实验记录</button><button id="nav-diagnostic" data-i18n="diagnostics">诊断</button></nav>
+<div class="wb-workspace"><section class="wb-list" id="list" tabindex="0" aria-label="实验记录列表"><table><thead><tr><th data-i18n="id">编号</th><th data-i18n="time">时间</th><th data-i18n="name">实验名称</th><th data-i18n="state">状态</th><th data-i18n="value">读数</th><th data-i18n="summary">摘要</th></tr></thead><tbody id="rows"></tbody></table><div id="empty" class="wb-empty" hidden></div></section>
+<div class="wb-details"><section class="wb-panel"><div class="wb-panel-title"><span data-i18n="fields">字段</span><span><button id="back" data-i18n="back">后退</button><button id="forward" data-i18n="forward">前进</button><button id="help-toggle" class="wb-help-button" aria-expanded="false" data-i18n="help">字段说明</button></span></div><div class="wb-scroll"><table><thead><tr><th data-i18n="field">字段</th><th data-i18n="value">读数</th></tr></thead><tbody id="fields"></tbody></table></div><div id="help" class="wb-help" hidden></div></section>
+<section class="wb-panel"><div class="wb-panel-title"><span data-i18n="raw">原始记录</span><span id="identity" class="wb-mono"></span></div><div class="wb-scroll"><pre id="raw" tabindex="0"></pre></div></section></div></div>
+<aside class="wb-diagnostic" id="diagnostic" aria-label="诊断" hidden><div class="wb-panel-title"><span data-i18n="diagnostics">诊断</span><button id="diagnostic-close" aria-label="关闭诊断">×</button></div><h3 data-i18n="overview">数据概况</h3><dl><dt data-i18n="retained">保留</dt><dd id="retained">12</dd><dt data-i18n="displayed">显示</dt><dd id="displayed">12</dd><dt data-i18n="generation">来源代数</dt><dd id="generation">1</dd></dl><h3 data-i18n="analysis">分析</h3><dl><dt data-i18n="complete">完成</dt><dd>9</dd><dt data-i18n="pending">待处理</dt><dd>3</dd></dl><h3 data-i18n="resources">资源</h3><p data-i18n="sampleNote">使用演示数据，接入项目时绑定实际服务。</p></aside></div>
+<footer class="wb-status"><span id="status" role="status">就绪</span><span data-i18n="task">@TASK@</span><span id="count" class="wb-mono">12 / 12</span></footer></main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const words = {
+zh: {sample:'独立界面样板',source:'来源',start:'开始',stop:'停止',theme:'切换主题',diagnostics:'诊断',view:'实验记录',apply:'应用筛选',clear:'清除',find:'查找 Ctrl+F',findIn:'查找当前列表',search:'查找',previous:'上一个',next:'下一个',id:'编号',time:'时间',name:'实验名称',state:'状态',value:'读数',summary:'摘要',fields:'字段',back:'后退',forward:'前进',help:'字段说明',field:'字段',raw:'原始记录',overview:'数据概况',retained:'保留',displayed:'显示',generation:'来源代数',analysis:'分析',complete:'完成',pending:'待处理',resources:'资源',sampleNote:'使用演示数据，接入项目时绑定实际服务。',ready:'就绪',running:'● 运行中',stopped:'已停止，可重新开始',noMatch:'没有匹配记录，可调整筛选',select:'选择记录以查看字段和原始内容',changed:'来源已切换，请重新选择记录',stale:'目标已移出当前结果，可调整筛选',helpText:'读数表示当前记录的测量值，单位为 mV。',selected:'已选中',updated:'数据已更新，可重新查找'},
+en: {sample:'Standalone UI specimen',source:'Source',start:'Start',stop:'Stop',theme:'Switch theme',diagnostics:'Diagnostics',view:'Experiments',apply:'Apply filter',clear:'Clear',find:'Find Ctrl+F',findIn:'Find in current list',search:'Search',previous:'Previous',next:'Next',id:'ID',time:'Time',name:'Experiment',state:'Status',value:'Reading',summary:'Summary',fields:'Fields',back:'Back',forward:'Forward',help:'Field help',field:'Field',raw:'Raw record',overview:'Data overview',retained:'Retained',displayed:'Displayed',generation:'Source generation',analysis:'Analysis',complete:'Complete',pending:'Pending',resources:'Resources',sampleNote:'Sample data. Connect actual services in your project.',ready:'Ready',running:'● Running',stopped:'Stopped. Start again to continue.',noMatch:'No matching records. Adjust the filter.',select:'Select a record to view fields and raw content.',changed:'Source changed. Select a record.',stale:'Target is no longer visible. Adjust filters.',helpText:'Reading is the measurement for this record, in mV.',selected:'Selected',updated:'Data updated. Search again to refresh.'}
+};
+let language='zh', selected=null, generation=1, activeFilter='', matches=[], matchIndex=-1, history=[], future=[];
+const data = Array.from({length:12},(_,i)=>({id:'RUN-'+String(i+1).padStart(3,'0'), time:'14:26:'+String(i*4).padStart(2,'0'), name:'Sweep '+String.fromCharCode(65+i), status:i%4===0?'pending':'complete', value:(122+i*2.375).toFixed(3)+' mV', summary:i%4===0?'Awaiting results':'Sample acquired', samples:[1.24+i/100,1.28+i/100,1.26+i/100]}));
+let visible=data.slice();
+const t = key => words[language][key] || key;
+function text(parent,tag,value,className=''){const e=document.createElement(tag);e.textContent=value;if(className)e.className=className;parent.append(e);return e;}
+function notice(message){$('status').textContent=message;}
+function render(){
+  visible=data.filter(d=>(!activeFilter||Object.values(d).join(' ').toLowerCase().includes(activeFilter.toLowerCase()))&&($('kind').value==='all'||d.status===$('kind').value));
+  $('rows').replaceChildren();
+  for(const record of visible){const row=document.createElement('tr');row.dataset.key=record.id;row.tabIndex=0;row.setAttribute('aria-selected',String(selected===record.id));
+    text(row,'td',record.id,'wb-mono');text(row,'td',record.time,'wb-mono');text(row,'td',record.name);text(row,'td',(record.status==='complete'?'✓ ':'△ ')+t(record.status),record.status==='complete'?'wb-success':'wb-warning');text(row,'td',record.value,'wb-mono');text(row,'td',record.summary);
+    row.onclick=()=>select(record.id,false);row.onkeydown=e=>{if(e.key==='Enter'){select(record.id,false);}};$('rows').append(row);}
+  $('empty').hidden=visible.length>0;$('empty').textContent=t('noMatch');$('count').textContent=visible.length+' / '+data.length;$('displayed').textContent=visible.length;
+  $('conditions').replaceChildren();
+  if(activeFilter){const chip=document.createElement('span');chip.className='wb-chip';text(chip,'span',activeFilter).title=activeFilter;const b=text(chip,'button','×');b.setAttribute('aria-label',t('clear'));b.onclick=()=>{$('filter').value='';apply();};$('conditions').append(chip);}
+  $('conditions').hidden=!activeFilter;
+  if(selected&&!visible.some(d=>d.id===selected)){selected=null;showDetails();}
+  $('back').disabled=!history.length;$('forward').disabled=!future.length;
+}
+function showDetails(){
+  const record=data.find(d=>d.id===selected);$('fields').replaceChildren();$('raw').textContent=record?JSON.stringify(record,null,2):t('select');$('identity').textContent=record?record.id:'';$('help').textContent=record?t('helpText'):t('select');
+  if(record)for(const [key,value]of Object.entries(record).filter(([key])=>key!=='samples')){const row=document.createElement('tr');text(row,'td',key);text(row,'td',String(value),'wb-mono');row.tabIndex=0;row.onclick=()=>{for(const other of $('fields').children)other.setAttribute('aria-selected','false');row.setAttribute('aria-selected','true');$('help').textContent=key==='value'?t('helpText'):key+': '+value;};$('fields').append(row);}
+}
+function select(key,jump){
+  if(!visible.some(d=>d.id===key)){notice(t('stale'));return false;}
+  if(jump&&selected&&selected!==key){history.push({generation,key:selected});history=history.slice(-50);future=[];}
+  selected=key;render();showDetails();const row=[...$('rows').children].find(r=>r.dataset.key===key);if(jump&&row){row.scrollIntoView({block:'nearest'});row.focus();}notice(t('selected')+' '+key);return true;
+}
+function apply(){activeFilter=$('filter').value.trim();matches=[];matchIndex=-1;$('matches').textContent='0 / 0';render();notice(t('ready'));}
+function search(){const query=$('query').value.toLowerCase();matches=query?visible.filter(d=>Object.values(d).join(' ').toLowerCase().includes(query)).map(d=>({generation,key:d.id})):[];matchIndex=-1;$('matches').textContent='0 / '+matches.length;}
+function move(step){if(!matches.length)return;matchIndex=(matchIndex+step+matches.length)%matches.length;const result=matches[matchIndex];if(result.generation===generation)select(result.key,true);else notice(t('changed'));$('matches').textContent=(matchIndex+1)+' / '+matches.length;}
+function navigate(forward){const from=forward?future:history,to=forward?history:future;if(!from.length)return;const target=from.pop();if(selected)to.push({generation,key:selected});if(target.generation===generation)select(target.key,false);else notice(t('changed'));render();}
+function showFind(){ $('find-bar').hidden=false;$('query').focus(); }
+function diagnostic(open){$('diagnostic').hidden=!open;$('diagnostic-toggle').setAttribute('aria-expanded',String(open));}
+function translate(){document.documentElement.lang=language==='zh'?'zh-CN':'en';for(const e of document.querySelectorAll('[data-i18n]')){if(e.dataset.i18n!=='task')e.textContent=t(e.dataset.i18n);}$('language').textContent=language==='zh'?'English':'简体中文';$('filter').placeholder=language==='zh'?'输入名称，Enter 应用':'Name, Enter to apply';$('query').placeholder=language==='zh'?'输入内容，Enter 查找':'Content, Enter to search';render();showDetails();notice(t('ready'));}
+$('apply').onclick=apply;$('filter').onkeydown=e=>{if(e.key==='Enter')apply();};$('kind').onchange=apply;$('clear').onclick=()=>{$('filter').value='';$('kind').value='all';apply();};
+$('find-toggle').onclick=showFind;$('find-close').onclick=()=>{$('find-bar').hidden=true;$('list').focus();};$('find-run').onclick=search;$('query').onkeydown=e=>{if(e.key==='Enter')search();};$('find-prev').onclick=()=>move(-1);$('find-next').onclick=()=>move(1);
+$('back').onclick=()=>navigate(false);$('forward').onclick=()=>navigate(true);
+$('help-toggle').onclick=()=>{$('help').hidden=!$('help').hidden;$('help-toggle').setAttribute('aria-expanded',String(!$('help').hidden));};
+$('diagnostic-toggle').onclick=()=>diagnostic($('diagnostic').hidden);$('nav-diagnostic').onclick=()=>diagnostic(true);$('diagnostic-close').onclick=()=>diagnostic(false);
+$('theme').onclick=()=>{document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';};$('language').onclick=()=>{language=language==='zh'?'en':'zh';translate();};
+$('start').onclick=()=>{$('start').disabled=true;$('stop').disabled=false;notice(t('running'));$('status').className='wb-success';};$('stop').onclick=()=>{$('start').disabled=false;$('stop').disabled=true;notice(t('stopped'));$('status').className='';};
+$('source').onchange=()=>{generation++;selected=null;history=[];future=[];matches=[];matchIndex=-1;$('generation').textContent=generation;$('matches').textContent='0 / 0';render();showDetails();notice(t('changed'));};
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='f'){e.preventDefault();showFind();}else if(e.altKey&&e.key==='ArrowLeft'){e.preventDefault();navigate(false);}else if(e.altKey&&e.key==='ArrowRight'){e.preventDefault();navigate(true);}else if(e.key==='Escape'){if(!$('find-bar').hidden){e.preventDefault();$('find-close').click();}else if(!$('diagnostic').hidden){e.preventDefault();diagnostic(false);}}});
+translate();select('RUN-001',false);
+// Automated specimen check is opt-in via ?selftest=1; it never accesses project services.
+if(new URLSearchParams(location.search).get('selftest')==='1'){
+ const results=[];const assert=(name,ok)=>{results.push({name,passed:Boolean(ok)});};
+ $('theme').click();assert('theme',document.documentElement.dataset.theme==='light');$('theme').click();
+ $('language').click();assert('language',document.documentElement.lang==='en');$('language').click();
+ $('filter').value='Sweep B';$('apply').click();assert('applied filter',visible.length===1&&visible[0].id==='RUN-002');$('clear').click();
+ select('RUN-001',false);showFind();$('query').value='Sweep B';search();move(1);assert('search selection',selected==='RUN-002');navigate(false);assert('reading back',selected==='RUN-001');navigate(true);assert('reading forward',selected==='RUN-002');
+ $('source').dispatchEvent(new Event('change'));assert('source reset',selected===null&&history.length===0&&matches.length===0);select('RUN-001',false);
+ diagnostic(true);document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert('Escape closes search first',$('find-bar').hidden&&!$('diagnostic').hidden);document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert('Escape then closes diagnostic',$('diagnostic').hidden);
+ $('start').click();assert('start state',$('start').disabled&&!$('stop').disabled);$('stop').click();assert('stop state',!$('start').disabled&&$('stop').disabled);
+ const report=document.createElement('script');report.type='application/json';report.id='selftest-results';report.textContent=JSON.stringify({passed:results.every(r=>r.passed),results});document.body.append(report);
+}
+</script></body></html>
