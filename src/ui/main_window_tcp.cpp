@@ -75,6 +75,7 @@ void MainWindow::showTcpConversations() {
                         return;
                     }
                     actionError_.clear();
+                    rememberReading();
                     follow_->setChecked(false);
                     selectPacket(row);
                     table_->scrollTo(model_->index(row, 0));

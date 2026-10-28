@@ -5,6 +5,7 @@
 #include "ui/icons.h"
 #include "ui/learning.h"
 #include "ui/flow_layout.h"
+#include "ui/find_bar.h"
 #include <QResizeEvent>
 #include <QScrollBar>
 #include <QSignalBlocker>
@@ -186,6 +187,7 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
             emit locateRequested(packets_->currentData().toULongLong());
     });
     connect(fields_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) {
+        findByteRange_.reset();
         updateHelp();
         fieldKey_ = item ? item->data(0, Qt::UserRole + 7).toString() : QString{};
         if (!item || !selected_ || !fieldByKey_.contains(fieldKey_)) return;
@@ -243,6 +245,7 @@ ApplicationView::ApplicationView(QWidget *parent) : QWidget(parent) {
         shortcut->setContext(Qt::WidgetWithChildrenShortcut);
         connect(shortcut, &QShortcut::activated, this, [this] { emit fields_->customContextMenuRequested(QPoint(-1, -1)); });
     }
+    initializeFind(bar);
     i18n::bind(this);
     connect(&i18n::language(), &i18n::Language::changed, this, [this] {
         rebuild();
@@ -334,6 +337,9 @@ void ApplicationView::setBinding(SourceContext context, Scope scope, std::uint64
     resetPresentation();
 }
 void ApplicationView::resetPresentation() {
+    history_.clear(); pendingReading_.clear();
+    if (find_) find_->invalidate();
+    updateReadingActions();
     fillTimer_.stop();
     updating_ = false; pendingResults_.reset();
     selected_ = nullptr; selectedKey_.clear(); fieldKey_.clear();
@@ -356,6 +362,8 @@ void ApplicationView::resetPresentation() {
 void ApplicationView::setResults(Results results) {
     if (pendingResults_ && *pendingResults_ == results) return;
     if (!pendingResults_ && results_ == results) return;
+    if (find_) find_->markChanged();
+    findByteRange_.reset();
     pendingResults_ = std::move(results);
     fillTimer_.start();
     if (!updating_) fill();
@@ -488,8 +496,10 @@ void ApplicationView::finishFields() {
     page(offset_, !freshSelection_);
     freshSelection_ = false;
     updateHelp();
+    restoreReadingDetails();
 }
 void ApplicationView::clearDetails() {
+    findByteRange_.reset();
     const QSignalBlocker fieldBlock(fields_), packetBlock(packets_);
     fieldItems_.clear(); fieldByKey_.clear(); fieldRows_.clear();
     fields_->clear(); packets_->clear(); bytes_->clear(); offset_ = 0;
@@ -501,6 +511,7 @@ void ApplicationView::select() {
     auto *item = list_->currentItem();
     selectedKey_ = item ? item->data(0, Qt::UserRole + 7).toString() : QString{};
     selected_ = messageByKey_.value(selectedKey_);
+    if (pendingReading_["message"].toString() != selectedKey_) pendingReading_.clear();
     if (!selected_) { selectedKey_.clear(); clearDetails(); return; }
     firstSelection_ = false; lostSelection_ = false; selectionHint_->hide();
     fieldKey_.clear();
@@ -571,6 +582,9 @@ void ApplicationView::page(std::size_t offset, bool preserve) {
     highlightField(); syncPackets(preserve);
 }
 void ApplicationView::highlightField() {
+    if (findByteRange_ && selected_ && selected_->bytes) {
+        highlightFindBytes(bytes_, offset_, selected_->bytes->size(), findByteRange_->first, findByteRange_->second); return;
+    }
     QList<QTextEdit::ExtraSelection> selections;
     auto *item = fields_->currentItem();
     if (!selected_ || !selected_->bytes || !item) {

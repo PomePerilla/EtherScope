@@ -33,6 +33,9 @@
 #include <QStandardItemModel>
 #include <QTreeView>
 #include <QToolButton>
+#include <QGroupBox>
+#include <QScrollArea>
+#include <QDockWidget>
 
 namespace etherscope {
 namespace {
@@ -581,9 +584,16 @@ void MainWindow::buildUi() {
     connect(statistics_, &QCheckBox::toggled, chartPanel_, &QWidget::setVisible);
     diagnosticPanel_ = new QWidget(root);
     diagnosticPanel_->setObjectName("diagnosticPanel");
-    auto *diagnosticLayout = new QGridLayout(diagnosticPanel_);
+    auto *diagnosticLayout = new QVBoxLayout(diagnosticPanel_);
     diagnosticLayout->setContentsMargins(style::margin, 6, style::margin, 6);
-    diagnosticLayout->setHorizontalSpacing(12);
+    auto section = [&](const QString &title) {
+        auto *group = new QGroupBox(title, diagnosticPanel_);
+        auto *grid = new QGridLayout(group); grid->setColumnStretch(0, 1);
+        diagnosticLayout->addWidget(group); return grid;
+    };
+    auto *captureGrid = section("捕获情况");
+    auto *analysisGrid = section("分析进度");
+    auto *resourceGrid = section("资源占用");
     const QStringList captions = {"捕获",     "解析",     "缓存",     "显示",
                                   "覆盖",     "队列丢弃", "驱动丢包", "异常",
                                   "缓存占用", "队列占用", "导出引用", "详情占用"};
@@ -596,30 +606,47 @@ void MainWindow::buildUi() {
         value->setObjectName("diagnostic" + keys[i]);
         value->setFont(style::dataFont());
         diagnosticValues_.append(value);
-        diagnosticLayout->addWidget(caption, static_cast<int>(i / 3), static_cast<int>(i % 3) * 2);
-        diagnosticLayout->addWidget(value, static_cast<int>(i / 3),
-                                    static_cast<int>(i % 3) * 2 + 1);
+        auto *grid = i < 8 ? captureGrid : resourceGrid;
+        const int row = i < 8 ? int(i) : int(i - 8);
+        grid->addWidget(caption, row, 0); grid->addWidget(value, row, 1);
     }
-    layout->addWidget(diagnosticPanel_);
-    diagnosticPanel_->hide();
+    diagnosticLayout->addStretch();
+    diagnosticDock_ = new QDockWidget("诊断", analysisWorkspace_);
+    diagnosticDock_->setObjectName("diagnosticDock");
+    diagnosticDock_->setAllowedAreas(Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea);
+    auto *diagnosticScroll = new QScrollArea(diagnosticDock_);
+    diagnosticScroll->setWidgetResizable(true); diagnosticScroll->setMinimumSize(0, 0);
+    diagnosticScroll->setWidget(diagnosticPanel_); diagnosticDock_->setWidget(diagnosticScroll);
+    diagnosticPanel_->setMinimumWidth(0); diagnosticDock_->setMinimumSize(0, 0);
+    analysisWorkspace_->addDockWidget(Qt::RightDockWidgetArea, diagnosticDock_);
+    diagnosticDock_->hide();
     auto *pendingCaption = new QLabel("Pending analysis", diagnosticPanel_);
     analysisPending_ = new QLabel("0", diagnosticPanel_);
     analysisPending_->setObjectName("analysisPending");
-    diagnosticLayout->addWidget(pendingCaption, 4, 0);
-    diagnosticLayout->addWidget(analysisPending_, 4, 1);
+    analysisGrid->addWidget(pendingCaption, 0, 0);
+    analysisGrid->addWidget(analysisPending_, 0, 1);
     auto *incompleteCaption = new QLabel("Incomplete analysis", diagnosticPanel_);
     analysisIncomplete_ = new QLabel("0", diagnosticPanel_);
     analysisIncomplete_->setObjectName("analysisIncomplete");
-    diagnosticLayout->addWidget(incompleteCaption, 4, 2);
-    diagnosticLayout->addWidget(analysisIncomplete_, 4, 3);
+    incompleteCaption->setText("待补充分析");
+    incompleteCaption->setToolTip("当前缓存中仍需补充分析的报文");
+    analysisGrid->addWidget(incompleteCaption, 7, 0);
+    analysisGrid->addWidget(analysisIncomplete_, 7, 1);
     const QStringList analysisCaptions = {"分析完成", "未完整",   "资源受限",
                                           "缺少密钥", "不支持的", "认证失败"};
     for (int i = 0; i < 6; ++i) {
         auto *caption = new QLabel(analysisCaptions[i], diagnosticPanel_);
         analysisStates_[i] = new QLabel("0", diagnosticPanel_);
         analysisStates_[i]->setObjectName("analysisState" + QString::number(i + 1));
-        diagnosticLayout->addWidget(caption, 5 + i / 3, (i % 3) * 2);
-        diagnosticLayout->addWidget(analysisStates_[i], 5 + i / 3, (i % 3) * 2 + 1);
+        analysisGrid->addWidget(caption, 1 + i, 0);
+        analysisGrid->addWidget(analysisStates_[i], 1 + i, 1);
+    }
+    const QStringList resourceNames = {"分析输入队列", "分析状态", "待交付结果"};
+    for (int i = 0; i < 3; ++i) {
+        analysisResourceValues_[i] = new QLabel("0 MiB", diagnosticPanel_);
+        analysisResourceValues_[i]->setFont(style::dataFont());
+        resourceGrid->addWidget(new QLabel(resourceNames[i], diagnosticPanel_), 4 + i, 0);
+        resourceGrid->addWidget(analysisResourceValues_[i], 4 + i, 1);
     }
     setCentralWidget(root);
     statusBar()->setSizeGripEnabled(false);
@@ -652,7 +679,17 @@ void MainWindow::buildUi() {
     icons::bind(apply_, icons::Id::Filter);
     icons::bind(clear_, icons::Id::Close);
     statusBar()->addPermanentWidget(diagnostics_);
-    connect(diagnostics_, &QPushButton::toggled, diagnosticPanel_, &QWidget::setVisible);
+    connect(diagnostics_, &QPushButton::toggled, this, [this](bool visible) {
+        if (visible) {
+            if (analysisWorkspace_->width() < 1280 || analysisWorkspace_->height() < 600) {
+                diagnosticDock_->setFloating(true); diagnosticDock_->resize(360, 600);
+                diagnosticDock_->move(mapToGlobal(QPoint(std::max(0, width() - 380), 48)));
+            }
+            else analysisWorkspace_->resizeDocks({diagnosticDock_}, {300}, Qt::Horizontal);
+            diagnosticDock_->show(); diagnosticDock_->raise();
+        } else diagnosticDock_->hide();
+    });
+    connect(diagnosticDock_, &QDockWidget::visibilityChanged, diagnostics_, &QPushButton::setChecked);
     sourceStatus_[0] = "就绪";
     sourceStatus_[1] = "就绪";
     connect(new QShortcut(QKeySequence::Open, this), &QShortcut::activated, open_,

@@ -64,6 +64,9 @@ void MainWindow::initializeAnalysis(const MainWindowOptions &options) {
         Qt::QueuedConnection);
 }
 void MainWindow::resetApplications(int session) {
+    readingHistory_[session].clear();
+    if (session == view_) pendingReading_.clear();
+    updateReadingActions();
     if (session == view_) filterUndo_.clear();
     refreshFilterHistory();
     applications_[session]->reset();
@@ -127,13 +130,14 @@ void MainWindow::collectApplications() {
     if (changed) {
         QScopedValueRollback<bool> changing(updatingSelection_, true);
         const auto id = selected_ ? selected_->id : 0;
+        const auto column = std::max(0, table_->currentIndex().column());
         model_->refreshApplications(delta);
         if (view_ == 0 && follow_->isChecked())
             table_->scrollToBottom();
         if (id) {
             const auto row = model_->rowForId(id);
             if (row >= 0)
-                table_->setCurrentIndex(model_->index(row, 0));
+                table_->setCurrentIndex(model_->index(row, column));
         }
         showDetails();
         if (selectedDetails_ && !detailsPending_) {
@@ -148,6 +152,9 @@ void MainWindow::collectApplications() {
         updateStatus();
     }
     const auto diagnostics = applicationIndex_[view_].diagnostics();
+    const auto resource = applications_[view_]->stats();
+    const std::array<std::size_t, 3> bytes = {resource.queuedBytes, resource.stateBytes, resource.stagedBytes};
+    for (int i = 0; i < 3; ++i) analysisResourceValues_[i]->setText(QString::number(double(bytes[i]) / 1048576, 'f', 2) + " MiB");
     analysisPending_->setText(QString::number(diagnostics.count(AnalysisStatus::Pending)));
     analysisIncomplete_->setText(QString::number(diagnostics.incomplete()));
     for (unsigned i = 0; i < analysisStates_.size(); ++i)
@@ -220,6 +227,7 @@ void MainWindow::showApplicationAnalysis() {
                 return;
             }
             applicationDock_->showError({});
+            rememberReading();
             follow_->setChecked(false);
             selectPacket(row);
             table_->scrollTo(model_->index(row, 0));

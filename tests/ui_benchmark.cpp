@@ -1,4 +1,6 @@
 #include "ui/main_window.h"
+#include "ui/find_bar.h"
+#include <QLineEdit>
 #include "ui/analysis_dock.h"
 #include "ui/application_view.h"
 #include <QTreeWidget>
@@ -118,7 +120,12 @@ int main(int argc, char **argv) {
     const bool applicationViewLoad = args.contains("--application-view");
     const std::string longRequest = "GET /keep HTTP/1.1\r\nHost: persistent.example\r\n\r\n";
     const std::string largeRequest = "GET /keep HTTP/1.1\r\nHost: persistent.example\r\nX-Padding: " + std::string(6000, 'p') + "\r\n\r\n";
-    constexpr std::uint64_t largePeriod = 100;
+    std::uint64_t largePeriod = 100;
+    const auto periodArgument = args.indexOf("--large-period");
+    if (periodArgument >= 0 && periodArgument + 1 < args.size()) {
+        bool valid = false; largePeriod = args[periodArgument + 1].toULongLong(&valid);
+        if (!valid || !largePeriod || largePeriod > 100000) return 2;
+    }
     const auto extraRequestBytes = applicationViewLoad ? largeRequest.size() - longRequest.size() : 0;
     const std::string longResponse = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
     if (longHttp)
@@ -269,6 +276,9 @@ int main(int argc, char **argv) {
          intentionalReset = false;
     qint64 captureStopMs = -1, recordingStopMs = -1;
     int resets = 0, saveRequests = 0, languageChanges = 0;
+    int findInteractions = 0;
+    bool findPending = false;
+    std::uint64_t beforeFindPacket{};
     qint64 nextLanguage = 10000;
     bool saveValid = true;
     qint64 themeUs = 0;
@@ -384,6 +394,14 @@ int main(int argc, char **argv) {
                 chooseApplicationField = false;
             }
         }
+        auto *find = window.findChild<FindBar *>("mainFindBar");
+        if (findPending && !find->searching()) {
+            auto *next = find->findChild<QPushButton *>("findPrevious");
+            if (next->isEnabled()) { next->click(); window.findChild<QAction *>("readingBack")->trigger(); ++findInteractions; }
+            const auto restored = window.packetModel()->packetAt(window.findChild<QTableView *>("packetTable")->currentIndex().row());
+            if (next->isEnabled() && (!restored || restored->id != beforeFindPacket)) --findInteractions;
+            find->findChild<QPushButton *>("findClose")->click(); findPending = false;
+        }
         if (args.contains("--workspace-interactions") && now >= nextWorkspaceInteraction &&
             window.packetModel()->rowCount() > 0 && panelBound) {
             auto *table = window.findChild<QTableView *>("packetTable");
@@ -398,6 +416,13 @@ int main(int argc, char **argv) {
             dock->setFloating(!floating);
             dock->setFloating(floating);
             ++workspaceInteractions;
+            if (args.contains("--find-interactions")) {
+                table->setCurrentIndex(window.packetModel()->index(window.packetModel()->rowCount() / 2, 2));
+                beforeFindPacket = window.packetModel()->packetAt(table->currentIndex().row())->id;
+                find->show(); find->findChild<QComboBox *>("findScope")->setCurrentIndex(0);
+                find->findChild<QLineEdit *>("findInput")->setText("TCP");
+                find->findChild<QPushButton *>("findRefresh")->click(); findPending = true;
+            }
             if (visibleApplication) {
                 auto *messages = visibleApplication->findChild<QTreeWidget *>("applicationMessages");
                 for (int row=messages->topLevelItemCount()-1;row>=0;--row)
@@ -584,11 +609,13 @@ int main(int argc, char **argv) {
                 saveRequests == 2 && exports.size() == 2 && saveValid && streamValid &&
                 (!args.contains("--workspace-interactions") || (panelBound && workspaceInteractions >= 5)) &&
                 (!applicationViewLoad || (applicationViewUpdates >= 20 && applicationPageClicks >= 3)) &&
+                (!args.contains("--find-interactions") || findInteractions >= 5) &&
                 (!streamLoad || streamCompleted == streamRequests) &&
                 (!languageCycle || languageChanges >= (seconds - 1) / 10);
             QJsonObject report{
                 {"kind", "synthetic_source_capture_decode_queue_store_ui"},
                 {"version", ETHERSCOPE_VERSION},
+                {"find_and_back_interactions", findInteractions},
                 {"long_http_connection", longHttp},
                 {"application_expression",
                  expression ? QString::fromStdString(expression->source()) : QString{}},
@@ -674,6 +701,12 @@ int main(int argc, char **argv) {
                 {"analysis_state_evictions", double(analysis.stateEvictions)},
                 {"analysis_coalesced_updates", double(analysis.coalescedUpdates)},
                 {"analysis_staging_limited_records", double(analysis.stagingLimitedRecords)},
+                {"analysis_staging_limited_updates", double(analysis.stagingLimitedUpdates)},
+                {"analysis_compacted_updates", double(analysis.compactedUpdates)},
+                {"analysis_compacted_messages", double(analysis.compactedMessages)},
+                {"analysis_pending_limited_packets", double(analysis.pendingLimitedPackets)},
+                {"analysis_peak_result_bytes", double(analysis.peakResultBytes)},
+                {"analysis_peak_fact_bytes", double(analysis.peakFactBytes)},
                 {"analysis_staging_peak_bytes", double(analysis.peakStagedBytes)},
                 {"analysis_state_bytes", double(analysis.stateBytes)},
                 {"analysis_retained_bytes", double(analysis.retainedBytes)},

@@ -93,6 +93,7 @@ MainWindow::MainWindow(QWidget *parent, MainWindowOptions options)
     buildUi();
     initializeAnalysis(options);
     initializeInteractions();
+    initializeFind();
     connect(&i18n::language(), &i18n::Language::changed, this, &MainWindow::retranslate);
     connect(theme_, &QAction::toggled, this, &MainWindow::setDarkTheme);
     connect(refresh_, &QAction::triggered, this, &MainWindow::refreshInterfaces);
@@ -209,7 +210,7 @@ MainWindow::MainWindow(QWidget *parent, MainWindowOptions options)
             follow_->setChecked(false);
     });
     connect(fields_, &QTreeWidget::currentItemChanged, this,
-            [this](QTreeWidgetItem *item) { highlightBytes(item); });
+            [this](QTreeWidgetItem *item) { findByteRange_.reset(); highlightBytes(item); });
     connect(fields_, &QTreeWidget::itemCollapsed, this, [this](QTreeWidgetItem *item) {
         collapsedFields_.insert(item->data(0, Qt::UserRole + 2).toString());
     });
@@ -418,6 +419,7 @@ MainWindow::MainWindow(QWidget *parent, MainWindowOptions options)
     updateButtons();
 }
 MainWindow::~MainWindow() {
+    disconnect(qApp, nullptr, this, nullptr);
     analysisWorkspace_->removeEventFilter(this);
     details_.requestStop();
     engine_.stop();
@@ -647,6 +649,8 @@ void MainWindow::showMode(int index) {
         return;
     actionError_.clear();
     view_ = index;
+    pendingReading_.clear();
+    updateReadingActions();
     filterUndo_.clear();
     refreshFilterHistory();
     selected_.reset();

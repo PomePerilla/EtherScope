@@ -1,4 +1,4 @@
-# EtherScope v2.2.1 (local preview)
+# EtherScope v2.3.0 (local preview)
 
 English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
@@ -15,6 +15,7 @@ Windows x64 network protocol analyzer.
 - Packet and field context actions, display-filter undo and recent history.
 - Source-bound TCP/application panels that dock or float, with optional field and analysis explanations.
 - Incremental message updates preserve field selection, byte pages and reading position.
+- Find text or hexadecimal bytes, navigate reading history, and inspect grouped capture and analysis diagnostics.
 
 ## Download
 
@@ -42,6 +43,8 @@ Windows x64 network protocol analyzer.
 | Display expression | Filter toolbar > Display expression |
 | Open / Save | Ctrl+O / Ctrl+S |
 | Apply addresses | Ctrl+Enter |
+
+Local preview notes: [Search workspace](docs/检索与排查工作区.md) and [Course requirements audit](docs/课程要求核对.md).
 
 ## Build
 

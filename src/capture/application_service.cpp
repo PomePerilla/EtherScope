@@ -9,6 +9,7 @@
 namespace etherscope {
 namespace {
 std::size_t updateBytes(const ApplicationUpdate &update) {
+    if (update.accountedBytes) return update.accountedBytes;
     return sizeof(ApplicationUpdate) + update.limitedPackets.capacity() * sizeof(std::uint64_t) +
            estimateApplicationFacts(update.facts) +
            (update.result ? update.result->estimatedBytes : 0);
@@ -28,6 +29,7 @@ std::size_t ApplicationAnalysisService::stagedBytes() const {
            (completed_.capacity() - completed_.size()) * sizeof(ApplicationUpdate);
 }
 void ApplicationAnalysisService::markLimited(const ApplicationUpdate &update) {
+    ++stats_.stagingLimitedUpdates;
     stats_.stagingLimitedRecords += update.facts.size() + update.limitedPackets.size();
     for (const auto &[id, fact] : update.facts) {
         (void)fact;
@@ -75,6 +77,7 @@ ApplicationServiceStats ApplicationAnalysisService::stats() const {
     result.queuedBytes = queuedBytes_;
     result.stagedBytes = stagedBytes();
     result.pendingUpdates = completed_.size() + (limited_.empty() ? 0 : 1);
+    result.pendingLimitedPackets = limited_.size();
     return result;
 }
 std::uint64_t ApplicationAnalysisService::reset() {
@@ -468,7 +471,31 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
             for (const auto &packet : retainedPackets)
                 if (!update.facts.contains(packet->id))
                     update.limitedPackets.push_back(packet->id);
-            update.result = std::move(result);
+            update.result = result;
+            // Key sensitivity follows the complete snapshot, including messages trimmed below.
+            update.keySensitive = result->status == AnalysisStatus::MissingKeys ||
+                result->status == AnalysisStatus::AuthenticationFailed ||
+                std::any_of(result->messages.begin(), result->messages.end(),
+                            [](const auto &message) { return message.protocol == "TLS"; });
+            const auto originalMessages = result->messages.size();
+            // Keep the newest whole messages when facts + message window exceed delivery budget.
+            // Facts are already computed from the complete snapshot; immutable bytes are untouched.
+            while (updateBytes(update) > applicationStagingBudget && result->messages.size() > 1) {
+                const auto remove = std::max<std::size_t>(1, result->messages.size() / 8);
+                result->messages.erase(result->messages.begin(), result->messages.begin() + remove);
+                result->status = AnalysisStatus::Limited;
+                if (result->error.empty()) result->error = "Application result limit reached";
+                result->estimatedBytes = estimateApplicationBytes(*result);
+            }
+            if (originalMessages != result->messages.size()) {
+                std::lock_guard lock(mutex_);
+                if (epoch == generation_) {
+                    ++stats_.compactedUpdates;
+                    stats_.compactedMessages += originalMessages - result->messages.size();
+                }
+            }
+            // Immutable after publication. Charge large facts/results once, outside the UI lock.
+            update.accountedBytes = updateBytes(update);
             results.push_back(std::move(update));
         }
         while ((retained > applicationInputBudget || analysisBytes > applicationStateBudget) &&
@@ -495,13 +522,18 @@ void ApplicationAnalysisService::run(std::stop_token stop) {
                 for (auto &result : results) {
                     result.keyCommand = command;
                     result.keySensitive =
-                        result.result &&
+                        result.keySensitive || (result.result &&
                         (result.result->status == AnalysisStatus::MissingKeys ||
                          result.result->status == AnalysisStatus::AuthenticationFailed ||
                          std::any_of(
                              result.result->messages.begin(), result.result->messages.end(),
-                             [](const auto &message) { return message.protocol == "TLS"; }));
+                             [](const auto &message) { return message.protocol == "TLS"; })));
                     const auto size = updateBytes(result);
+                    stats_.peakResultBytes = std::max(stats_.peakResultBytes,
+                        result.result ? result.result->estimatedBytes : 0);
+                    stats_.peakFactBytes = std::max(stats_.peakFactBytes,
+                        size - sizeof(ApplicationUpdate) - result.limitedPackets.capacity() * sizeof(std::uint64_t) -
+                        (result.result ? result.result->estimatedBytes : 0));
                     if (size > applicationStagingBudget) {
                         markLimited(result);
                         trimStaging();

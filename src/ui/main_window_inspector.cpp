@@ -2,6 +2,7 @@
 #include "ui/helpers.h"
 #include "ui/language.h"
 #include "ui/style.h"
+#include "ui/find_bar.h"
 #include <QAction>
 #include <QSettings>
 #include <QLabel>
@@ -48,6 +49,8 @@ void MainWindow::showDetails() {
     details_.cancel();
     detailsPending_ = false;
     selected_ = packetAtRow;
+    if (!selected_ || pendingReading_["packet"].toULongLong() != selected_->id) pendingReading_.clear();
+    findByteRange_.reset();
     updatePresentation();
     QSignalBlocker block(fields_);
     fields_->clear();
@@ -175,6 +178,9 @@ void MainWindow::retranslate() {
     }
 }
 void MainWindow::highlightBytes(QTreeWidgetItem *item, bool locate) {
+    if (findByteRange_ && selected_) {
+        highlightFindBytes(hex_, hexStart_, selected_->raw.bytes.size(), findByteRange_->first, findByteRange_->second); return;
+    }
     QList<QTextEdit::ExtraSelection> selections;
     if (item && selected_) {
         auto offset = item->data(0, Qt::UserRole).toULongLong(),

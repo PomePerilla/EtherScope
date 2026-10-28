@@ -11,6 +11,7 @@ struct ApplicationUpdate {
     std::uint64_t generation{}, revision{}, keyRevision{}, conversation{}, keyCommand{};
     bool keySensitive{};
     bool limitedOnly{};
+    std::size_t accountedBytes{};
     std::shared_ptr<const ApplicationResult> result;
     std::map<std::uint64_t, ApplicationFacts> facts;
     std::vector<std::uint64_t> limitedPackets;
@@ -23,6 +24,9 @@ struct ApplicationServiceStats {
     std::uint64_t submittedPackets{}, rejectedPackets{}, completedUpdates{}, deliveredBytes{},
         keyReplays{}, stateEvictions{};
     std::uint64_t coalescedUpdates{}, stagingLimitedRecords{};
+    std::uint64_t stagingLimitedUpdates{};
+    std::uint64_t compactedUpdates{}, compactedMessages{};
+    std::size_t pendingLimitedPackets{}, peakResultBytes{}, peakFactBytes{};
     std::size_t stagedBytes{}, peakStagedBytes{};
     std::size_t stateBytes{}, retainedBytes{}, queuedBytes{}, pendingUpdates{};
 };

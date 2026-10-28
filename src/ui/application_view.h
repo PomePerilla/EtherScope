@@ -1,6 +1,7 @@
 #pragma once
 #include "core/application.h"
 #include "ui/source_context.h"
+#include "ui/reading_history.h"
 #include <QWidget>
 #include <QTimer>
 #include <QHash>
@@ -14,7 +15,9 @@ class QTextEdit;
 class QPushButton;
 class QSplitter;
 class QResizeEvent;
+class QLayout;
 namespace etherscope {
+class FindBar;
 class ApplicationView final : public QWidget {
     Q_OBJECT
   public:
@@ -34,6 +37,17 @@ class ApplicationView final : public QWidget {
     void resizeEvent(QResizeEvent *event) override;
 
   private:
+    FindBar *find_{};
+    ReadingHistory history_;
+    QPushButton *back_{}, *forward_{};
+    QVariantMap pendingReading_;
+    std::optional<std::pair<std::size_t, std::size_t>> findByteRange_;
+    void initializeFind(QLayout *bar);
+    QVariantMap readingPosition() const;
+    void rememberReading();
+    void navigateReading(bool forward);
+    void restoreReadingDetails();
+    void updateReadingActions();
     std::vector<std::shared_ptr<const ApplicationResult>> results_;
     using Results = std::vector<std::shared_ptr<const ApplicationResult>>;
     struct MessageRow { QString key, base; const ApplicationMessage *message{}; };

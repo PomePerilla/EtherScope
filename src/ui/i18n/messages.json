@@ -3693,5 +3693,170 @@
     "当前结果中已无所选消息，请重新选择",
     "The selected message is no longer in the results. Select another message.",
     "目前結果已無所選訊息，請重新選擇"
+  ],
+  [
+    "查找内容，按 Enter 开始",
+    "Find content, press Enter to search",
+    "尋找內容，按 Enter 開始"
+  ],
+  [
+    "文本",
+    "Text",
+    "文字"
+  ],
+  [
+    "十六进制",
+    "Hexadecimal",
+    "十六進位"
+  ],
+  [
+    "区分大小写",
+    "Match case",
+    "區分大小寫"
+  ],
+  [
+    "上一个",
+    "Previous",
+    "上一個"
+  ],
+  [
+    "下一个",
+    "Next",
+    "下一個"
+  ],
+  [
+    "重新查找",
+    "Search again",
+    "重新尋找"
+  ],
+  [
+    "关闭查找",
+    "Close search",
+    "關閉尋找"
+  ],
+  [
+    "请输入完整的十六进制字节，例如 08 00",
+    "Enter complete hexadecimal bytes, for example 08 00",
+    "請輸入完整的十六進位元組，例如 08 00"
+  ],
+  [
+    "来源或内容已改变，请重新查找",
+    "Source or content changed. Search again.",
+    "來源或內容已變更，請重新尋找"
+  ],
+  [
+    "目标已移出当前结果，请重新查找",
+    "Target is no longer in these results. Search again.",
+    "目標已移出目前結果，請重新尋找"
+  ],
+  [
+    "正在查找，已找到 %1 项",
+    "Searching, %1 matches found",
+    "正在尋找，已找到 %1 項"
+  ],
+  [
+    "%1 / %2 项",
+    "%1 / %2 matches",
+    "%1 / %2 項"
+  ],
+  [
+    "已显示前 10000 项",
+    "Showing the first 10000 matches",
+    "已顯示前 10000 項"
+  ],
+  [
+    "内容已更新，可重新查找",
+    "Content updated. Search again to refresh.",
+    "內容已更新，可重新尋找"
+  ],
+  [
+    "报文列表",
+    "Packet list",
+    "封包清單"
+  ],
+  [
+    "当前字段",
+    "Current fields",
+    "目前欄位"
+  ],
+  [
+    "当前报文字节",
+    "Current packet bytes",
+    "目前封包位元組"
+  ],
+  [
+    "查找",
+    "Find",
+    "尋找"
+  ],
+  [
+    "来源已重置，请重新定位",
+    "Source reset. Select a new target.",
+    "來源已重設，請重新定位"
+  ],
+  [
+    "报文已被筛选，可调整筛选后重试",
+    "Packet is hidden by filters. Adjust filters and retry.",
+    "封包已被篩選，可調整篩選後重試"
+  ],
+  [
+    "原报文已覆盖，可跳过此历史项",
+    "Original packet was overwritten. Skip this history entry.",
+    "原封包已覆寫，可跳過此歷程項目"
+  ],
+  [
+    "应用消息",
+    "Application messages",
+    "應用程式訊息"
+  ],
+  [
+    "当前消息字节",
+    "Current message bytes",
+    "目前訊息位元組"
+  ],
+  [
+    "目标已移出当前结果，可跳过此历史项",
+    "Target is no longer in these results. Skip this history entry.",
+    "目標已移出目前結果，可跳過此歷程項目"
+  ],
+  [
+    "捕获情况",
+    "Capture overview",
+    "擷取概況"
+  ],
+  [
+    "分析进度",
+    "Analysis progress",
+    "分析進度"
+  ],
+  [
+    "资源占用",
+    "Resource usage",
+    "資源使用量"
+  ],
+  [
+    "待补充分析",
+    "Analysis to complete",
+    "待補充分析"
+  ],
+  [
+    "当前缓存中仍需补充分析的报文",
+    "Retained packets with analysis still to complete",
+    "目前快取中仍需補充分析的封包"
+  ],
+  [
+    "分析输入队列",
+    "Analysis input queue",
+    "分析輸入佇列"
+  ],
+  [
+    "分析状态",
+    "Analysis state",
+    "分析狀態"
+  ],
+  [
+    "待交付结果",
+    "Results awaiting delivery",
+    "待交付結果"
   ]
 ]

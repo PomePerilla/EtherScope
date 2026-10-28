@@ -35,6 +35,55 @@ void applyUpdate(ApplicationIndex &index, ApplicationUpdate update) {
 class ApplicationServiceTests : public QObject {
     Q_OBJECT
   private slots:
+    void oversizedDeliveryKeepsRecentMessagesAndFacts() {
+        SessionStore store;
+        for (unsigned i = 0; i < 2000; ++i)
+            store.append(decodeSummary(fixtures::tcp(24, 100 + i, 0, false, 50000, false, {'x'})));
+        ApplicationHooks hooks;
+        auto expected = std::make_shared<std::map<std::uint64_t, ApplicationFacts>>();
+        hooks.conversation = [expected](const TcpStreamRequest &request, const TlsKeyLog &, std::stop_token) {
+            ApplicationResult result;
+            std::array<std::shared_ptr<std::vector<std::uint8_t>>, 2> bytes;
+            for (unsigned side = 0; side < 2; ++side) {
+                bytes[side] = std::make_shared<std::vector<std::uint8_t>>();
+                ApplicationMessage message;
+                message.protocol = side == 0 ? "TLS" : "HTTP"; message.streamOffset = side * 1000000;
+                message.bytes = bytes[side]; message.sources.reserve(1000);
+                message.fields.push_back({side == 0 ? "SNI" : "Host", side == 0 ? "tls.sni" : "http.host", std::string(800, char('a' + side)), 0, 1});
+                for (std::size_t n = side * 1000; n < (side + 1) * 1000 && n < request.packets.size(); ++n)
+                    message.sources.push_back({request.packets[n]->id, 0, 1, 0});
+                result.messages.push_back(std::move(message));
+            }
+            const auto size = (applicationResultLimit - estimateApplicationBytes(result) - 256) / 2;
+            for (unsigned side = 0; side < 2; ++side) { bytes[side]->resize(size, std::uint8_t(side + 1)); result.messages[side].length = size; }
+            result.estimatedBytes = estimateApplicationBytes(result);
+            *expected = indexApplication(result, request.packets);
+            return result;
+        };
+        ApplicationAnalysisService service(nullptr, hooks);
+        service.submit({store.packets().begin(), store.packets().end()}, connections(store));
+        QTRY_VERIFY_WITH_TIMEOUT(!service.busy(), 5000);
+        const auto stats = service.stats();
+        QCOMPARE(stats.compactedUpdates, 1ULL); QCOMPARE(stats.stagingLimitedRecords, 0ULL);
+        QVERIFY(stats.peakStagedBytes <= applicationStagingBudget);
+        auto updates = service.takeResults(); QCOMPARE(updates.size(), 1u);
+        const auto &update = updates.front(); QVERIFY(!update.limitedOnly);
+        QCOMPARE(update.result->messages.size(), 1u);
+        QCOMPARE(update.result->messages.front().streamOffset.value(), 1000000ULL);
+        QCOMPARE(update.result->messages.front().bytes->front(), std::uint8_t(2));
+        QCOMPARE(update.result->messages.front().bytes->size(), update.result->messages.front().length);
+        QVERIFY(!update.facts.empty());
+        QVERIFY(update.result->estimatedBytes <= applicationResultLimit);
+        QCOMPARE(update.result->status, AnalysisStatus::Limited);
+        QCOMPARE(update.facts.size(), expected->size());
+        for (const auto &[id, fact] : *expected) {
+            QCOMPARE(update.facts.at(id).status, fact.status);
+            QVERIFY(update.facts.at(id).values == fact.values);
+        }
+        QVERIFY(update.keySensitive);
+        service.reloadKeyLog();
+        QVERIFY(!service.accepts(update));
+    }
     void largeSnapshotsCoalesceWithinStagingBudget() {
         SessionStore store;
         for (unsigned i = 0; i < 2000; ++i)

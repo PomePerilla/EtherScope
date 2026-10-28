@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(EtherScope VERSION 2.2.1 LANGUAGES CXX)
+project(EtherScope VERSION 2.3.0 LANGUAGES CXX)
 configure_file(src/version.h.in generated/version.h @ONLY)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -75,6 +75,8 @@ if(ETHERSCOPE_BUILD_GUI)
     src/capture/stream.cpp
     src/ui/main_window.cpp
     src/ui/main_window_actions.cpp
+    src/ui/main_window_find.cpp
+    src/ui/find_bar.cpp
     src/ui/main_window_workspace.cpp
     src/ui/analysis_dock.cpp
     src/ui/learning.cpp
@@ -87,6 +89,7 @@ if(ETHERSCOPE_BUILD_GUI)
     src/ui/main_window_filter.cpp
     src/ui/main_window_analysis.cpp
     src/ui/application_view.cpp
+    src/ui/application_view_find.cpp
     src/ui/filter_chip.cpp
     src/ui/main_window_status.cpp
     src/ui/main_window_settings.cpp
@@ -130,6 +133,10 @@ if(ETHERSCOPE_BUILD_GUI)
     set_target_properties(ui_tests PROPERTIES AUTOMOC ON)
     target_link_libraries(ui_tests PRIVATE etherscope_desktop Qt6::Test)
     add_test(NAME desktop_interactions COMMAND ui_tests -platform offscreen -o ui-tests.xml,junitxml)
+    qt_add_executable(workspace_tests tests/workspace_tests.cpp tests/fixtures.cpp)
+    set_target_properties(workspace_tests PROPERTIES AUTOMOC ON)
+    target_link_libraries(workspace_tests PRIVATE etherscope_desktop Qt6::Test)
+    add_test(NAME workspace_find_and_navigation COMMAND workspace_tests -platform offscreen -o workspace-tests.xml,junitxml)
     qt_add_executable(ui_benchmark tests/ui_benchmark.cpp tests/fixtures.cpp)
     target_link_libraries(ui_benchmark PRIVATE etherscope_desktop)
     qt_add_executable(native_acceptance tests/native_acceptance.cpp tests/fixtures.cpp)

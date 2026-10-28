@@ -8,9 +8,27 @@
 #include "ui/style.h"
 #include "ui/icons.h"
 #include "ui/language.h"
+#include "ui/find_bar.h"
 #include <algorithm>
 
 namespace etherscope {
+FindSource PacketModel::findSource(const QList<int> &columns) const {
+    struct TextRow { QString key; QStringList cells; };
+    // Cache strings are implicitly shared; the snapshot never pins raw packet buffers.
+    auto rows = std::make_shared<std::vector<TextRow>>();
+    rows->reserve(visible_.size());
+    for (const auto &row : visible_) {
+        const auto &p = *row.packet;
+        rows->push_back({QString::number(p.id), {QString::number(p.id), row.time, row.source,
+            row.destination, row.protocol, QString::number(p.raw.bytes.size()),
+            !p.error.empty() ? i18n::text("异常") : (p.warnings.empty() ? QString{} : i18n::text("提示")), row.summary}});
+    }
+    return {int(rows->size()), [rows, columns](int index) {
+        const auto &row = (*rows)[std::size_t(index)]; QStringList text;
+        for (int column : columns) text.append(row.cells[column]);
+        return FindDocument{row.key, text.join('\t'), {}};
+    }, {}};
+}
 PacketModel::Row::Row(std::shared_ptr<const Packet> value)
     : packet(std::move(value)),
       time(packet->raw.timestampValid

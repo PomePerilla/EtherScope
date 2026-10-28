@@ -9,6 +9,7 @@
 #include "ui/packet_model.h"
 #include "ui/traffic_chart.h"
 #include "ui/source_context.h"
+#include "ui/reading_history.h"
 #include <QMainWindow>
 #include <QElapsedTimer>
 #include <QTimer>
@@ -36,6 +37,7 @@ class QDialog;
 class QToolButton;
 class QShowEvent;
 class QMenu;
+class QDockWidget;
 
 namespace etherscope {
 class FilterChip;
@@ -43,6 +45,7 @@ class TcpPanel;
 class AnalysisDock;
 class ApplicationView;
 class WindowTitleBar;
+class FindBar;
 struct MainWindowOptions {
     QString settingsFile;
     QString language;
@@ -154,6 +157,8 @@ class MainWindow final : public QMainWindow {
     QWidget *expressionPanel_{};
     QAction *expressionAction_{}, *recordingAction_{}, *recordingSettingsAction_{};
     QLabel *recordingLabel_{}, *analysisPending_{}, *analysisIncomplete_{};
+    std::array<QLabel *, 3> analysisResourceValues_{};
+    QDockWidget *diagnosticDock_{};
     std::array<QLabel *, 6> analysisStates_{};
     FilterChip *expressionChip_{};
     QString keyDirectory_;
@@ -181,6 +186,17 @@ class MainWindow final : public QMainWindow {
     std::uint64_t applicationPacket_{};
     QString sourceNames_[2], tcpSourceName_, applicationSourceName_;
     bool arrangingDocks_{}, tcpInvalidated_{}, applicationInvalidated_{};
+    FindBar *find_{};
+    ReadingHistory readingHistory_[2];
+    QAction *readingBack_{}, *readingForward_{};
+    QVariantMap pendingReading_;
+    std::optional<std::pair<std::size_t, std::size_t>> findByteRange_;
+    void initializeFind();
+    QVariantMap readingPosition() const;
+    void rememberReading();
+    void navigateReading(bool forward);
+    void restoreReadingDetails();
+    void updateReadingActions();
     struct DisplayState {
         FilterSpec filter;
         QString expression;

@@ -6,6 +6,7 @@
 #include <deque>
 
 namespace etherscope {
+struct FindSource;
 class PacketModel final : public QAbstractTableModel {
   public:
     explicit PacketModel(SessionStore *store, QObject *parent = nullptr);
@@ -31,6 +32,7 @@ class PacketModel final : public QAbstractTableModel {
     }
     std::shared_ptr<const Packet> packetAt(int row) const;
     int rowForId(std::uint64_t id) const;
+    FindSource findSource(const QList<int> &columns) const;
     const FilterSpec &filter() const {
         return filter_;
     }
